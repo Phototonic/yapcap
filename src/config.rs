@@ -32,6 +32,8 @@ pub struct Config {
     pub copilot_enabled: bool,
     #[serde(default = "default_minimax_enabled")]
     pub minimax_enabled: bool,
+    #[serde(default = "default_kimi_enabled")]
+    pub kimi_enabled: bool,
     #[serde(default)]
     pub show_all_accounts: HashSet<ProviderId>,
     pub selected_codex_account_ids: Vec<String>,
@@ -52,6 +54,10 @@ pub struct Config {
     pub selected_minimax_account_ids: Vec<String>,
     #[serde(default)]
     pub minimax_managed_accounts: Vec<ManagedMinimaxAccountConfig>,
+    #[serde(default)]
+    pub selected_kimi_account_ids: Vec<String>,
+    #[serde(default)]
+    pub kimi_managed_accounts: Vec<ManagedKimiAccountConfig>,
     pub log_level: String,
 }
 
@@ -64,6 +70,10 @@ fn default_copilot_enabled() -> bool {
 }
 
 fn default_minimax_enabled() -> bool {
+    true
+}
+
+fn default_kimi_enabled() -> bool {
     true
 }
 
@@ -82,6 +92,7 @@ impl Default for Config {
             gemini_enabled: true,
             copilot_enabled: true,
             minimax_enabled: true,
+            kimi_enabled: true,
             show_all_accounts: HashSet::new(),
             selected_codex_account_ids: Vec::new(),
             codex_managed_accounts: Vec::new(),
@@ -95,6 +106,8 @@ impl Default for Config {
             copilot_managed_accounts: Vec::new(),
             selected_minimax_account_ids: Vec::new(),
             minimax_managed_accounts: Vec::new(),
+            selected_kimi_account_ids: Vec::new(),
+            kimi_managed_accounts: Vec::new(),
             log_level: "info".to_string(),
         }
     }
@@ -118,6 +131,7 @@ impl Config {
             ProviderId::Gemini => self.gemini_enabled,
             ProviderId::Copilot => self.copilot_enabled,
             ProviderId::Minimax => self.minimax_enabled,
+            ProviderId::Kimi => self.kimi_enabled,
         }
     }
 
@@ -130,6 +144,7 @@ impl Config {
             ProviderId::Gemini => &self.selected_gemini_account_ids,
             ProviderId::Copilot => &self.selected_copilot_account_ids,
             ProviderId::Minimax => &self.selected_minimax_account_ids,
+            ProviderId::Kimi => &self.selected_kimi_account_ids,
         }
     }
 
@@ -141,6 +156,7 @@ impl Config {
             ProviderId::Gemini => &mut self.selected_gemini_account_ids,
             ProviderId::Copilot => &mut self.selected_copilot_account_ids,
             ProviderId::Minimax => &mut self.selected_minimax_account_ids,
+            ProviderId::Kimi => &mut self.selected_kimi_account_ids,
         }
     }
 
@@ -165,6 +181,7 @@ impl Config {
             ProviderId::Gemini => &mut self.gemini_enabled,
             ProviderId::Copilot => &mut self.copilot_enabled,
             ProviderId::Minimax => &mut self.minimax_enabled,
+            ProviderId::Kimi => &mut self.kimi_enabled,
         };
         let changed = *target != enabled;
         *target = enabled;
@@ -278,6 +295,16 @@ pub struct ManagedCursorAccountConfig {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ManagedMinimaxAccountConfig {
+    pub id: String,
+    pub label: String,
+    pub api_key_source: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub last_authenticated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ManagedKimiAccountConfig {
     pub id: String,
     pub label: String,
     pub api_key_source: String,
@@ -459,6 +486,7 @@ mod tests {
         assert!(config.provider_enabled(ProviderId::Gemini));
         assert!(config.provider_enabled(ProviderId::Copilot));
         assert!(config.provider_enabled(ProviderId::Minimax));
+        assert!(config.provider_enabled(ProviderId::Kimi));
         assert_eq!(
             config.provider_visibility_mode,
             ProviderVisibilityMode::AutoInitPending
@@ -480,6 +508,7 @@ mod tests {
         assert!(config.gemini_managed_accounts.is_empty());
         assert!(config.copilot_managed_accounts.is_empty());
         assert!(config.minimax_managed_accounts.is_empty());
+        assert!(config.kimi_managed_accounts.is_empty());
     }
 
     #[test]

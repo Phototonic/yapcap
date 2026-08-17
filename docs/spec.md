@@ -18,7 +18,7 @@ read_when:
 | Target desktop | COSMIC |
 | Target language | Rust (edition 2024) |
 | Target runtime | libcosmic applet runtime |
-| Providers | Codex, Claude Code, Cursor, Gemini, Minimax, GitHub Copilot |
+| Providers | Codex, Claude Code, Cursor, Gemini, Minimax, GitHub Copilot, Kimi (in-development skeleton) |
 
 ## Document Map
 
@@ -26,7 +26,7 @@ read_when:
 | --- | --- |
 | 1. Product Definition | 1.1 Scope and Non-Goals<br>1.2 Supported Sources |
 | 2. Architecture | 2.1 System Context<br>2.2 Crate Layout<br>2.3 Runtime and Message Flow<br>2.4 Multi-Process Applet Model |
-| 3. Providers | 3.1 Codex<br>3.2 Claude<br>3.3 Cursor<br>3.4 Copilot<br>3.5 Gemini<br>3.6 Minimax |
+| 3. Providers | 3.1 Codex<br>3.2 Claude<br>3.3 Cursor<br>3.4 Copilot<br>3.5 Gemini<br>3.6 Minimax<br>3.7 Kimi (skeleton) |
 | 4. Auth and Config | 4.1 OAuth Credential Files<br>4.2 Cursor Token Source<br>4.3 Configuration |
 | 5. Data Model | 5.1 UsageSnapshot<br>5.2 ProviderRuntimeState and Health<br>5.3 Stale/Fresh Rules |
 | 6. Persistence, Logging, Paths | |
@@ -39,7 +39,7 @@ read_when:
 
 ### 1.1 Scope and Non-Goals
 
-- YapCap is a native Linux COSMIC panel applet that shows local usage state for Codex, Claude Code, Cursor, Gemini, Minimax, and GitHub Copilot.
+- YapCap is a native Linux COSMIC panel applet that shows local usage state for Codex, Claude Code, Cursor, Gemini, Minimax, and GitHub Copilot. Kimi is present as an in-development skeleton.
 - Ships only on COSMIC. No GNOME, KDE, tray, or generic indicator paths exist.
 - Reads locally available credentials and caches. No user account, no cloud sync, no telemetry.
 - Out of scope: additional providers, historical charts, notifications, plugin architecture, doctor command, secret vault, alternative DEs.
@@ -53,6 +53,7 @@ read_when:
 | Cursor | Active Cursor account resolved from YapCap-owned `cursor-accounts/<id>/` (`metadata.json`, `tokens.json`, optional `snapshot.json`) | — |
 | Gemini | Active Gemini account resolved from YapCap-owned `gemini-accounts/<id>/` (`metadata.json`, `tokens.json`, optional `snapshot.json`) | OAuth refresh-token grant against `oauth2.googleapis.com/token` before expiry or once after a `loadCodeAssist` / `retrieveUserQuota` 401 |
 | Copilot | Active GitHub Copilot account resolved from YapCap-owned `copilot-accounts/<id>/` (`metadata.json`, `tokens.json`) | None; token is long-lived and re-auth is user-driven after revocation |
+| Kimi | In-development skeleton; no usage source is available yet | — |
 
 Claude, Codex, Cursor, Gemini, Minimax, and Copilot all use YapCap-managed account storage. There
 is no web-cookie path for Claude and no forced-source environment variable.
@@ -944,6 +945,14 @@ Error classification (`MinimaxError`):
 - **Permanent / `requires_user_action`:** `InvalidApiKey`, `Unauthorized`.
 - **Transient:** `RateLimited { retry_after_secs }`, network errors, timeouts.
 - **No usage data:** invalid or missing quota response preserves prior snapshot.
+
+### 3.7 Kimi (skeleton)
+
+Kimi is in development and currently present only as a skeleton.
+
+- `kimi_enabled`, `selected_kimi_account_ids`, and `kimi_managed_accounts` exist in configuration and mirror the Minimax account-config shape.
+- Settings displays a Kimi accounts card with a title and empty account list; it has no login controls.
+- API-key authentication, credential storage, usage fetching, and the add-account flow are not available yet.
 
 ## 4. Auth and Config
 

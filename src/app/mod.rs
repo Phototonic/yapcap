@@ -192,6 +192,7 @@ pub(super) struct PopupBodyMeasurements {
     gemini: Option<f32>,
     copilot: Option<f32>,
     minimax: Option<f32>,
+    kimi: Option<f32>,
     general_settings: Option<f32>,
     codex_settings: Option<f32>,
     claude_settings: Option<f32>,
@@ -199,6 +200,7 @@ pub(super) struct PopupBodyMeasurements {
     gemini_settings: Option<f32>,
     copilot_settings: Option<f32>,
     minimax_settings: Option<f32>,
+    kimi_settings: Option<f32>,
 }
 
 impl PopupBodyMeasurements {
@@ -210,6 +212,7 @@ impl PopupBodyMeasurements {
             ProviderId::Gemini => self.gemini,
             ProviderId::Copilot => self.copilot,
             ProviderId::Minimax => self.minimax,
+            ProviderId::Kimi => self.kimi,
         }
     }
 
@@ -221,6 +224,7 @@ impl PopupBodyMeasurements {
             ProviderId::Gemini => self.gemini = Some(height),
             ProviderId::Copilot => self.copilot = Some(height),
             ProviderId::Minimax => self.minimax = Some(height),
+            ProviderId::Kimi => self.kimi = Some(height),
         }
     }
 
@@ -233,6 +237,7 @@ impl PopupBodyMeasurements {
             SettingsRoute::Provider(ProviderId::Gemini) => self.gemini_settings = Some(height),
             SettingsRoute::Provider(ProviderId::Copilot) => self.copilot_settings = Some(height),
             SettingsRoute::Provider(ProviderId::Minimax) => self.minimax_settings = Some(height),
+            SettingsRoute::Provider(ProviderId::Kimi) => self.kimi_settings = Some(height),
         }
     }
 
@@ -243,7 +248,9 @@ impl PopupBodyMeasurements {
                 .max(self.claude_settings?)
                 .max(self.cursor_settings?)
                 .max(self.gemini_settings?)
-                .max(self.copilot_settings?),
+                .max(self.copilot_settings?)
+                .max(self.minimax_settings?)
+                .max(self.kimi_settings?),
         )
     }
 
@@ -622,6 +629,7 @@ impl AppModel {
                     (ProviderId::Minimax, login::LoginEventKind::Minimax(event)) => {
                         login::MinimaxLoginFlow::on_event(self, event)
                     }
+                    (ProviderId::Kimi, _) => Task::none(),
                     _ => Task::none(),
                 });
             }
@@ -842,6 +850,9 @@ impl AppModel {
                     }
                     SettingsRoute::Provider(ProviderId::Minimax) => {
                         self.popup_body_measurements.minimax_settings
+                    }
+                    SettingsRoute::Provider(ProviderId::Kimi) => {
+                        self.popup_body_measurements.kimi_settings
                     }
                 };
                 self.popup_body_measurements.set_settings(route, height);

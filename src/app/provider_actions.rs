@@ -619,6 +619,7 @@ pub(super) fn popup_route_label(route: PopupRoute) -> &'static str {
         PopupRoute::Settings(SettingsRoute::Provider(ProviderId::Gemini)) => "settings_gemini",
         PopupRoute::Settings(SettingsRoute::Provider(ProviderId::Copilot)) => "settings_copilot",
         PopupRoute::Settings(SettingsRoute::Provider(ProviderId::Minimax)) => "settings_minimax",
+        PopupRoute::Settings(SettingsRoute::Provider(ProviderId::Kimi)) => "settings_kimi",
     }
 }
 

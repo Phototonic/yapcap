@@ -13,7 +13,8 @@ use super::{
 use crate::account_storage::{NewProviderAccount, ProviderAccountStorage, ProviderAccountTokens};
 use crate::config::{
     ManagedClaudeAccountConfig, ManagedCodexAccountConfig, ManagedCopilotAccountConfig,
-    ManagedCursorAccountConfig, ManagedGeminiAccountConfig, ManagedMinimaxAccountConfig,
+    ManagedCursorAccountConfig, ManagedGeminiAccountConfig, ManagedKimiAccountConfig,
+    ManagedMinimaxAccountConfig,
 };
 use crate::model::{
     AccountSelectionStatus, ExtraUsageState, ProviderAccountRuntimeState, ProviderCost,
@@ -1009,6 +1010,17 @@ fn minimax_account(id: &str) -> ManagedMinimaxAccountConfig {
     }
 }
 
+fn kimi_account(id: &str) -> ManagedKimiAccountConfig {
+    ManagedKimiAccountConfig {
+        id: id.to_string(),
+        label: id.to_string(),
+        api_key_source: "env:KIMI_API_KEY".to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        last_authenticated_at: None,
+    }
+}
+
 fn seed_account_storage(dir: PathBuf, provider: ProviderId, id: &str, email: &str) {
     let storage = ProviderAccountStorage::new(dir);
     storage
@@ -1121,6 +1133,14 @@ fn delete_account_requests_refresh_for_all_providers() {
                 app.config.selected_minimax_account_ids = vec![keep_id.to_string()];
                 remove_account_id = "remove".to_string();
             }
+            ProviderId::Kimi => {
+                app.config.kimi_managed_accounts.push(kimi_account(keep_id));
+                app.config
+                    .kimi_managed_accounts
+                    .push(kimi_account("remove"));
+                app.config.selected_kimi_account_ids = vec![keep_id.to_string()];
+                remove_account_id = "remove".to_string();
+            }
         }
 
         let _task = app.delete_account(provider, &remove_account_id);
@@ -1131,6 +1151,14 @@ fn delete_account_requests_refresh_for_all_providers() {
                 .any(|account| account.account_id == remove_account_id),
             "{provider:?} should no longer discover the deleted account"
         );
+        if provider == ProviderId::Kimi {
+            assert_eq!(app.config.kimi_managed_accounts.len(), 2);
+            assert_eq!(
+                app.config.selected_kimi_account_ids,
+                vec![keep_id.to_string()]
+            );
+            continue;
+        }
         assert_eq!(
             app.state.provider(provider).unwrap().account_status,
             AccountSelectionStatus::Ready,

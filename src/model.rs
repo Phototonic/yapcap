@@ -15,16 +15,18 @@ pub enum ProviderId {
     Gemini,
     Copilot,
     Minimax,
+    Kimi,
 }
 
 impl ProviderId {
-    pub const ALL: [Self; 6] = [
+    pub const ALL: [Self; 7] = [
         Self::Codex,
         Self::Claude,
         Self::Cursor,
         Self::Gemini,
         Self::Copilot,
         Self::Minimax,
+        Self::Kimi,
     ];
 
     #[must_use]
@@ -36,6 +38,7 @@ impl ProviderId {
             Self::Gemini => "Gemini",
             Self::Copilot => "Copilot",
             Self::Minimax => "Minimax",
+            Self::Kimi => "Kimi",
         }
     }
 }
@@ -324,6 +327,12 @@ pub struct AppState {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kimi_provider_id_has_label_and_is_enumerated() {
+        assert_eq!(ProviderId::Kimi.label(), "Kimi");
+        assert!(ProviderId::ALL.contains(&ProviderId::Kimi));
+    }
 
     fn window(label: &str) -> UsageWindow {
         UsageWindow {

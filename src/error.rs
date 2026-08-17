@@ -52,6 +52,12 @@ impl From<MinimaxError> for AppError {
     }
 }
 
+impl From<KimiError> for AppError {
+    fn from(value: KimiError) -> Self {
+        Self::Provider(ProviderError::Kimi(value))
+    }
+}
+
 impl AppError {
     #[must_use]
     pub fn user_message(&self) -> String {
@@ -124,6 +130,8 @@ pub enum ProviderError {
     Copilot(#[from] CopilotError),
     #[error(transparent)]
     Minimax(#[from] MinimaxError),
+    #[error(transparent)]
+    Kimi(#[from] KimiError),
 }
 
 impl ProviderError {
@@ -136,6 +144,7 @@ impl ProviderError {
             Self::Gemini(error) => error.is_network_unavailable(),
             Self::Copilot(error) => error.is_network_unavailable(),
             Self::Minimax(error) => error.is_network_unavailable(),
+            Self::Kimi(error) => error.is_network_unavailable(),
         }
     }
 
@@ -148,6 +157,7 @@ impl ProviderError {
             Self::Gemini(error) => error.requires_user_action(),
             Self::Copilot(error) => error.requires_user_action(),
             Self::Minimax(error) => error.requires_user_action(),
+            Self::Kimi(error) => error.requires_user_action(),
         }
     }
 
@@ -160,6 +170,7 @@ impl ProviderError {
             Self::Gemini(error) => error.is_transient(),
             Self::Copilot(error) => error.is_transient(),
             Self::Minimax(error) => error.is_transient(),
+            Self::Kimi(error) => error.is_transient(),
         }
     }
 }
@@ -588,6 +599,29 @@ impl MinimaxError {
             Self::UsageHttp { status } => *status >= 500,
             _ => false,
         }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum KimiError {
+    #[error("Kimi response had no usage windows")]
+    NoUsageData,
+}
+
+impl KimiError {
+    #[must_use]
+    pub fn is_network_unavailable(&self) -> bool {
+        false
+    }
+
+    #[must_use]
+    pub fn requires_user_action(&self) -> bool {
+        false
+    }
+
+    #[must_use]
+    pub fn is_transient(&self) -> bool {
+        false
     }
 }
 

@@ -54,6 +54,11 @@ pub fn provider_show_all_account_selection(config: &Config, provider: ProviderId
             .iter()
             .map(|a| a.id.clone())
             .collect(),
+        ProviderId::Kimi => config
+            .kimi_managed_accounts
+            .iter()
+            .map(|a| a.id.clone())
+            .collect(),
     };
     let active_id = config
         .selected_account_ids(provider)
@@ -88,7 +93,7 @@ fn show_all_account_selection(available_ids: &[String], active_id: Option<&str>)
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::ManagedCodexAccountConfig;
+    use crate::config::{ManagedCodexAccountConfig, ManagedKimiAccountConfig};
     use chrono::Utc;
     use std::path::PathBuf;
 
@@ -136,6 +141,30 @@ mod tests {
 
         assert_eq!(selected, ["codex-5", "codex-1", "codex-2", "codex-3"]);
         assert_eq!(config.codex_managed_accounts.len(), 5);
+    }
+
+    #[test]
+    fn kimi_show_all_selection_keeps_active_account_then_caps_to_four() {
+        let now = Utc::now();
+        let mut config = Config {
+            kimi_managed_accounts: (1..=5)
+                .map(|index| ManagedKimiAccountConfig {
+                    id: format!("kimi-{index}"),
+                    label: format!("Kimi {index}"),
+                    api_key_source: "stored".to_string(),
+                    created_at: now,
+                    updated_at: now,
+                    last_authenticated_at: None,
+                })
+                .collect(),
+            selected_kimi_account_ids: vec!["kimi-5".to_string()],
+            ..Config::default()
+        };
+        config.set_provider_show_all(ProviderId::Kimi, true);
+
+        let selected = provider_show_all_account_selection(&config, ProviderId::Kimi);
+
+        assert_eq!(selected, ["kimi-5", "kimi-1", "kimi-2", "kimi-3"]);
     }
 
     #[test]

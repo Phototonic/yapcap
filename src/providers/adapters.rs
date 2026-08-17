@@ -5,6 +5,7 @@ mod codex_adapter;
 mod copilot_adapter;
 mod cursor_adapter;
 mod gemini_adapter;
+mod kimi_adapter;
 mod minimax_adapter;
 
 use crate::account_storage::ProviderAccountStorage;
@@ -22,6 +23,7 @@ pub(super) fn adapter(provider: ProviderId) -> &'static dyn ProviderAdapter {
         ProviderId::Cursor => &CURSOR_ADAPTER,
         ProviderId::Gemini => &GEMINI_ADAPTER,
         ProviderId::Copilot => &COPILOT_ADAPTER,
+        ProviderId::Kimi => &KIMI_ADAPTER,
         ProviderId::Minimax => &MINIMAX_ADAPTER,
     }
 }
@@ -31,6 +33,7 @@ static CLAUDE_ADAPTER: claude_adapter::ClaudeAdapter = claude_adapter::ClaudeAda
 static CURSOR_ADAPTER: cursor_adapter::CursorAdapter = cursor_adapter::CursorAdapter;
 static GEMINI_ADAPTER: gemini_adapter::GeminiAdapter = gemini_adapter::GeminiAdapter;
 static COPILOT_ADAPTER: copilot_adapter::CopilotAdapter = copilot_adapter::CopilotAdapter;
+static KIMI_ADAPTER: kimi_adapter::KimiAdapter = kimi_adapter::KimiAdapter;
 static MINIMAX_ADAPTER: minimax_adapter::MinimaxAdapter = minimax_adapter::MinimaxAdapter;
 
 pub(super) fn reconcile_provider_account_descriptors(

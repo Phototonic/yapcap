@@ -175,6 +175,7 @@ fn demo_system_active_account_id(provider: ProviderId) -> Option<String> {
         ProviderId::Gemini => GEMINI_PRIMARY_ID,
         ProviderId::Copilot => return None,
         ProviderId::Minimax => return None,
+        ProviderId::Kimi => return None,
     };
     Some(id.to_string())
 }
@@ -186,6 +187,7 @@ fn demo_source(provider: ProviderId) -> String {
         }
         ProviderId::Cursor => "Managed Account".to_string(),
         ProviderId::Minimax => "API Key".to_string(),
+        ProviderId::Kimi => "API Key".to_string(),
     }
 }
 
@@ -318,6 +320,7 @@ fn demo_runtime_accounts(provider: ProviderId) -> Vec<ProviderAccountRuntimeStat
                 snapshot: snapshot_minimax_primary(),
             },
         )],
+        ProviderId::Kimi => Vec::new(),
     }
 }
 

@@ -56,7 +56,11 @@ fn row_status(provider: ProviderId, account: &ProviderAccountRuntimeState) -> Op
                 style_as_action_required: false,
             },
         }),
-        ProviderId::Codex | ProviderId::Gemini | ProviderId::Copilot | ProviderId::Minimax => {
+        ProviderId::Codex
+        | ProviderId::Gemini
+        | ProviderId::Copilot
+        | ProviderId::Minimax
+        | ProviderId::Kimi => {
             (account.auth_state == AuthState::ActionRequired).then(|| RowStatus {
                 kind: RowBadgeKind::Warning,
                 badge_text: fl!("badge-login-required"),
@@ -97,7 +101,7 @@ fn reauth_capability_satisfied(
     action_support: Option<&ProviderAccountActionSupport>,
 ) -> bool {
     match provider {
-        ProviderId::Codex | ProviderId::Minimax => true,
+        ProviderId::Codex | ProviderId::Minimax | ProviderId::Kimi => true,
         ProviderId::Cursor => action_support.is_some_and(|support| {
             support.can_reauthenticate && support.supports_background_status_refresh
         }),
@@ -115,6 +119,7 @@ fn reauth_tooltip(provider: ProviderId) -> String {
         ProviderId::Gemini => fl!("gemini-account-reauth-tooltip"),
         ProviderId::Copilot => fl!("copilot-account-reauth-tooltip"),
         ProviderId::Minimax => fl!("minimax-account-reauth-tooltip"),
+        ProviderId::Kimi => fl!("kimi-account-reauth-tooltip"),
     }
 }
 

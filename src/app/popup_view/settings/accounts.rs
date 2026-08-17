@@ -41,6 +41,7 @@ pub(super) fn provider_settings_view<'a>(
         ProviderId::Gemini => gemini_accounts_section(state, config, logins.gemini, enabled),
         ProviderId::Copilot => copilot_accounts_section(state, config, logins.copilot, enabled),
         ProviderId::Minimax => minimax_accounts_section(state, config, logins.minimax, enabled),
+        ProviderId::Kimi => kimi_accounts_section(state, config, enabled),
     };
 
     Element::from(
@@ -418,6 +419,51 @@ fn minimax_accounts_section<'a>(
 
     settings_block_enabled(
         widget::text("Minimax Accounts").size(16).into(),
+        rows,
+        enabled,
+    )
+}
+
+fn kimi_accounts_section<'a>(
+    state: &'a AppState,
+    config: &'a Config,
+    enabled: bool,
+) -> Element<'a, Message> {
+    let kimi = state.provider(ProviderId::Kimi);
+    let selected_ids: Vec<&str> = kimi
+        .map(|provider| {
+            provider
+                .selected_account_ids
+                .iter()
+                .map(String::as_str)
+                .collect()
+        })
+        .unwrap_or_default();
+    let accounts = state.accounts_for(ProviderId::Kimi);
+    let active_id = kimi.and_then(|provider| provider.system_active_account_id.as_deref());
+    let mut rows = cosmic::iced::widget::column![]
+        .spacing(8)
+        .width(Length::Fill);
+
+    if !accounts.is_empty() {
+        let mut account_rows = cosmic::iced::widget::column![]
+            .spacing(6)
+            .width(Length::Fill);
+        for account in &accounts {
+            account_rows = account_rows.push(account_settings_row(
+                ProviderId::Kimi,
+                account,
+                &selected_ids,
+                active_id,
+                config,
+                enabled,
+            ));
+        }
+        rows = rows.push(account_selector_list(account_rows));
+    }
+
+    settings_block_enabled(
+        widget::text(fl!("kimi-accounts-title")).size(16).into(),
         rows,
         enabled,
     )
