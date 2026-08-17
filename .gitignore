@@ -1,5 +1,7 @@
 .cargo/
 .codex
+.omo/
+.slim/
 .flatpak-builder/
 .scratch/
 issues/
