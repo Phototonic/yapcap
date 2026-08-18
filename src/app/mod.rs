@@ -41,6 +41,10 @@ use crate::providers::codex::{self, CodexLoginEvent, CodexLoginState, CodexLogin
 use crate::providers::copilot::{self, CopilotLoginEvent, CopilotLoginState, CopilotLoginStatus};
 use crate::providers::cursor::{self, CursorScanResult, CursorScanState};
 use crate::providers::gemini::{self, GeminiLoginEvent, GeminiLoginState, GeminiLoginStatus};
+use crate::providers::kimi::{
+    self,
+    login::{KimiLoginEvent, KimiLoginState},
+};
 use crate::providers::minimax::{self, MinimaxLoginEvent, MinimaxLoginState, MinimaxLoginStatus};
 use crate::providers::registry;
 use crate::refresh_owner::{
@@ -109,6 +113,8 @@ pub struct AppModel {
     copilot_login_handle: Option<Handle>,
     minimax_login: Option<MinimaxLoginState>,
     minimax_login_handle: Option<Handle>,
+    kimi_login: Option<KimiLoginState>,
+    kimi_login_handle: Option<Handle>,
 }
 
 impl Drop for AppModel {
@@ -355,6 +361,8 @@ impl cosmic::Application for AppModel {
             copilot_login_handle: None,
             minimax_login: None,
             minimax_login_handle: None,
+            kimi_login: None,
+            kimi_login_handle: None,
         };
         tracing::info!(
             pid = app.process_info.pid,
@@ -443,6 +451,7 @@ impl cosmic::Application for AppModel {
                 gemini: self.gemini_login.as_ref(),
                 copilot: self.copilot_login.as_ref(),
                 minimax: self.minimax_login.as_ref(),
+                kimi: self.kimi_login.as_ref(),
             },
             self.selected_provider,
             &self.popup_route,
@@ -629,7 +638,9 @@ impl AppModel {
                     (ProviderId::Minimax, login::LoginEventKind::Minimax(event)) => {
                         login::MinimaxLoginFlow::on_event(self, event)
                     }
-                    (ProviderId::Kimi, _) => Task::none(),
+                    (ProviderId::Kimi, login::LoginEventKind::Kimi(event)) => {
+                        login::KimiLoginFlow::on_event(self, event)
+                    }
                     _ => Task::none(),
                 });
             }

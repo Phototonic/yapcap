@@ -896,6 +896,8 @@ pub(super) fn test_app(refresh_owner: Option<RefreshOwner>) -> AppModel {
         copilot_login_handle: None,
         minimax_login: None,
         minimax_login_handle: None,
+        kimi_login: None,
+        kimi_login_handle: None,
     }
 }
 
@@ -1151,14 +1153,6 @@ fn delete_account_requests_refresh_for_all_providers() {
                 .any(|account| account.account_id == remove_account_id),
             "{provider:?} should no longer discover the deleted account"
         );
-        if provider == ProviderId::Kimi {
-            assert_eq!(app.config.kimi_managed_accounts.len(), 2);
-            assert_eq!(
-                app.config.selected_kimi_account_ids,
-                vec![keep_id.to_string()]
-            );
-            continue;
-        }
         assert_eq!(
             app.state.provider(provider).unwrap().account_status,
             AccountSelectionStatus::Ready,

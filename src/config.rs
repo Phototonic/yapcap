@@ -339,6 +339,7 @@ pub struct AppPaths {
     pub gemini_accounts_dir: PathBuf,
     pub copilot_accounts_dir: PathBuf,
     pub minimax_accounts_dir: PathBuf,
+    pub kimi_accounts_dir: PathBuf,
     pub log_dir: PathBuf,
 }
 
@@ -448,6 +449,11 @@ pub fn managed_minimax_account_dir(account_id: &str) -> PathBuf {
 }
 
 #[must_use]
+pub fn managed_kimi_account_dir(account_id: &str) -> PathBuf {
+    paths().kimi_accounts_dir.join(account_id)
+}
+
+#[must_use]
 pub fn paths() -> AppPaths {
     let cache_root = cache_root_dir();
     let state_root = state_parent_dir();
@@ -459,6 +465,7 @@ pub fn paths() -> AppPaths {
     let gemini_accounts_dir = state_dir.join("gemini-accounts");
     let copilot_accounts_dir = state_dir.join("copilot-accounts");
     let minimax_accounts_dir = state_dir.join("minimax-accounts");
+    let kimi_accounts_dir = state_dir.join("kimi-accounts");
     let log_dir = state_dir.join("logs");
     AppPaths {
         cache_dir,
@@ -469,6 +476,7 @@ pub fn paths() -> AppPaths {
         gemini_accounts_dir,
         copilot_accounts_dir,
         minimax_accounts_dir,
+        kimi_accounts_dir,
         log_dir,
     }
 }

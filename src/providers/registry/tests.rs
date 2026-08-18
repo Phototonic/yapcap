@@ -35,7 +35,7 @@ fn providers_expose_expected_capabilities() {
         capabilities(ProviderId::Kimi),
         ProviderCapabilities {
             supports_delete: true,
-            supports_reauthentication: false,
+            supports_reauthentication: true,
             supports_background_status_refresh: false,
             requires_auth_prompt_on_auth_failure: false,
         }
@@ -110,13 +110,13 @@ fn action_support_matches_capabilities() {
 }
 
 #[test]
-fn system_active_account_id_only_supported_by_codex_claude_gemini_minimax() {
+fn system_active_account_id_only_supported_by_codex_claude_gemini_minimax_kimi() {
     use crate::account_storage::{
         NewProviderAccount, ProviderAccountStorage, ProviderAccountTokens,
     };
     use crate::config::{
         ManagedClaudeAccountConfig, ManagedCodexAccountConfig, ManagedGeminiAccountConfig,
-        ManagedMinimaxAccountConfig, paths,
+        ManagedKimiAccountConfig, ManagedMinimaxAccountConfig, paths,
     };
     use chrono::Utc;
     use std::fs;
@@ -131,6 +131,7 @@ fn system_active_account_id_only_supported_by_codex_claude_gemini_minimax() {
     env.set("HOME", &home);
     env.set("XDG_STATE_HOME", &state);
     env.set("MINIMAX_API_KEY", "test-minimax-key");
+    env.set("KIMI_API_KEY", "test-kimi-key");
     env.remove("FLATPAK_ID");
 
     let codex_dir = home.join(".codex");
@@ -219,6 +220,14 @@ fn system_active_account_id_only_supported_by_codex_claude_gemini_minimax() {
             updated_at: Utc::now(),
             last_authenticated_at: None,
         }],
+        kimi_managed_accounts: vec![ManagedKimiAccountConfig {
+            id: "kimi-1".to_string(),
+            label: "Kimi".to_string(),
+            api_key_source: "env:KIMI_API_KEY".to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            last_authenticated_at: None,
+        }],
         ..Config::default()
     };
 
@@ -229,6 +238,7 @@ fn system_active_account_id_only_supported_by_codex_claude_gemini_minimax() {
         (ProviderId::Cursor, false),
         (ProviderId::Copilot, false),
         (ProviderId::Minimax, true),
+        (ProviderId::Kimi, true),
     ];
     for (provider, expect_some) in expectations {
         let result = system_active_account_id(provider, &config);

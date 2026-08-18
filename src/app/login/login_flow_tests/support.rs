@@ -42,6 +42,8 @@ pub(super) fn test_app() -> AppModel {
         copilot_login_handle: None,
         minimax_login: None,
         minimax_login_handle: None,
+        kimi_login: None,
+        kimi_login_handle: None,
     }
 }
 

@@ -8,7 +8,7 @@ read_when:
 
 # YapCap — COSMIC Panel Applet Architecture
 
-**Status:** As-built v0.5.2 · **Last updated:** 2026-07-06
+**Status:** As-built v0.5.2 · **Last updated:** 2026-08-17
 
 ## Document Metadata
 
@@ -18,7 +18,7 @@ read_when:
 | Target desktop | COSMIC |
 | Target language | Rust (edition 2024) |
 | Target runtime | libcosmic applet runtime |
-| Providers | Codex, Claude Code, Cursor, Gemini, Minimax, GitHub Copilot, Kimi (in-development skeleton) |
+| Providers | Codex, Claude Code, Cursor, Gemini, Minimax, GitHub Copilot, Kimi for Coding |
 
 ## Document Map
 
@@ -26,7 +26,7 @@ read_when:
 | --- | --- |
 | 1. Product Definition | 1.1 Scope and Non-Goals<br>1.2 Supported Sources |
 | 2. Architecture | 2.1 System Context<br>2.2 Crate Layout<br>2.3 Runtime and Message Flow<br>2.4 Multi-Process Applet Model |
-| 3. Providers | 3.1 Codex<br>3.2 Claude<br>3.3 Cursor<br>3.4 Copilot<br>3.5 Gemini<br>3.6 Minimax<br>3.7 Kimi (skeleton) |
+| 3. Providers | 3.1 Codex<br>3.2 Claude<br>3.3 Cursor<br>3.4 Copilot<br>3.5 Gemini<br>3.6 Minimax<br>3.7 Kimi |
 | 4. Auth and Config | 4.1 OAuth Credential Files<br>4.2 Cursor Token Source<br>4.3 Configuration |
 | 5. Data Model | 5.1 UsageSnapshot<br>5.2 ProviderRuntimeState and Health<br>5.3 Stale/Fresh Rules |
 | 6. Persistence, Logging, Paths | |
@@ -39,7 +39,7 @@ read_when:
 
 ### 1.1 Scope and Non-Goals
 
-- YapCap is a native Linux COSMIC panel applet that shows local usage state for Codex, Claude Code, Cursor, Gemini, Minimax, and GitHub Copilot. Kimi is present as an in-development skeleton.
+- YapCap is a native Linux COSMIC panel applet that shows local usage state for Codex, Claude Code, Cursor, Gemini, Minimax, GitHub Copilot, and Kimi for Coding.
 - Ships only on COSMIC. No GNOME, KDE, tray, or generic indicator paths exist.
 - Reads locally available credentials and caches. No user account, no cloud sync, no telemetry.
 - Out of scope: additional providers, historical charts, notifications, plugin architecture, doctor command, secret vault, alternative DEs.
@@ -53,12 +53,14 @@ read_when:
 | Cursor | Active Cursor account resolved from YapCap-owned `cursor-accounts/<id>/` (`metadata.json`, `tokens.json`, optional `snapshot.json`) | — |
 | Gemini | Active Gemini account resolved from YapCap-owned `gemini-accounts/<id>/` (`metadata.json`, `tokens.json`, optional `snapshot.json`) | OAuth refresh-token grant against `oauth2.googleapis.com/token` before expiry or once after a `loadCodeAssist` / `retrieveUserQuota` 401 |
 | Copilot | Active GitHub Copilot account resolved from YapCap-owned `copilot-accounts/<id>/` (`metadata.json`, `tokens.json`) | None; token is long-lived and re-auth is user-driven after revocation |
-| Kimi | In-development skeleton; no usage source is available yet | — |
+| Kimi | Active YapCap-managed Kimi account resolved from `<state-root>/yapcap/kimi-accounts/<id>/api_key.txt` | `KIMI_API_KEY` when the managed account has no stored key |
 
-Claude, Codex, Cursor, Gemini, Minimax, and Copilot all use YapCap-managed account storage. There
+Claude, Codex, Cursor, Gemini, Minimax, Copilot, and Kimi all use YapCap-managed account storage. There
 is no web-cookie path for Claude and no forced-source environment variable.
 Gemini supports only Google OAuth accounts; gemini-cli API-key and Vertex AI
-configurations are out of scope. Minimax uses API key authentication without host CLI integration.
+configurations are out of scope. Minimax uses API key authentication without host
+CLI integration. Kimi can prefill an API key once from OpenCode's local auth file
+but has no live host-auth integration.
 
 ## 2. Architecture
 
@@ -74,6 +76,7 @@ flowchart LR
     Panel --> Gemini[Gemini module]
     Panel --> Minimax[Minimax module]
     Panel --> Copilot[Copilot module]
+    Panel --> Kimi[Kimi module]
     Codex --> OpenAI[chatgpt.com/backend-api]
     Codex -.refresh.-> OpenAIAuth[auth.openai.com]
     Claude --> Anthropic[api.anthropic.com]
@@ -81,6 +84,7 @@ flowchart LR
     Gemini --> GeminiAPI[cloudcode-pa.googleapis.com]
     Minimax --> MinimaxAPI[api.minimax.ch]
     Copilot --> GitHubCopilot[api.github.com/copilot_internal/user]
+    Kimi --> KimiAPI[api.kimi.com/coding/v1/usages]
     Panel --> Local[Local config, cache, logs]
 ```
 
@@ -104,14 +108,15 @@ Library modules (`src/`, also usable from tests):
 | `runtime` | `refresh_one(provider)`, `refresh_provider(...)`, `load_initial_state`, `persist_state`. Startup state is reconciled from shared runtime config, not from `snapshots.json`. |
 | `providers::minimax` | Minimax API key-based account management, usage fetch, and token quota tracking. |
 | `providers::registry` | Provider-facing interface used by runtime and UI code. It exposes provider capabilities, account discovery, account deletion, account status refresh, and usage fetch through provider adapters. |
-| `providers::adapters` | Provider adapter implementations for Codex, Claude, Cursor, Gemini, Minimax, and Copilot. Each adapter maps the shared provider interface onto provider-specific account and fetch modules. |
+| `providers::adapters` | Provider adapter implementations for Codex, Claude, Cursor, Gemini, Minimax, Copilot, and Kimi. Each adapter maps the shared provider interface onto provider-specific account and fetch modules. |
 | `providers::interface` | Shared provider adapter trait, capability flags, account descriptors, account handles, and async future alias. |
 | `providers::codex` | Codex managed login, YapCap-owned account listing, OAuth usage fetch, and refresh-on-401/403 under `src/providers/codex/`. |
 | `providers::claude` | Managed native OAuth login and YapCap-owned account listing under `src/providers/claude/`, OAuth usage fetch, token refresh against Anthropic’s OAuth token endpoint (no Claude CLI), and read-only host `~/.claude.json` matching for `system_active_account_id`. |
 | `providers::cursor` | Cursor web API via YapCap-owned tokens scanned from Cursor IDE's local SQLite state. |
 | `providers::copilot` | GitHub device-flow login, id-based YapCap-owned account listing/dedupe, single-call usage fetch, and Free/paid Copilot schema parsing under `src/providers/copilot/`. |
 | `providers::minimax` | API key-based authentication, YapCap-owned account storage, usage quota tracking, and Minimax API integration under `src/providers/minimax/`. |
-| `account_storage` | Shared explicit-account storage foundation for provider migrations. It writes account metadata, provider tokens, and per-account cached snapshots as separate JSON files under opaque YapCap-owned account directories. All write entry points (`create_account`, `replace_account`, `save_metadata`, `save_tokens`, `save_snapshot`) create the full account directory chain on demand, so callers do not need to pre-create the provider account root. It also exposes lower-level `create_private_dir`/`set_private_file_permissions`/`write_json`/`read_json` primitives (owner-only `0o700` dirs, `0o600` files) that providers with a bespoke on-disk schema — Copilot and Minimax — use directly instead of hand-rolling their own permission-setting code. |
+| `providers::kimi` | Kimi for Coding API-key account management, OpenCode key prefill, private key storage, usage fetch, and Kimi usage-window parsing under `src/providers/kimi/`. |
+| `account_storage` | Shared explicit-account storage foundation for provider migrations. It writes account metadata, provider tokens, and per-account cached snapshots as separate JSON files under opaque YapCap-owned account directories. All write entry points (`create_account`, `replace_account`, `save_metadata`, `save_tokens`, `save_snapshot`) create the full account directory chain on demand, so callers do not need to pre-create the provider account root. It also exposes lower-level `create_private_dir`/`set_private_file_permissions`/`write_json`/`read_json` primitives (owner-only `0o700` dirs, `0o600` files) that providers with a bespoke on-disk schema — Copilot, Minimax, and Kimi — use directly instead of hand-rolling their own permission-setting code. |
 | `auth` | Parses JWT identity claims used by Codex OAuth compatibility paths. |
 | `config` | COSMIC config entry, provider toggles, provider account preferences, and the shared app ID constant used by all COSMIC config entries. |
 | `shared_state` | Versioned COSMIC-backed shared runtime and shared control entries. Shared runtime wraps the app runtime payload with generation and write timestamp metadata. Shared control stores per-provider explicit refresh requests with request metadata. |
@@ -946,13 +951,60 @@ Error classification (`MinimaxError`):
 - **Transient:** `RateLimited { retry_after_secs }`, network errors, timeouts.
 - **No usage data:** invalid or missing quota response preserves prior snapshot.
 
-### 3.7 Kimi (skeleton)
+### 3.7 Kimi
 
-Kimi is in development and currently present only as a skeleton.
+Kimi for Coding uses API-key authentication and YapCap-managed accounts.
 
-- `kimi_enabled`, `selected_kimi_account_ids`, and `kimi_managed_accounts` exist in configuration and mirror the Minimax account-config shape.
-- Settings displays a Kimi accounts card with a title and empty account list; it has no login controls.
-- API-key authentication, credential storage, usage fetching, and the add-account flow are not available yet.
+- Each managed account has a generated id and a user-provided optional label;
+  duplicate labels are allowed. Non-secret account metadata is stored in
+  `kimi_managed_accounts`; the API key is stored separately at
+  `<state-root>/yapcap/kimi-accounts/<id>/api_key.txt`.
+- The account directory is private to its owner (`0o700`) and the key file is
+  owner-readable and owner-writable only (`0o600`). YapCap does not store the
+  API key in COSMIC configuration.
+- The Kimi accounts card provides an API-key add-account flow with an optional
+  label. Before editing, YapCap optionally reads
+  `~/.local/share/opencode/auth.json`; a non-empty `key` field in the
+  `kimi-for-coding` entry prefills the API-key field and is identified as
+  imported from OpenCode. This is a one-time add or reauthentication prefill;
+  usage fetch and periodic refresh never read or synchronize OpenCode. Saving
+  copies the entered or prefilled key into YapCap's private account storage.
+  A new account uses normal selection behavior: selection is exclusive unless
+  show-all is enabled, in which case the account is added up to
+  `MAX_MULTI_ACCOUNT_SELECTION`. Runtime state is reconciled from the saved
+  configuration and a shared `AccountAction` refresh request is made. An empty
+  key fails without creating an account.
+- Reauthentication targets one existing account, preserves its id, label, and
+  creation time, and overwrites its stored key plus authentication metadata.
+  An edited label is not applied during reauthentication.
+
+Usage fetch:
+
+- YapCap sends `GET https://api.kimi.com/coding/v1/usages` with
+  `Accept: application/json` and `Authorization: Bearer <key>`.
+- Key resolution reads the managed account's private stored key first. If it is
+  absent or empty, YapCap falls back to a non-empty `KIMI_API_KEY` environment
+  variable. OpenCode's file is not read during refresh. The environment
+  variable is not an OpenCode dependency; it only identifies a system-active
+  configured account when that account's `api_key_source` is
+  `env:KIMI_API_KEY`.
+- HTTP 401 and 403, or the absence of both key sources, produce the permanent,
+  user-action-required `LoginRequired` state. HTTP 429 produces
+  `RateLimited { retry_after_secs }`, using a numeric `Retry-After` header when
+  present. Connection and timeout failures, rate limits, and HTTP 5xx responses
+  are transient. Other non-success endpoint responses, malformed responses,
+  API error payloads, and responses with no valid windows report an error; the
+  refresh path retains any prior successful snapshot.
+
+Usage windows:
+
+- A valid top-level `usage` object renders a **Weekly** window. Each valid
+  entry in `limits` renders **Rate Limit (`{duration}m`)**.
+- Usage is `used / limit` when `used` is present, otherwise
+  `100 - remaining / limit`; the displayed percentage is clamped to 0–100.
+  RFC 3339 `resetTime` values become the window reset time. Rate-limit windows
+  use their reported duration in minutes for the window length; `limits` may be
+  absent, leaving a Weekly-only display.
 
 ## 4. Auth and Config
 

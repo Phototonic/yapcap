@@ -2,7 +2,8 @@
 
 use crate::config::{
     Config, ManagedClaudeAccountConfig, ManagedCodexAccountConfig, ManagedCopilotAccountConfig,
-    ManagedCursorAccountConfig, ManagedGeminiAccountConfig, ManagedMinimaxAccountConfig,
+    ManagedCursorAccountConfig, ManagedGeminiAccountConfig, ManagedKimiAccountConfig,
+    ManagedMinimaxAccountConfig,
 };
 use crate::error::AppError;
 use crate::model::{AppState, ProviderAccountRuntimeState, ProviderId, UsageSnapshot};
@@ -61,6 +62,7 @@ pub enum ProviderAccountHandle {
     Gemini(ManagedGeminiAccountConfig),
     Copilot(ManagedCopilotAccountConfig),
     Minimax(ManagedMinimaxAccountConfig),
+    Kimi(ManagedKimiAccountConfig),
 }
 
 pub trait ProviderAdapter: Send + Sync {

@@ -179,3 +179,18 @@ pub(super) fn minimax_system_active_account_id(
         }
     })
 }
+
+pub(super) fn kimi_system_active_account_id(
+    managed_accounts: &[crate::config::ManagedKimiAccountConfig],
+) -> Option<String> {
+    std::env::var("KIMI_API_KEY").ok().and_then(|api_key| {
+        if api_key.is_empty() {
+            None
+        } else {
+            managed_accounts
+                .iter()
+                .find(|account| account.api_key_source == "env:KIMI_API_KEY")
+                .map(|account| account.id.clone())
+        }
+    })
+}
