@@ -59,8 +59,9 @@ Claude, Codex, Cursor, Gemini, Minimax, Copilot, and Kimi all use YapCap-managed
 is no web-cookie path for Claude and no forced-source environment variable.
 Gemini supports only Google OAuth accounts; gemini-cli API-key and Vertex AI
 configurations are out of scope. Minimax uses API key authentication without host
-CLI integration. Kimi can prefill an API key once from OpenCode's local auth file
-but has no live host-auth integration.
+CLI integration. Kimi optionally prefills an API key once for add or
+reauthentication from OpenCode's local auth file; it has no live host-auth
+synchronization or refresh dependency.
 
 ## 2. Architecture
 
@@ -963,7 +964,7 @@ Kimi for Coding uses API-key authentication and YapCap-managed accounts.
   owner-readable and owner-writable only (`0o600`). YapCap does not store the
   API key in COSMIC configuration.
 - The Kimi accounts card provides an API-key add-account flow with an optional
-  label. Before editing, YapCap optionally reads
+  label. Before adding or reauthenticating, YapCap optionally reads
   `~/.local/share/opencode/auth.json`; a non-empty `key` field in the
   `kimi-for-coding` entry prefills the API-key field and is identified as
   imported from OpenCode. This is a one-time add or reauthentication prefill;

@@ -9,9 +9,9 @@
   </developer>
   <developer_name>Tamás Csarnó</developer_name>
   <name>YapCap</name>
-  <summary>COSMIC panel applet for Codex, Claude Code, Cursor, Gemini, and Copilot usage</summary>
+  <summary>COSMIC panel applet for AI coding usage tracking</summary>
   <description>
-    <p>YapCap is a native COSMIC panel applet that tracks your AI coding quota for Codex, Claude Code, Cursor, Gemini, and GitHub Copilot right from the panel. Add accounts once and YapCap fetches usage directly from provider APIs. No telemetry, no cloud sync, no separate service account required.</p>
+    <p>YapCap is a native COSMIC panel applet that tracks your AI coding quota for Codex, Claude Code, Cursor, Gemini, Minimax, GitHub Copilot, and Kimi for Coding right from the panel. Add accounts once and YapCap fetches usage directly from provider APIs. No telemetry, no cloud sync, no separate service account required.</p>
     <p>Use the popup to compare multiple accounts, see which CLI account is active, switch panel styles, and follow your COSMIC light, dark, and accent color settings.</p>
     <p>Main features:</p>
     <ul>
@@ -19,7 +19,9 @@
       <li>Claude usage tracking and extra usage meter</li>
       <li>Cursor usage tracking: Total, Auto + Composer, and API</li>
       <li>Gemini usage tracking: Pro, Flash and Lite quotas</li>
+      <li>Minimax and Kimi for Coding API-key usage tracking</li>
       <li>GitHub Copilot usage tracking: Free and paid quota shapes</li>
+      <li>Optional one-time Kimi API-key prefill from OpenCode's local auth file</li>
       <li>Multiple accounts per provider</li>
       <li>Active account badge</li>
       <li>COSMIC theme integration</li>
@@ -83,6 +85,7 @@
     <keyword>Cursor</keyword>
     <keyword>Gemini</keyword>
     <keyword>Copilot</keyword>
+    <keyword>Kimi</keyword>
     <keyword>Panel</keyword>
     <keyword>Applet</keyword>
   </keywords>

@@ -2,7 +2,7 @@
 
 # YapCap
 
-**A native COSMIC panel applet that tracks AI coding quota for Codex, Claude Code, Cursor, Gemini, Minimax, and GitHub Copilot.**
+**A native COSMIC panel applet that tracks AI coding quota for Codex, Claude Code, Cursor, Gemini, Minimax, GitHub Copilot, and Kimi for Coding.**
 
 <img src="resources/screenshots/screenshot-hero.png" alt="YapCap panel applet" width="780" />
 
@@ -29,8 +29,10 @@ YapCap lives in your COSMIC panel and shows how much of your AI coding quota you
     - **Gemini** — Pro / Flash / Lite quota bars (OAuth accounts only)
     - **Minimax** — API key usage tracking
     - **GitHub Copilot** — Free chat/completions or paid premium interactions
+    - **Kimi for Coding** — API key usage tracking with weekly and rate-limit windows
 - 👥 **Multi-account view** — add, switch, and remove accounts per provider. Turn on **Show all accounts** to lay out each selected account side by side in the popup and show one usage-bar group per account in the panel.
-- 🔐 **In-app login** — guided browser login for Codex, Claude, Gemini, and Copilot; Cursor scans the local IDE state.
+- 🔐 **In-app login** — guided browser login for Codex, Claude, Gemini, and Copilot; API-key forms for Minimax and Kimi; Cursor scans the local IDE state.
+- 🔑 **OpenCode prefill** — Kimi can optionally prefill its API-key form once from OpenCode's local `auth.json`; usage refresh never synchronizes with that file.
 - ✅ **Active badge** — marks the account currently in use by your host CLI for Codex, Claude, and Gemini.
 - ⚙️ **Configurable panel** — logo+bars, bars only, logo+%, or %-only; used/left toggle; relative or absolute reset times.
 
@@ -163,7 +165,7 @@ Each provider supports multiple accounts. Manage them from the popup under **Set
 - **Switch account** — tap any account row to make it active; the panel and popup update immediately.
 - **Remove account** — deletes only YapCap's copy of the credentials. Provider accounts and host app configs are never touched.
 
-Codex, Claude, Cursor, Gemini, and Minimax keep at most one account per email address. Copilot keeps at most one account per GitHub numeric user id and displays the current GitHub username.
+Codex, Claude, Cursor, and Gemini keep at most one account per provider identity. Copilot keeps at most one account per GitHub numeric user id and displays the current GitHub username. Minimax and Kimi use user-provided labels, so duplicate labels are allowed.
 
 ## Panel styles
 
@@ -204,7 +206,7 @@ YapCap stores provider credentials under YapCap-owned account storage and calls 
 | --- | --- |
 | `~/.config/cosmic/io.github.TopiCsarno.YapCap/v502/` | Settings (provider toggles, accounts, display options) |
 | `~/.cache/yapcap/snapshots.json` | Former cached usage state; current builds leave it on disk but do not load it |
-| `~/.local/state/yapcap/`{`codex`,`claude`,`cursor`,`gemini`,`copilot`}`-accounts/` | Managed credential copies |
+| `~/.local/state/yapcap/`{`codex`,`claude`,`cursor`,`gemini`,`minimax`,`copilot`,`kimi`}`-accounts/` | Managed credential copies |
 | `~/.local/state/yapcap/logs/yapcap.log` | Log output |
 
 **Flatpak** (`io.github.TopiCsarno.YapCap`): YapCap account state and logs live only under `~/.var/app/io.github.TopiCsarno.YapCap/data/yapcap/`. Old Flatpak snapshot caches under `~/.var/app/io.github.TopiCsarno.YapCap/cache/yapcap/` may remain on disk but are no longer active runtime state. The manifest mounts host `~/.config/cosmic` read-write for COSMIC app settings (not `xdg-config/cosmic`, for compatibility with Flatpak path resolution).
@@ -224,6 +226,9 @@ YapCap stores provider credentials under YapCap-owned account storage and calls 
   `cloudaicompanionProject` returned by Google's `loadCodeAssist` for each
   account. Users with multiple paid GCP projects see whichever project Google
   selects, not all of them.
+- **Kimi uses API keys.** Add a Kimi for Coding account with its API key; an
+  optional one-time prefill can come from OpenCode's local `auth.json`, but the
+  file is never read during usage refresh.
 
 ## License
 
