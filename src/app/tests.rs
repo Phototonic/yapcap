@@ -1060,9 +1060,8 @@ fn delete_account_requests_refresh_for_all_providers() {
 
         let mut app = test_app(None);
         let keep_id = "keep";
-        let remove_account_id;
 
-        match provider {
+        let remove_account_id = match provider {
             ProviderId::Codex => {
                 seed_account_storage(
                     crate::config::paths().codex_accounts_dir,
@@ -1077,7 +1076,7 @@ fn delete_account_requests_refresh_for_all_providers() {
                     .codex_managed_accounts
                     .push(codex_account("remove"));
                 app.config.selected_codex_account_ids = vec![keep_id.to_string()];
-                remove_account_id = "remove".to_string();
+                "remove".to_string()
             }
             ProviderId::Claude => {
                 app.config
@@ -1087,7 +1086,7 @@ fn delete_account_requests_refresh_for_all_providers() {
                     .claude_managed_accounts
                     .push(claude_account("remove"));
                 app.config.selected_claude_account_ids = vec![keep_id.to_string()];
-                remove_account_id = "remove".to_string();
+                "remove".to_string()
             }
             ProviderId::Cursor => {
                 seed_account_storage(
@@ -1103,7 +1102,7 @@ fn delete_account_requests_refresh_for_all_providers() {
                     .cursor_managed_accounts
                     .push(cursor_account("remove", "remove@example.com"));
                 app.config.selected_cursor_account_ids = vec![format!("cursor-managed:{keep_id}")];
-                remove_account_id = "cursor-managed:remove".to_string();
+                "cursor-managed:remove".to_string()
             }
             ProviderId::Gemini => {
                 app.config
@@ -1113,7 +1112,7 @@ fn delete_account_requests_refresh_for_all_providers() {
                     .gemini_managed_accounts
                     .push(gemini_account("remove"));
                 app.config.selected_gemini_account_ids = vec![keep_id.to_string()];
-                remove_account_id = "remove".to_string();
+                "remove".to_string()
             }
             ProviderId::Copilot => {
                 app.config
@@ -1123,7 +1122,7 @@ fn delete_account_requests_refresh_for_all_providers() {
                     .copilot_managed_accounts
                     .push(copilot_account("remove", "remove"));
                 app.config.selected_copilot_account_ids = vec![keep_id.to_string()];
-                remove_account_id = "remove".to_string();
+                "remove".to_string()
             }
             ProviderId::Minimax => {
                 app.config
@@ -1133,7 +1132,7 @@ fn delete_account_requests_refresh_for_all_providers() {
                     .minimax_managed_accounts
                     .push(minimax_account("remove"));
                 app.config.selected_minimax_account_ids = vec![keep_id.to_string()];
-                remove_account_id = "remove".to_string();
+                "remove".to_string()
             }
             ProviderId::Kimi => {
                 app.config.kimi_managed_accounts.push(kimi_account(keep_id));
@@ -1141,9 +1140,9 @@ fn delete_account_requests_refresh_for_all_providers() {
                     .kimi_managed_accounts
                     .push(kimi_account("remove"));
                 app.config.selected_kimi_account_ids = vec![keep_id.to_string()];
-                remove_account_id = "remove".to_string();
+                "remove".to_string()
             }
-        }
+        };
 
         let _task = app.delete_account(provider, &remove_account_id);
 
