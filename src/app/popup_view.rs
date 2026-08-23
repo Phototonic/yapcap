@@ -26,6 +26,7 @@ use crate::providers::copilot::{CopilotLoginState, CopilotLoginStatus};
 use crate::providers::cursor::CursorScanState;
 use crate::providers::gemini::{GeminiLoginState, GeminiLoginStatus};
 use crate::providers::interface::ProviderAccountActionSupport;
+use crate::providers::kimi::login::KimiLoginState;
 use crate::providers::minimax::MinimaxLoginState;
 use crate::providers::registry;
 use crate::updates::UpdateStatus;
@@ -66,6 +67,7 @@ pub struct ProviderLoginStates<'a> {
     pub gemini: Option<&'a GeminiLoginState>,
     pub copilot: Option<&'a CopilotLoginState>,
     pub minimax: Option<&'a MinimaxLoginState>,
+    pub kimi: Option<&'a KimiLoginState>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]

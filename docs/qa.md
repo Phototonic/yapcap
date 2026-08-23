@@ -22,7 +22,7 @@ Do not expect the Flatpak build to use `~/.local/state/yapcap/` for YapCap data�
 
 ## 1. Fresh install
 
-- `just clear-all-data` then install. All five provider tabs visible with "Login required" state (not hidden).
+- `just clear-all-data` then install. All seven provider tabs visible with "Login required" state (not hidden).
 - Existing `v501` COSMIC settings are not loaded after the `v502` schema boundary; users must re-add accounts.
 - Existing account directories, old snapshot caches, and logs are not automatically deleted by the schema boundary and may remain orphaned.
 - Settings → General → About shows correct version and dist label ("Native" or "Flatpak").
@@ -341,7 +341,69 @@ In Settings → General, cycle through all four panel icon styles and verify the
 
 ---
 
-## 11. Multi-account
+## 11. Kimi for Coding
+
+### 11.1 Add account and API-key input
+
+- Settings → Kimi → Add account opens the API-key form without a browser flow.
+- The API-key field is masked by default. Enter a test-only key, use the reveal
+  control to verify the value is visible, then mask it again before saving.
+- For OpenCode prefill, create a temporary test-only auth file containing a
+  `kimi-for-coding` entry with a `key`, launch with
+  `YAPCAP_OPENCODE_AUTH_PATH=/path/to/auth.json`, and open the Kimi add-account
+  form. Verify the field is prefilled and the imported-from-OpenCode hint is
+  shown. Do not use a production key in the fixture.
+- Cancel the form and verify no Kimi account or key file was created.
+- Save a non-empty test key and optional label. Verify one account appears,
+  the new account is selected in single-account mode, the key is stored under
+  native `~/.local/state/yapcap/kimi-accounts/<id>/` or Flatpak
+  `~/.var/app/io.github.TopiCsarno.YapCap/data/yapcap/kimi-accounts/<id>/`, and
+  the key is absent from COSMIC configuration and logs.
+
+### 11.2 Usage display and errors
+
+- A successful refresh shows **Weekly** and **Rate Limit (300m)** windows when
+  both are present, with used percentages and reset times.
+- Verify remaining-only usage is displayed as used percentage and a response
+  without `limits` still shows the Weekly window.
+- A 401 or 403 response shows Login required without discarding the account.
+- A 429 response shows rate-limited state and honors a numeric `Retry-After`
+  value. A network failure keeps the previous snapshot visible as stale.
+- Change or remove the OpenCode auth file after saving. Refresh Kimi and verify
+  usage continues from YapCap storage or `KIMI_API_KEY`; the OpenCode file is
+  not read or synchronized during refresh.
+
+### 11.3 Multi-account selection
+
+- Add a second Kimi account with a different label. Verify both accounts appear
+  in Settings and the popup.
+- With **Show all accounts** off, saving a Kimi account selects only that
+  account. With it on, verify a new account is added while fewer than four are
+  selected.
+- Select four accounts, add another, and verify the fifth account is stored
+  but remains unselected until an existing selection is changed.
+
+### 11.4 Reauthentication
+
+- Click the re-authenticate action for an existing Kimi account. Verify the
+  target account id and label remain in the form.
+- Enter a replacement key and edit the label before saving. Verify the existing
+  id, original label, and creation time are preserved, while the stored key and
+  authentication timestamps are replaced.
+- Verify reauthentication leaves exactly one managed account and does not
+  create a second generated Kimi account or directory.
+
+### 11.5 Account removal and demo coverage
+
+- Remove a Kimi account from Settings. Verify only the YapCap-owned Kimi account
+  directory is deleted and the provider returns to Login required when empty.
+- Run with `YAPCAP_DEMO=1`. Verify the Kimi card shows one API-key account with
+  Weekly and Rate Limit windows and no Active badge.
+- Repeat add, refresh, re-auth, and remove in Native and Flatpak builds.
+
+---
+
+## 12. Multi-account
 
 - Add a second account for any provider.
 - `Show all accounts` toggle appears only when the provider has more than one account.
@@ -353,7 +415,7 @@ In Settings → General, cycle through all four panel icon styles and verify the
 
 ---
 
-## 12. Stale / error states
+## 13. Stale / error states
 
 - Kill network (`nmcli networking off`). Trigger a refresh. Verify "No internet connection. Showing cached data; information is not up to date." message. Cached usage data still visible. Re-enable network, verify Live badge returns.
 - Wait 11 minutes without refreshing (or set refresh interval to max and advance clock). Verify account badge switches from Live to Stale. Status line appends "(stale)".
@@ -362,7 +424,7 @@ In Settings → General, cycle through all four panel icon styles and verify the
 
 ---
 
-## 13. Provider enable/disable
+## 14. Provider enable/disable
 
 - Disable a provider via its settings toggle — provider tab disappears from popup nav.
 - All provider-specific settings below the toggle are dimmed and non-interactive when disabled.
@@ -371,7 +433,7 @@ In Settings → General, cycle through all four panel icon styles and verify the
 
 ---
 
-## 14. Popup sizing
+## 15. Popup sizing
 
 - Single-account provider: popup is 420 px wide.
 - Two-account provider: popup is 840 px wide.
@@ -382,13 +444,13 @@ In Settings → General, cycle through all four panel icon styles and verify the
 
 ---
 
-## 15. Accounts removed from filesystem
+## 16. Accounts removed from filesystem
 
 - Manually delete a provider account directory from the YapCap data tree (`~/.local/state/yapcap/<provider>-accounts/` native, or `~/.var/app/io.github.TopiCsarno.YapCap/data/yapcap/<provider>-accounts/` Flatpak). Trigger a refresh. Verify the provider surfaces "Login required" or empty state rather than showing a stale snapshot indefinitely.
 
 ---
 
-## 16. Config state file manipulation
+## 17. Config state file manipulation
 
 - Delete old cached snapshots (native `~/.cache/yapcap/snapshots.json`, Flatpak `~/.var/app/io.github.TopiCsarno.YapCap/cache/yapcap/snapshots.json`). Restart. Verify runtime comes from shared COSMIC runtime state, not the old file.
 - Delete the COSMIC config dir (`just clear-config`). Restart. Verify defaults apply: all providers enabled, refresh interval 300s, relative reset time, used amount format.
@@ -398,7 +460,7 @@ In Settings → General, cycle through all four panel icon styles and verify the
 
 ---
 
-## 17. Multi-process runtime sync
+## 18. Multi-process runtime sync
 
 Use a COSMIC panel configured on two displays so two YapCap applet processes run
 at the same time. For native builds, watch
@@ -427,7 +489,7 @@ Expected diagnostic log patterns for this section:
 
 ---
 
-## 18. Logging
+## 19. Logging
 
 - Native: verify `~/.local/state/yapcap/logs/yapcap.log`. Flatpak: verify `~/.var/app/io.github.TopiCsarno.YapCap/data/yapcap/logs/yapcap.log`. Each is written during a normal session for that build.
 - Verify no bearer tokens, access tokens, cookie values, or refresh tokens appear in the log.
@@ -435,7 +497,7 @@ Expected diagnostic log patterns for this section:
 
 ---
 
-## 19. Flatpak-specific
+## 20. Flatpak-specific
 
 - Install via `just flatpak-install`. YapCap appears in COSMIC applet list.
 - Install from the COSMIC Store. YapCap appears in the COSMIC panel applet picker after installation, uses the `io.github.TopiCsarno.YapCap` Flatpak id, appears under the applet category/filter, and shows "Place on desktop" rather than "Open".

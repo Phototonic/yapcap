@@ -2,8 +2,8 @@
 
 use crate::config::{
     Config, ManagedClaudeAccountConfig, ManagedCodexAccountConfig, ManagedCopilotAccountConfig,
-    ManagedCursorAccountConfig, ManagedGeminiAccountConfig, ManagedMinimaxAccountConfig,
-    ProviderVisibilityMode, paths,
+    ManagedCursorAccountConfig, ManagedGeminiAccountConfig, ManagedKimiAccountConfig,
+    ManagedMinimaxAccountConfig, ProviderVisibilityMode, paths,
 };
 use crate::model::{
     AccountSelectionStatus, AppState, AuthState, ExtraUsageState, ProviderAccountRuntimeState,
@@ -26,6 +26,7 @@ const GEMINI_PRIMARY_ID: &str = "yapcap-demo:gemini-primary";
 const COPILOT_FREE_ID: &str = "yapcap-demo:copilot-casey-free";
 const COPILOT_PRO_ID: &str = "yapcap-demo:copilot-morgan-pro";
 const MINIMAX_PRIMARY_ID: &str = "yapcap-demo:minimax-primary";
+const KIMI_PRIMARY_ID: &str = "yapcap-demo:kimi-primary";
 
 fn env_truthy() -> bool {
     std::env::var(DEMO_ENV).is_ok_and(|value| {
@@ -55,6 +56,7 @@ pub fn apply_config(config: &mut Config) {
     config.gemini_enabled = true;
     config.copilot_enabled = true;
     config.minimax_enabled = true;
+    config.kimi_enabled = true;
 
     config.codex_managed_accounts = demo_codex_accounts();
     config.claude_managed_accounts = demo_claude_accounts();
@@ -62,6 +64,7 @@ pub fn apply_config(config: &mut Config) {
     config.gemini_managed_accounts = demo_gemini_accounts();
     config.copilot_managed_accounts = demo_copilot_accounts();
     config.minimax_managed_accounts = demo_minimax_accounts();
+    config.kimi_managed_accounts = demo_kimi_accounts();
 
     config.provider_visibility_mode = ProviderVisibilityMode::UserManaged;
 
@@ -95,6 +98,10 @@ pub fn apply_config(config: &mut Config) {
         config.selected_minimax_account_ids = vec![MINIMAX_PRIMARY_ID.to_string()];
         config.set_provider_show_all(ProviderId::Minimax, false);
     }
+    if config.selected_kimi_account_ids.is_empty() {
+        config.selected_kimi_account_ids = vec![KIMI_PRIMARY_ID.to_string()];
+        config.set_provider_show_all(ProviderId::Kimi, false);
+    }
 }
 
 pub fn strip_leaked_state(config: &mut Config) -> bool {
@@ -110,6 +117,8 @@ pub fn strip_leaked_state(config: &mut Config) -> bool {
     changed |= retain_len_changed(&mut config.copilot_managed_accounts, |account| &account.id);
     changed |= strip_ids(&mut config.selected_minimax_account_ids);
     changed |= retain_len_changed(&mut config.minimax_managed_accounts, |account| &account.id);
+    changed |= strip_ids(&mut config.selected_kimi_account_ids);
+    changed |= retain_len_changed(&mut config.kimi_managed_accounts, |account| &account.id);
     changed
 }
 
@@ -175,6 +184,7 @@ fn demo_system_active_account_id(provider: ProviderId) -> Option<String> {
         ProviderId::Gemini => GEMINI_PRIMARY_ID,
         ProviderId::Copilot => return None,
         ProviderId::Minimax => return None,
+        ProviderId::Kimi => return None,
     };
     Some(id.to_string())
 }
@@ -186,6 +196,7 @@ fn demo_source(provider: ProviderId) -> String {
         }
         ProviderId::Cursor => "Managed Account".to_string(),
         ProviderId::Minimax => "API Key".to_string(),
+        ProviderId::Kimi => "API Key".to_string(),
     }
 }
 
@@ -316,6 +327,18 @@ fn demo_runtime_accounts(provider: ProviderId) -> Vec<ProviderAccountRuntimeStat
                 auth_state: AuthState::Ready,
                 error: None,
                 snapshot: snapshot_minimax_primary(),
+            },
+        )],
+        ProviderId::Kimi => vec![demo_account(
+            provider,
+            DemoAccount {
+                account_id: KIMI_PRIMARY_ID,
+                label: "jordan-kimi",
+                last_success_at: now - Duration::minutes(3),
+                health: ProviderHealth::Ok,
+                auth_state: AuthState::Ready,
+                error: None,
+                snapshot: snapshot_kimi_primary(),
             },
         )],
     }
@@ -714,6 +737,18 @@ fn demo_minimax_accounts() -> Vec<ManagedMinimaxAccountConfig> {
     }]
 }
 
+fn demo_kimi_accounts() -> Vec<ManagedKimiAccountConfig> {
+    let now = demo_timestamp();
+    vec![ManagedKimiAccountConfig {
+        id: KIMI_PRIMARY_ID.to_string(),
+        label: "jordan-kimi".to_string(),
+        api_key_source: "demo".to_string(),
+        created_at: now,
+        updated_at: now,
+        last_authenticated_at: Some(now),
+    }]
+}
+
 fn snapshot_minimax_primary() -> UsageSnapshot {
     let now = Utc::now();
     UsageSnapshot {
@@ -744,6 +779,42 @@ fn snapshot_minimax_primary() -> UsageSnapshot {
             account_id: None,
             plan: Some("Minimax.io".to_string()),
             display_name: Some("jordan-minimax".to_string()),
+        },
+    }
+}
+
+fn snapshot_kimi_primary() -> UsageSnapshot {
+    let now = Utc::now();
+    let weekly_reset = now + Duration::days(4);
+    let rate_limit_reset = now + Duration::minutes(180);
+    UsageSnapshot {
+        provider: ProviderId::Kimi,
+        source: "API Key".to_string(),
+        updated_at: now,
+        headline: UsageHeadline(0),
+        windows: vec![
+            UsageWindow {
+                label: "Weekly".to_string(),
+                used_percent: 38.0,
+                reset_at: Some(weekly_reset),
+                window_seconds: None,
+                reset_description: Some(weekly_reset.to_rfc3339()),
+            },
+            UsageWindow {
+                label: "Rate Limit (300m)".to_string(),
+                used_percent: 22.0,
+                reset_at: Some(rate_limit_reset),
+                window_seconds: Some(300 * 60),
+                reset_description: Some(rate_limit_reset.to_rfc3339()),
+            },
+        ],
+        provider_cost: None,
+        extra_usage: None,
+        identity: ProviderIdentity {
+            email: None,
+            account_id: None,
+            plan: Some("LEVEL_INTERMEDIATE".to_string()),
+            display_name: Some("jordan-kimi".to_string()),
         },
     }
 }
@@ -926,18 +997,22 @@ mod tests {
         assert_eq!(config.gemini_managed_accounts.len(), 1);
         assert_eq!(config.copilot_managed_accounts.len(), 2);
         assert_eq!(config.minimax_managed_accounts.len(), 1);
+        assert_eq!(config.kimi_managed_accounts.len(), 1);
         assert_eq!(config.selected_codex_account_ids.len(), 3);
         assert_eq!(config.selected_claude_account_ids.len(), 2);
         assert_eq!(config.selected_cursor_account_ids.len(), 1);
         assert_eq!(config.selected_gemini_account_ids.len(), 1);
         assert_eq!(config.selected_copilot_account_ids.len(), 2);
         assert_eq!(config.selected_minimax_account_ids.len(), 1);
+        assert_eq!(config.selected_kimi_account_ids.len(), 1);
         assert!(config.copilot_enabled);
         assert!(config.minimax_enabled);
+        assert!(config.kimi_enabled);
         assert!(config.show_all_accounts(ProviderId::Codex));
         assert!(config.show_all_accounts(ProviderId::Claude));
         assert!(!config.show_all_accounts(ProviderId::Cursor));
         assert!(!config.show_all_accounts(ProviderId::Gemini));
+        assert!(!config.show_all_accounts(ProviderId::Kimi));
         assert!(config.show_all_accounts(ProviderId::Copilot));
         assert_eq!(
             config.provider_visibility_mode,
@@ -986,6 +1061,12 @@ mod tests {
         assert_eq!(
             state
                 .provider(ProviderId::Copilot)
+                .and_then(|provider| provider.system_active_account_id.as_deref()),
+            None
+        );
+        assert_eq!(
+            state
+                .provider(ProviderId::Kimi)
                 .and_then(|provider| provider.system_active_account_id.as_deref()),
             None
         );
@@ -1100,6 +1181,46 @@ mod tests {
         let snapshot = account.snapshot.as_ref().expect("minimax demo snapshot");
         assert_eq!(snapshot.identity.plan.as_deref(), Some("Minimax.io"));
         assert_eq!(snapshot.windows.len(), 2);
+    }
+
+    #[test]
+    fn kimi_demo_seeds_one_account_with_usage_windows() {
+        let _guard = test_support::env_lock();
+        unsafe {
+            std::env::set_var(DEMO_ENV, "1");
+        }
+        let mut config = Config::default();
+        apply_config(&mut config);
+        let mut state = AppState::empty();
+        apply(&config, &mut state);
+        unsafe {
+            std::env::remove_var(DEMO_ENV);
+        }
+
+        assert_eq!(
+            config.selected_kimi_account_ids,
+            vec![KIMI_PRIMARY_ID.to_string()]
+        );
+        let account = state
+            .provider_accounts
+            .iter()
+            .find(|account| {
+                account.provider == ProviderId::Kimi && account.account_id == KIMI_PRIMARY_ID
+            })
+            .expect("kimi demo account");
+        assert_eq!(account.source_label.as_deref(), Some("API Key"));
+        assert_eq!(account.health, ProviderHealth::Ok);
+        let snapshot = account.snapshot.as_ref().expect("kimi demo snapshot");
+        assert_eq!(snapshot.provider, ProviderId::Kimi);
+        assert_eq!(
+            snapshot.identity.plan.as_deref(),
+            Some("LEVEL_INTERMEDIATE")
+        );
+        assert_eq!(snapshot.windows.len(), 2);
+        assert_eq!(snapshot.windows[0].label, "Weekly");
+        assert!((snapshot.windows[0].used_percent - 38.0).abs() < 0.001);
+        assert_eq!(snapshot.windows[1].label, "Rate Limit (300m)");
+        assert!((snapshot.windows[1].used_percent - 22.0).abs() < 0.001);
     }
 
     #[test]

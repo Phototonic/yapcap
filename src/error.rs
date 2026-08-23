@@ -52,6 +52,12 @@ impl From<MinimaxError> for AppError {
     }
 }
 
+impl From<KimiError> for AppError {
+    fn from(value: KimiError) -> Self {
+        Self::Provider(ProviderError::Kimi(value))
+    }
+}
+
 impl AppError {
     #[must_use]
     pub fn user_message(&self) -> String {
@@ -93,6 +99,7 @@ impl AppError {
             Self::Provider(ProviderError::Gemini(e)) => e.rate_limit_retry_after_secs(),
             Self::Provider(ProviderError::Copilot(e)) => e.rate_limit_retry_after_secs(),
             Self::Provider(ProviderError::Minimax(e)) => e.rate_limit_retry_after_secs(),
+            Self::Provider(ProviderError::Kimi(e)) => e.rate_limit_retry_after_secs(),
             _ => None,
         }
     }
@@ -124,6 +131,8 @@ pub enum ProviderError {
     Copilot(#[from] CopilotError),
     #[error(transparent)]
     Minimax(#[from] MinimaxError),
+    #[error(transparent)]
+    Kimi(#[from] KimiError),
 }
 
 impl ProviderError {
@@ -136,6 +145,7 @@ impl ProviderError {
             Self::Gemini(error) => error.is_network_unavailable(),
             Self::Copilot(error) => error.is_network_unavailable(),
             Self::Minimax(error) => error.is_network_unavailable(),
+            Self::Kimi(error) => error.is_network_unavailable(),
         }
     }
 
@@ -148,6 +158,7 @@ impl ProviderError {
             Self::Gemini(error) => error.requires_user_action(),
             Self::Copilot(error) => error.requires_user_action(),
             Self::Minimax(error) => error.requires_user_action(),
+            Self::Kimi(error) => error.requires_user_action(),
         }
     }
 
@@ -160,6 +171,7 @@ impl ProviderError {
             Self::Gemini(error) => error.is_transient(),
             Self::Copilot(error) => error.is_transient(),
             Self::Minimax(error) => error.is_transient(),
+            Self::Kimi(error) => error.is_transient(),
         }
     }
 }
@@ -591,9 +603,72 @@ impl MinimaxError {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum KimiError {
+    #[error("Kimi login required")]
+    LoginRequired,
+    #[error("Kimi usage request failed")]
+    UsageRequest(#[source] reqwest::Error),
+    #[error("Kimi usage endpoint returned HTTP {status}")]
+    UsageHttp { status: u16 },
+    #[error("Kimi usage endpoint returned error")]
+    UsageEndpoint(#[source] reqwest::Error),
+    #[error("failed to decode Kimi usage response")]
+    DecodeUsage(#[source] serde_json::Error),
+    #[error("Kimi response had no usage windows")]
+    NoUsageData,
+    #[error("Rate limited by Kimi — will retry automatically")]
+    RateLimited { retry_after_secs: Option<u64> },
+    #[error("Kimi API error: {message}")]
+    ApiError { message: String },
+}
+
+impl KimiError {
+    #[must_use]
+    pub fn is_network_unavailable(&self) -> bool {
+        match self {
+            Self::UsageRequest(source) => request_could_not_reach_network(source),
+            _ => false,
+        }
+    }
+
+    #[must_use]
+    pub fn requires_user_action(&self) -> bool {
+        matches!(self, Self::LoginRequired)
+    }
+
+    #[must_use]
+    pub fn rate_limit_retry_after_secs(&self) -> Option<u64> {
+        match self {
+            Self::RateLimited { retry_after_secs } => *retry_after_secs,
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn is_transient(&self) -> bool {
+        match self {
+            Self::RateLimited { .. } => true,
+            Self::UsageRequest(source) => request_could_not_reach_network(source),
+            Self::UsageHttp { status } => *status >= 500,
+            _ => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn kimi_rate_limit_routes_retry_after_through_app_error() {
+        let err = AppError::Provider(ProviderError::Kimi(KimiError::RateLimited {
+            retry_after_secs: Some(42),
+        }));
+        assert_eq!(err.rate_limit_retry_after_secs(), Some(42));
+        assert!(err.is_transient());
+        assert!(!err.requires_user_action());
+    }
 
     #[test]
     fn claude_rate_limit_is_transient() {

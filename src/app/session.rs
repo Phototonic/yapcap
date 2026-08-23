@@ -41,6 +41,7 @@ pub(super) fn start_login(app: &mut AppModel, provider: ProviderId) -> Task<Mess
         ProviderId::Gemini => login::start_login::<login::GeminiLoginFlow>(app),
         ProviderId::Copilot => login::start_login::<login::CopilotLoginFlow>(app),
         ProviderId::Minimax => login::start_login::<login::MinimaxLoginFlow>(app),
+        ProviderId::Kimi => login::start_login::<login::KimiLoginFlow>(app),
         ProviderId::Cursor => Task::none(),
     }
 }
@@ -52,6 +53,7 @@ pub(super) fn cancel_login(app: &mut AppModel, provider: ProviderId) {
         ProviderId::Gemini => login::cancel_login::<login::GeminiLoginFlow>(app),
         ProviderId::Copilot => login::cancel_login::<login::CopilotLoginFlow>(app),
         ProviderId::Minimax => login::cancel_login::<login::MinimaxLoginFlow>(app),
+        ProviderId::Kimi => login::cancel_login::<login::KimiLoginFlow>(app),
         ProviderId::Cursor => {}
     }
 }
@@ -67,6 +69,7 @@ pub(super) fn reauthenticate(
         ProviderId::Gemini => login::reauthenticate::<login::GeminiLoginFlow>(app, account_id),
         ProviderId::Copilot => login::reauthenticate::<login::CopilotLoginFlow>(app, account_id),
         ProviderId::Minimax => login::reauthenticate::<login::MinimaxLoginFlow>(app, account_id),
+        ProviderId::Kimi => login::reauthenticate::<login::KimiLoginFlow>(app, account_id),
         ProviderId::Cursor => app.reauthenticate_cursor_account(account_id),
     }
 }
@@ -85,7 +88,7 @@ pub(super) fn sync_metadata_after_refresh(app: &mut AppModel, provider: Provider
             app.update_cursor_metadata_from_state();
             app.update_cursor_active_account();
         }
-        ProviderId::Gemini | ProviderId::Copilot | ProviderId::Minimax => {}
+        ProviderId::Gemini | ProviderId::Copilot | ProviderId::Minimax | ProviderId::Kimi => {}
     }
 }
 

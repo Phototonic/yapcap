@@ -5,6 +5,7 @@ mod codex_adapter;
 mod copilot_adapter;
 mod cursor_adapter;
 mod gemini_adapter;
+mod kimi_adapter;
 mod minimax_adapter;
 
 use crate::account_storage::ProviderAccountStorage;
@@ -22,6 +23,7 @@ pub(super) fn adapter(provider: ProviderId) -> &'static dyn ProviderAdapter {
         ProviderId::Cursor => &CURSOR_ADAPTER,
         ProviderId::Gemini => &GEMINI_ADAPTER,
         ProviderId::Copilot => &COPILOT_ADAPTER,
+        ProviderId::Kimi => &KIMI_ADAPTER,
         ProviderId::Minimax => &MINIMAX_ADAPTER,
     }
 }
@@ -31,6 +33,7 @@ static CLAUDE_ADAPTER: claude_adapter::ClaudeAdapter = claude_adapter::ClaudeAda
 static CURSOR_ADAPTER: cursor_adapter::CursorAdapter = cursor_adapter::CursorAdapter;
 static GEMINI_ADAPTER: gemini_adapter::GeminiAdapter = gemini_adapter::GeminiAdapter;
 static COPILOT_ADAPTER: copilot_adapter::CopilotAdapter = copilot_adapter::CopilotAdapter;
+static KIMI_ADAPTER: kimi_adapter::KimiAdapter = kimi_adapter::KimiAdapter;
 static MINIMAX_ADAPTER: minimax_adapter::MinimaxAdapter = minimax_adapter::MinimaxAdapter;
 
 pub(super) fn reconcile_provider_account_descriptors(
@@ -172,6 +175,21 @@ pub(super) fn minimax_system_active_account_id(
             managed_accounts
                 .iter()
                 .find(|account| account.api_key_source == "env:MINIMAX_API_KEY")
+                .map(|account| account.id.clone())
+        }
+    })
+}
+
+pub(super) fn kimi_system_active_account_id(
+    managed_accounts: &[crate::config::ManagedKimiAccountConfig],
+) -> Option<String> {
+    std::env::var("KIMI_API_KEY").ok().and_then(|api_key| {
+        if api_key.is_empty() {
+            None
+        } else {
+            managed_accounts
+                .iter()
+                .find(|account| account.api_key_source == "env:KIMI_API_KEY")
                 .map(|account| account.id.clone())
         }
     })

@@ -41,6 +41,10 @@ use crate::providers::codex::{self, CodexLoginEvent, CodexLoginState, CodexLogin
 use crate::providers::copilot::{self, CopilotLoginEvent, CopilotLoginState, CopilotLoginStatus};
 use crate::providers::cursor::{self, CursorScanResult, CursorScanState};
 use crate::providers::gemini::{self, GeminiLoginEvent, GeminiLoginState, GeminiLoginStatus};
+use crate::providers::kimi::{
+    self,
+    login::{KimiLoginEvent, KimiLoginState},
+};
 use crate::providers::minimax::{self, MinimaxLoginEvent, MinimaxLoginState, MinimaxLoginStatus};
 use crate::providers::registry;
 use crate::refresh_owner::{
@@ -109,6 +113,8 @@ pub struct AppModel {
     copilot_login_handle: Option<Handle>,
     minimax_login: Option<MinimaxLoginState>,
     minimax_login_handle: Option<Handle>,
+    kimi_login: Option<KimiLoginState>,
+    kimi_login_handle: Option<Handle>,
 }
 
 impl Drop for AppModel {
@@ -192,6 +198,7 @@ pub(super) struct PopupBodyMeasurements {
     gemini: Option<f32>,
     copilot: Option<f32>,
     minimax: Option<f32>,
+    kimi: Option<f32>,
     general_settings: Option<f32>,
     codex_settings: Option<f32>,
     claude_settings: Option<f32>,
@@ -199,6 +206,7 @@ pub(super) struct PopupBodyMeasurements {
     gemini_settings: Option<f32>,
     copilot_settings: Option<f32>,
     minimax_settings: Option<f32>,
+    kimi_settings: Option<f32>,
 }
 
 impl PopupBodyMeasurements {
@@ -210,6 +218,7 @@ impl PopupBodyMeasurements {
             ProviderId::Gemini => self.gemini,
             ProviderId::Copilot => self.copilot,
             ProviderId::Minimax => self.minimax,
+            ProviderId::Kimi => self.kimi,
         }
     }
 
@@ -221,6 +230,7 @@ impl PopupBodyMeasurements {
             ProviderId::Gemini => self.gemini = Some(height),
             ProviderId::Copilot => self.copilot = Some(height),
             ProviderId::Minimax => self.minimax = Some(height),
+            ProviderId::Kimi => self.kimi = Some(height),
         }
     }
 
@@ -233,6 +243,7 @@ impl PopupBodyMeasurements {
             SettingsRoute::Provider(ProviderId::Gemini) => self.gemini_settings = Some(height),
             SettingsRoute::Provider(ProviderId::Copilot) => self.copilot_settings = Some(height),
             SettingsRoute::Provider(ProviderId::Minimax) => self.minimax_settings = Some(height),
+            SettingsRoute::Provider(ProviderId::Kimi) => self.kimi_settings = Some(height),
         }
     }
 
@@ -243,7 +254,9 @@ impl PopupBodyMeasurements {
                 .max(self.claude_settings?)
                 .max(self.cursor_settings?)
                 .max(self.gemini_settings?)
-                .max(self.copilot_settings?),
+                .max(self.copilot_settings?)
+                .max(self.minimax_settings?)
+                .max(self.kimi_settings?),
         )
     }
 
@@ -348,6 +361,8 @@ impl cosmic::Application for AppModel {
             copilot_login_handle: None,
             minimax_login: None,
             minimax_login_handle: None,
+            kimi_login: None,
+            kimi_login_handle: None,
         };
         tracing::info!(
             pid = app.process_info.pid,
@@ -436,6 +451,7 @@ impl cosmic::Application for AppModel {
                 gemini: self.gemini_login.as_ref(),
                 copilot: self.copilot_login.as_ref(),
                 minimax: self.minimax_login.as_ref(),
+                kimi: self.kimi_login.as_ref(),
             },
             self.selected_provider,
             &self.popup_route,
@@ -621,6 +637,9 @@ impl AppModel {
                     }
                     (ProviderId::Minimax, login::LoginEventKind::Minimax(event)) => {
                         login::MinimaxLoginFlow::on_event(self, event)
+                    }
+                    (ProviderId::Kimi, login::LoginEventKind::Kimi(event)) => {
+                        login::KimiLoginFlow::on_event(self, event)
                     }
                     _ => Task::none(),
                 });
@@ -842,6 +861,9 @@ impl AppModel {
                     }
                     SettingsRoute::Provider(ProviderId::Minimax) => {
                         self.popup_body_measurements.minimax_settings
+                    }
+                    SettingsRoute::Provider(ProviderId::Kimi) => {
+                        self.popup_body_measurements.kimi_settings
                     }
                 };
                 self.popup_body_measurements.set_settings(route, height);

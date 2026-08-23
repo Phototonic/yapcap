@@ -41,6 +41,12 @@ pub fn provider_icon_handle(provider: ProviderId, variant: ProviderIconVariant) 
         (ProviderId::Minimax, ProviderIconVariant::Reversed) => {
             include_bytes!("../../resources/providers/minimax-reversed.svg")
         }
+        (ProviderId::Kimi, ProviderIconVariant::Default) => {
+            include_bytes!("../../resources/providers/kimi.svg")
+        }
+        (ProviderId::Kimi, ProviderIconVariant::Reversed) => {
+            include_bytes!("../../resources/providers/kimi-reversed.svg")
+        }
     };
 
     icon::from_svg_bytes(bytes)

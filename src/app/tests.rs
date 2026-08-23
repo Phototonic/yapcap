@@ -13,7 +13,8 @@ use super::{
 use crate::account_storage::{NewProviderAccount, ProviderAccountStorage, ProviderAccountTokens};
 use crate::config::{
     ManagedClaudeAccountConfig, ManagedCodexAccountConfig, ManagedCopilotAccountConfig,
-    ManagedCursorAccountConfig, ManagedGeminiAccountConfig, ManagedMinimaxAccountConfig,
+    ManagedCursorAccountConfig, ManagedGeminiAccountConfig, ManagedKimiAccountConfig,
+    ManagedMinimaxAccountConfig,
 };
 use crate::model::{
     AccountSelectionStatus, ExtraUsageState, ProviderAccountRuntimeState, ProviderCost,
@@ -895,6 +896,8 @@ pub(super) fn test_app(refresh_owner: Option<RefreshOwner>) -> AppModel {
         copilot_login_handle: None,
         minimax_login: None,
         minimax_login_handle: None,
+        kimi_login: None,
+        kimi_login_handle: None,
     }
 }
 
@@ -1003,6 +1006,17 @@ fn minimax_account(id: &str) -> ManagedMinimaxAccountConfig {
         id: id.to_string(),
         label: id.to_string(),
         api_key_source: "env:MINIMAX_API_KEY".to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        last_authenticated_at: None,
+    }
+}
+
+fn kimi_account(id: &str) -> ManagedKimiAccountConfig {
+    ManagedKimiAccountConfig {
+        id: id.to_string(),
+        label: id.to_string(),
+        api_key_source: "env:KIMI_API_KEY".to_string(),
         created_at: Utc::now(),
         updated_at: Utc::now(),
         last_authenticated_at: None,
@@ -1119,6 +1133,14 @@ fn delete_account_requests_refresh_for_all_providers() {
                     .minimax_managed_accounts
                     .push(minimax_account("remove"));
                 app.config.selected_minimax_account_ids = vec![keep_id.to_string()];
+                remove_account_id = "remove".to_string();
+            }
+            ProviderId::Kimi => {
+                app.config.kimi_managed_accounts.push(kimi_account(keep_id));
+                app.config
+                    .kimi_managed_accounts
+                    .push(kimi_account("remove"));
+                app.config.selected_kimi_account_ids = vec![keep_id.to_string()];
                 remove_account_id = "remove".to_string();
             }
         }

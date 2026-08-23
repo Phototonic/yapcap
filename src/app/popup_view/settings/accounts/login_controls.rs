@@ -3,11 +3,16 @@ use super::super::super::{
     CopilotLoginState, CopilotLoginStatus, CursorScanState, Element, GeminiLoginState,
     GeminiLoginStatus, Length, Message, fl, row, widget,
 };
-use crate::app::login::{LoginFlow, MinimaxLoginFlow};
+use crate::app::login::{KimiLoginFlow, LoginFlow, MinimaxLoginFlow};
+use crate::providers::kimi::login::{KimiLoginEvent, KimiLoginState, KimiLoginStatus};
 use crate::providers::minimax::{MinimaxLoginEvent, MinimaxLoginState, MinimaxLoginStatus};
 
 fn minimax_login_message(event: MinimaxLoginEvent) -> Message {
     MinimaxLoginFlow::wrap_event(event)
+}
+
+fn kimi_login_message(event: KimiLoginEvent) -> Message {
+    KimiLoginFlow::wrap_event(event)
 }
 
 pub(super) fn codex_login_controls(
@@ -445,5 +450,88 @@ fn minimax_login_status(login: &MinimaxLoginState) -> String {
             .error
             .clone()
             .unwrap_or_else(|| fl!("minimax-login-failed")),
+    }
+}
+
+pub(super) fn kimi_login_controls(
+    login: Option<&KimiLoginState>,
+    enabled: bool,
+) -> Element<'_, Message> {
+    let Some(login) = login else {
+        return widget::button::standard(fl!("account-add"))
+            .on_press_maybe(enabled.then_some(Message::StartLogin(crate::model::ProviderId::Kimi)))
+            .into();
+    };
+
+    let mut content = if let Some(error) = &login.error {
+        cosmic::iced::widget::column![
+            widget::text(kimi_login_status(login)).size(13),
+            widget::text(error).size(13)
+        ]
+        .spacing(10)
+    } else {
+        cosmic::iced::widget::column![widget::text(kimi_login_status(login)).size(13)].spacing(10)
+    };
+
+    content = content.width(Length::Fill);
+
+    if login.status == KimiLoginStatus::Editing {
+        content = content.push(widget::text(fl!("kimi-api-key-placeholder")).size(12));
+        content = content.push(
+            widget::text_input::secure_input(
+                fl!("kimi-api-key-placeholder"),
+                &login.api_key,
+                Some(kimi_login_message(KimiLoginEvent::ApiKeyVisibilityToggled)),
+                !login.api_key_visible,
+            )
+            .on_input(|api_key| kimi_login_message(KimiLoginEvent::ApiKeyChanged(api_key)))
+            .on_submit(|_| kimi_login_message(KimiLoginEvent::Saved))
+            .width(Length::Fill),
+        );
+        if login.api_key_from_opencode {
+            content =
+                content.push(widget::text(fl!("kimi-api-key-imported-from-opencode")).size(12));
+        }
+        content = content.push(widget::text(fl!("account-label")).size(12));
+        content = content.push(
+            widget::text_input(fl!("account-label"), &login.label)
+                .on_input(|label| kimi_login_message(KimiLoginEvent::LabelChanged(label)))
+                .width(Length::Fill),
+        );
+        content = content.push(
+            row![
+                widget::button::standard(fl!("account-add"))
+                    .on_press_maybe(enabled.then_some(kimi_login_message(KimiLoginEvent::Saved))),
+                widget::button::text(fl!("account-cancel")).on_press_maybe(
+                    enabled.then_some(Message::CancelLogin(crate::model::ProviderId::Kimi))
+                ),
+            ]
+            .spacing(8),
+        );
+    } else {
+        content = content.push(
+            row![
+                widget::button::text(fl!("account-add-another")).on_press_maybe(
+                    enabled.then_some(Message::StartLogin(crate::model::ProviderId::Kimi))
+                ),
+                widget::button::text(fl!("account-dismiss")).on_press_maybe(
+                    enabled.then_some(Message::CancelLogin(crate::model::ProviderId::Kimi))
+                ),
+            ]
+            .spacing(8),
+        );
+    }
+
+    Element::from(content)
+}
+
+fn kimi_login_status(login: &KimiLoginState) -> String {
+    match login.status {
+        KimiLoginStatus::Editing => fl!("kimi-login-editing"),
+        KimiLoginStatus::Saved => fl!("kimi-login-saved"),
+        KimiLoginStatus::Failed => login
+            .error
+            .clone()
+            .unwrap_or_else(|| fl!("kimi-login-failed")),
     }
 }
