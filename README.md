@@ -2,7 +2,7 @@
 
 # YapCap
 
-**A native COSMIC panel applet that tracks AI coding quota for Codex, Claude Code, Cursor, Gemini, Minimax, GitHub Copilot, and Kimi for Coding.**
+**A native COSMIC panel applet that tracks AI coding quota for Codex, Claude Code, Cursor, Gemini, Minimax, GitHub Copilot, Kimi for Coding, and OpenCode Go.**
 
 <img src="resources/screenshots/screenshot-hero.png" alt="YapCap panel applet" width="780" />
 
@@ -30,9 +30,10 @@ YapCap lives in your COSMIC panel and shows how much of your AI coding quota you
     - **Minimax** — API key usage tracking
     - **GitHub Copilot** — Free chat/completions or paid premium interactions
     - **Kimi for Coding** — API key usage tracking with weekly and rate-limit windows
-- 👥 **Multi-account view** — add, switch, and remove accounts per provider. Turn on **Show all accounts** to lay out each selected account side by side in the popup and show one usage-bar group per account in the panel.
-- 🔐 **In-app login** — guided browser login for Codex, Claude, Gemini, and Copilot; API-key forms for Minimax and Kimi; Cursor scans the local IDE state.
-- 🔑 **OpenCode prefill** — Kimi can optionally prefill its API-key form once from OpenCode's local `auth.json`; usage refresh never synchronizes with that file.
+    - **OpenCode Go** — API key usage tracking with 5 Hour, Weekly, and Monthly windows
+- 👥 **Multi-account view** — add, switch, and remove accounts per provider. Turn on **Show all accounts** to page through each selected account at full width in the popup and show one usage-bar group per account in the panel.
+- 🔐 **In-app login** — guided browser login for Codex, Claude, Gemini, and Copilot; API-key forms for Minimax, Kimi, and OpenCode Go; Cursor scans the local IDE state.
+- 🔑 **OpenCode discovery** — during add or reauthentication, compatible API keys can optionally prefill Minimax, Kimi, and OpenCode Go; Codex and Copilot offer an explicit OAuth import. YapCap copies only after confirmation and never synchronizes with OpenCode.
 - ✅ **Active badge** — marks the account currently in use by your host CLI for Codex, Claude, and Gemini.
 - ⚙️ **Configurable panel** — logo+bars, bars only, logo+%, or %-only; used/left toggle; relative or absolute reset times.
 
@@ -165,7 +166,25 @@ Each provider supports multiple accounts. Manage them from the popup under **Set
 - **Switch account** — tap any account row to make it active; the panel and popup update immediately.
 - **Remove account** — deletes only YapCap's copy of the credentials. Provider accounts and host app configs are never touched.
 
-Codex, Claude, Cursor, and Gemini keep at most one account per provider identity. Copilot keeps at most one account per GitHub numeric user id and displays the current GitHub username. Minimax and Kimi use user-provided labels, so duplicate labels are allowed.
+Codex, Claude, Cursor, and Gemini keep at most one account per provider identity. Copilot keeps at most one account per GitHub numeric user id and displays the current GitHub username. Minimax, Kimi, and OpenCode Go use user-provided labels, so duplicate labels are allowed.
+
+### OpenCode credential discovery
+
+YapCap optionally reads OpenCode's local `~/.local/share/opencode/auth.json` only
+while adding or reauthenticating an account. It does not require the `opencode`
+executable, write, modify, or link OpenCode files, import accounts at startup, or read the
+file during usage refresh. A confirmed credential is copied into YapCap's private
+managed storage, so later OpenCode file changes do not change saved YapCap
+accounts. Native and Flatpak builds retain their existing host-home path
+handling.
+
+The confirmed compatibility boundary is intentionally narrow: `kimi-for-coding`,
+`minimax`, and `opencode-go` API keys can prefill their editable masked forms;
+`openai` OAuth and `github-copilot` OAuth are available only through explicit
+secondary **Import from OpenCode** actions. Codex's primary action remains **Sign
+in with ChatGPT**, and Copilot's remains native GitHub device login. OpenAI API
+keys, GitHub Enterprise credentials, Anthropic, Google/Gemini, and Cursor
+credentials are not treated as compatible sources.
 
 ## Panel styles
 
@@ -206,7 +225,7 @@ YapCap stores provider credentials under YapCap-owned account storage and calls 
 | --- | --- |
 | `~/.config/cosmic/io.github.TopiCsarno.YapCap/v502/` | Settings (provider toggles, accounts, display options) |
 | `~/.cache/yapcap/snapshots.json` | Former cached usage state; current builds leave it on disk but do not load it |
-| `~/.local/state/yapcap/`{`codex`,`claude`,`cursor`,`gemini`,`minimax`,`copilot`,`kimi`}`-accounts/` | Managed credential copies |
+| `~/.local/state/yapcap/`{`codex`,`claude`,`cursor`,`gemini`,`minimax`,`copilot`,`kimi`,`opencode-go`}`-accounts/` | Managed credential copies |
 | `~/.local/state/yapcap/logs/yapcap.log` | Log output |
 
 **Flatpak** (`io.github.TopiCsarno.YapCap`): YapCap account state and logs live only under `~/.var/app/io.github.TopiCsarno.YapCap/data/yapcap/`. Old Flatpak snapshot caches under `~/.var/app/io.github.TopiCsarno.YapCap/cache/yapcap/` may remain on disk but are no longer active runtime state. The manifest mounts host `~/.config/cosmic` read-write for COSMIC app settings (not `xdg-config/cosmic`, for compatibility with Flatpak path resolution).
@@ -226,9 +245,15 @@ YapCap stores provider credentials under YapCap-owned account storage and calls 
   `cloudaicompanionProject` returned by Google's `loadCodeAssist` for each
   account. Users with multiple paid GCP projects see whichever project Google
   selects, not all of them.
-- **Kimi uses API keys.** Add a Kimi for Coding account with its API key; an
-  optional one-time prefill can come from OpenCode's local `auth.json`, but the
-  file is never read during usage refresh.
+- **OpenCode Go uses API keys.** Add a manually entered or optionally prefilled
+  key. Usage shows **5 Hour**, **Weekly**, and **Monthly** windows from
+  `GET https://opencode.ai/zen/go/v1/usage`; a 401 requires authentication, while
+  a 403 can indicate that the key is valid but a subscription is required, and is not cured by
+  reauthentication. Rate limits use normal backoff and failed refreshes preserve
+  the last successful data.
+- **No Zen balance.** YapCap does not show a Zen pay-as-you-go credit balance:
+  upstream currently provides no supported public API-key-authenticated numerical
+  balance endpoint. Local usage statistics are not a remaining balance.
 
 ## License
 
