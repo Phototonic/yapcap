@@ -3,6 +3,7 @@
 mod account;
 mod login;
 mod oauth;
+mod opencode_import;
 mod refresh;
 #[cfg(test)]
 mod tests;
@@ -24,6 +25,7 @@ pub use account::{apply_login_account, discover_accounts, sync_managed_accounts}
 #[cfg(test)]
 pub use login::CodexLoginSuccess;
 pub use login::{CodexLoginEvent, CodexLoginState, CodexLoginStatus, prepare};
+pub use opencode_import::{is_available as opencode_import_available, prepare_opencode_import};
 
 use crate::config::ManagedCodexAccountConfig;
 
@@ -146,7 +148,7 @@ pub(crate) async fn fetch_oauth(
     fetch_oauth_at(client, auth, ENDPOINT).await
 }
 
-async fn fetch_oauth_at(
+pub(super) async fn fetch_oauth_at(
     client: &reqwest::Client,
     auth: &CodexAuth,
     endpoint: &str,
@@ -174,24 +176,15 @@ async fn fetch_oauth_at(
     }
     let status = response.status();
     if !status.is_success() {
-        let snippet = response
-            .text()
-            .await
-            .ok()
-            .and_then(|body| {
-                let trimmed = body.trim();
-                (!trimmed.is_empty()).then(|| trimmed.chars().take(512).collect::<String>())
-            })
-            .map(|body| format!(" (body: {body})"));
         return Err(CodexError::UsageHttp {
             status: status.as_u16(),
-            details: snippet.unwrap_or_default(),
         });
     }
     let body = response.text().await.map_err(CodexError::UsageRequest)?;
-    let payload: CodexUsageResponse = serde_json::from_str(&body).map_err(|e| {
-        tracing::warn!(body = %body.chars().take(512).collect::<String>(), error = %e, "failed to decode codex usage response");
-        CodexError::DecodeUsageJson(e)
+    let body_len = body.len();
+    let payload: CodexUsageResponse = serde_json::from_str(&body).map_err(|error| {
+        tracing::warn!(body_len, error = %error, "failed to decode codex usage response");
+        CodexError::DecodeUsageJson(error)
     })?;
     normalize_oauth(payload)
 }

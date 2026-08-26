@@ -1,6 +1,6 @@
 use super::support::{isolated_xdg, test_app};
 use crate::app::login::{KimiLoginFlow, LoginFlow, reauthenticate};
-use crate::config::{Config, ManagedKimiAccountConfig, managed_kimi_account_dir};
+use crate::config::{Config, ManagedKimiAccountConfig};
 use crate::model::ProviderId;
 use crate::providers::kimi::login::{KimiLoginEvent, KimiLoginState, KimiLoginStatus};
 use crate::providers::kimi::storage::{load_api_key, write_api_key};
@@ -110,7 +110,7 @@ fn kimi_reauth_preserves_target_identity_and_replaces_key_in_place() {
         }],
         ..Config::default()
     };
-    write_api_key(&managed_kimi_account_dir("kimi-existing"), "old-key").unwrap();
+    write_api_key("kimi-existing", "old-key").unwrap();
 
     let _ = reauthenticate::<KimiLoginFlow>(&mut app, "kimi-existing");
     let login = app.kimi_login.as_ref().unwrap();
@@ -138,10 +138,7 @@ fn kimi_reauth_preserves_target_identity_and_replaces_key_in_place() {
             .last_authenticated_at
             .is_some_and(|time| time > updated_at)
     );
-    assert_eq!(
-        load_api_key(&managed_kimi_account_dir("kimi-existing")).unwrap(),
-        "new-key"
-    );
+    assert_eq!(load_api_key("kimi-existing").unwrap(), "new-key");
     assert_eq!(app.config.kimi_managed_accounts.len(), 1);
     assert_eq!(
         app.kimi_login.as_ref().unwrap().status,

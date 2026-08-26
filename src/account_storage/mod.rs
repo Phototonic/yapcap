@@ -3,13 +3,19 @@
 use crate::model::{ProviderId, UsageSnapshot};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::fs::{self, OpenOptions};
+use std::io::Read;
+use std::path::{Component, Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use thiserror::Error;
+
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 
 const METADATA_FILE: &str = "metadata.json";
 const TOKENS_FILE: &str = "tokens.json";
 const SNAPSHOT_FILE: &str = "snapshot.json";
+static ACCOUNT_ID_SEQUENCE: AtomicU64 = AtomicU64::new(0);
 
 #[cfg(test)]
 mod tests;
@@ -74,9 +80,9 @@ impl ProviderAccountStorage {
         Self { root: root.into() }
     }
 
-    #[must_use]
-    pub fn account_dir(&self, account_id: &str) -> PathBuf {
-        self.root.join(account_id)
+    pub fn account_dir(&self, account_id: &str) -> Result<PathBuf, AccountStorageError> {
+        validate_account_id(account_id)?;
+        Ok(self.root.join(account_id))
     }
 
     /// # Errors
@@ -111,6 +117,12 @@ impl ProviderAccountStorage {
         created_at: Option<DateTime<Utc>>,
     ) -> Result<StoredProviderAccount, AccountStorageError> {
         let account_dir = self.ensure_account_dir(&account_id)?;
+        for file_name in [METADATA_FILE, TOKENS_FILE] {
+            checked_account_file_path(&account_dir, file_name)?;
+        }
+        if account.snapshot.is_some() {
+            checked_account_file_path(&account_dir, SNAPSHOT_FILE)?;
+        }
         let now = Utc::now();
         let metadata = ProviderAccountMetadata {
             account_id: account_id.clone(),
@@ -125,10 +137,10 @@ impl ProviderAccountStorage {
             gemini_last_cloudaicompanion_project: None,
         };
 
-        write_json(&account_dir.join(METADATA_FILE), &metadata)?;
-        write_json(&account_dir.join(TOKENS_FILE), &account.tokens)?;
+        self.write_json_file(&account_id, METADATA_FILE, &metadata)?;
+        self.write_json_file(&account_id, TOKENS_FILE, &account.tokens)?;
         if let Some(snapshot) = account.snapshot {
-            write_json(&account_dir.join(SNAPSHOT_FILE), &snapshot)?;
+            self.write_json_file(&account_id, SNAPSHOT_FILE, &snapshot)?;
         }
 
         Ok(StoredProviderAccount {
@@ -142,12 +154,32 @@ impl ProviderAccountStorage {
     }
 
     fn ensure_account_dir(&self, account_id: &str) -> Result<PathBuf, AccountStorageError> {
-        let account_dir = self.account_dir(account_id);
-        fs::create_dir_all(&account_dir).map_err(|source| AccountStorageError::CreateDir {
-            path: account_dir.clone(),
-            source,
-        })?;
-        Ok(account_dir)
+        let account_dir = self.account_dir(account_id)?;
+        self.ensure_root()?;
+        match fs::symlink_metadata(&account_dir) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(AccountStorageError::RefuseSymlink { path: account_dir });
+            }
+            Ok(metadata) if !metadata.is_dir() => {
+                return Err(AccountStorageError::NotDirectory { path: account_dir });
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                fs::create_dir(&account_dir).map_err(|source| AccountStorageError::CreateDir {
+                    path: account_dir.clone(),
+                    source,
+                })?;
+            }
+            Err(source) => {
+                return Err(AccountStorageError::ReadFile {
+                    path: account_dir,
+                    source,
+                });
+            }
+        }
+        set_private_dir_permissions(&account_dir)?;
+        self.checked_existing_account_dir(account_id)?
+            .ok_or(AccountStorageError::MissingAccountDirectory { path: account_dir })
     }
 
     /// # Errors
@@ -157,7 +189,7 @@ impl ProviderAccountStorage {
         &self,
         account_id: &str,
     ) -> Result<ProviderAccountMetadata, AccountStorageError> {
-        read_json(&self.account_dir(account_id).join(METADATA_FILE))
+        self.read_json_file(account_id, METADATA_FILE)
     }
 
     /// # Errors
@@ -167,7 +199,7 @@ impl ProviderAccountStorage {
         &self,
         account_id: &str,
     ) -> Result<ProviderAccountTokens, AccountStorageError> {
-        read_json(&self.account_dir(account_id).join(TOKENS_FILE))
+        self.read_json_file(account_id, TOKENS_FILE)
     }
 
     /// # Errors
@@ -177,12 +209,7 @@ impl ProviderAccountStorage {
         &self,
         account_id: &str,
     ) -> Result<Option<UsageSnapshot>, AccountStorageError> {
-        let path = self.account_dir(account_id).join(SNAPSHOT_FILE);
-        if path.exists() {
-            read_json(&path).map(Some)
-        } else {
-            Ok(None)
-        }
+        self.read_optional_json_file(account_id, SNAPSHOT_FILE)
     }
 
     /// # Errors
@@ -193,8 +220,7 @@ impl ProviderAccountStorage {
         account_id: &str,
         metadata: &ProviderAccountMetadata,
     ) -> Result<(), AccountStorageError> {
-        let account_dir = self.ensure_account_dir(account_id)?;
-        write_json(&account_dir.join(METADATA_FILE), metadata)
+        self.write_json_file(account_id, METADATA_FILE, metadata)
     }
 
     /// # Errors
@@ -205,8 +231,7 @@ impl ProviderAccountStorage {
         account_id: &str,
         tokens: &ProviderAccountTokens,
     ) -> Result<(), AccountStorageError> {
-        let account_dir = self.ensure_account_dir(account_id)?;
-        write_json(&account_dir.join(TOKENS_FILE), tokens)
+        self.write_json_file(account_id, TOKENS_FILE, tokens)
     }
 
     /// # Errors
@@ -217,31 +242,97 @@ impl ProviderAccountStorage {
         account_id: &str,
         snapshot: &UsageSnapshot,
     ) -> Result<(), AccountStorageError> {
-        let account_dir = self.ensure_account_dir(account_id)?;
-        write_json(&account_dir.join(SNAPSHOT_FILE), snapshot)
+        self.write_json_file(account_id, SNAPSHOT_FILE, snapshot)
     }
 
     /// # Errors
     ///
     /// Returns an error when the account directory is a symlink or cannot be deleted.
     pub fn delete_account(&self, account_id: &str) -> Result<bool, AccountStorageError> {
-        let account_dir = self.account_dir(account_id);
-        if !account_dir.exists() {
+        let Some(account_dir) = self.checked_existing_account_dir(account_id)? else {
             return Ok(false);
-        }
-        if account_dir
-            .symlink_metadata()
-            .is_ok_and(|m| m.file_type().is_symlink())
-        {
-            return Err(AccountStorageError::RefuseSymlink {
-                path: account_dir.clone(),
-            });
+        };
+        for file_name in [METADATA_FILE, TOKENS_FILE, SNAPSHOT_FILE, "api_key.txt"] {
+            checked_account_file_path(&account_dir, file_name)?;
         }
         fs::remove_dir_all(&account_dir).map_err(|source| AccountStorageError::DeleteDir {
             path: account_dir,
             source,
         })?;
         Ok(true)
+    }
+
+    fn required_existing_account_dir(
+        &self,
+        account_id: &str,
+    ) -> Result<PathBuf, AccountStorageError> {
+        self.checked_existing_account_dir(account_id)?
+            .ok_or_else(|| AccountStorageError::MissingAccountDirectory {
+                path: self.root.join(account_id),
+            })
+    }
+
+    fn checked_existing_account_dir(
+        &self,
+        account_id: &str,
+    ) -> Result<Option<PathBuf>, AccountStorageError> {
+        let account_dir = self.account_dir(account_id)?;
+        let metadata = match fs::symlink_metadata(&account_dir) {
+            Ok(metadata) => metadata,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(source) => {
+                return Err(AccountStorageError::ReadFile {
+                    path: account_dir,
+                    source,
+                });
+            }
+        };
+        if metadata.file_type().is_symlink() {
+            return Err(AccountStorageError::RefuseSymlink { path: account_dir });
+        }
+        let root = self.canonical_root()?;
+        let canonical_account_dir =
+            account_dir
+                .canonicalize()
+                .map_err(|source| AccountStorageError::ResolvePath {
+                    path: account_dir.clone(),
+                    source,
+                })?;
+        if !canonical_account_dir.starts_with(&root) {
+            return Err(AccountStorageError::OutsideStorageRoot {
+                path: canonical_account_dir,
+            });
+        }
+        set_private_dir_permissions(&account_dir)?;
+        Ok(Some(account_dir))
+    }
+
+    fn canonical_root(&self) -> Result<PathBuf, AccountStorageError> {
+        match fs::symlink_metadata(&self.root) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(AccountStorageError::RefuseSymlink {
+                    path: self.root.clone(),
+                });
+            }
+            Ok(metadata) if !metadata.is_dir() => {
+                return Err(AccountStorageError::NotDirectory {
+                    path: self.root.clone(),
+                });
+            }
+            Ok(_) => {}
+            Err(source) => {
+                return Err(AccountStorageError::ResolvePath {
+                    path: self.root.clone(),
+                    source,
+                });
+            }
+        }
+        self.root
+            .canonicalize()
+            .map_err(|source| AccountStorageError::ResolvePath {
+                path: self.root.clone(),
+                source,
+            })
     }
 
     fn new_account_id(provider: ProviderId) -> String {
@@ -253,14 +344,138 @@ impl ProviderAccountStorage {
             ProviderId::Copilot => "copilot",
             ProviderId::Minimax => "minimax",
             ProviderId::Kimi => "kimi",
+            ProviderId::OpenCodeGo => "opencode_go",
         };
         let millis = Utc::now().timestamp_millis();
-        format!("{prefix}-{millis}-{}", std::process::id())
+        let sequence = ACCOUNT_ID_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+        format!("{prefix}-{millis}-{}-{sequence}", std::process::id())
+    }
+
+    pub fn write_json_file<T: Serialize>(
+        &self,
+        account_id: &str,
+        file_name: &str,
+        value: &T,
+    ) -> Result<(), AccountStorageError> {
+        let account_dir = self.ensure_account_dir(account_id)?;
+        let path = checked_account_file_path(&account_dir, file_name)?;
+        let payload =
+            serde_json::to_vec_pretty(value).map_err(|source| AccountStorageError::EncodeFile {
+                path: path.clone(),
+                source,
+            })?;
+        write_checked_file(&path, &payload)
+    }
+
+    pub fn validate_account_files_for_write(
+        &self,
+        account_id: &str,
+        file_names: &[&str],
+    ) -> Result<(), AccountStorageError> {
+        let account_dir = self.ensure_account_dir(account_id)?;
+        for file_name in file_names {
+            checked_account_file_path(&account_dir, file_name)?;
+        }
+        Ok(())
+    }
+
+    pub fn read_json_file<T: for<'de> Deserialize<'de>>(
+        &self,
+        account_id: &str,
+        file_name: &str,
+    ) -> Result<T, AccountStorageError> {
+        let account_dir = self.required_existing_account_dir(account_id)?;
+        let path = checked_account_file_path(&account_dir, file_name)?;
+        let raw = read_checked_file(&path)?;
+        serde_json::from_slice(&raw)
+            .map_err(|source| AccountStorageError::ParseFile { path, source })
+    }
+
+    pub fn read_optional_json_file<T: for<'de> Deserialize<'de>>(
+        &self,
+        account_id: &str,
+        file_name: &str,
+    ) -> Result<Option<T>, AccountStorageError> {
+        let Some(account_dir) = self.checked_existing_account_dir(account_id)? else {
+            return Ok(None);
+        };
+        let path = checked_account_file_path(&account_dir, file_name)?;
+        match read_checked_file(&path) {
+            Ok(raw) => serde_json::from_slice(&raw)
+                .map(Some)
+                .map_err(|source| AccountStorageError::ParseFile { path, source }),
+            Err(AccountStorageError::ReadFile { source, .. })
+                if source.kind() == std::io::ErrorKind::NotFound =>
+            {
+                Ok(None)
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    pub fn write_text_file(
+        &self,
+        account_id: &str,
+        file_name: &str,
+        value: &str,
+    ) -> Result<(), AccountStorageError> {
+        let account_dir = self.ensure_account_dir(account_id)?;
+        let path = checked_account_file_path(&account_dir, file_name)?;
+        write_checked_file(&path, value.as_bytes())
+    }
+
+    pub fn read_text_file(
+        &self,
+        account_id: &str,
+        file_name: &str,
+    ) -> Result<String, AccountStorageError> {
+        let account_dir = self.required_existing_account_dir(account_id)?;
+        let path = checked_account_file_path(&account_dir, file_name)?;
+        String::from_utf8(read_checked_file(&path)?).map_err(|source| {
+            AccountStorageError::ReadFile {
+                path,
+                source: std::io::Error::new(std::io::ErrorKind::InvalidData, source),
+            }
+        })
+    }
+
+    fn ensure_root(&self) -> Result<(), AccountStorageError> {
+        match fs::symlink_metadata(&self.root) {
+            Ok(metadata) if metadata.file_type().is_symlink() => {
+                return Err(AccountStorageError::RefuseSymlink {
+                    path: self.root.clone(),
+                });
+            }
+            Ok(metadata) if !metadata.is_dir() => {
+                return Err(AccountStorageError::NotDirectory {
+                    path: self.root.clone(),
+                });
+            }
+            Ok(_) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                fs::create_dir_all(&self.root).map_err(|source| {
+                    AccountStorageError::CreateDir {
+                        path: self.root.clone(),
+                        source,
+                    }
+                })?;
+                return self.ensure_root();
+            }
+            Err(source) => {
+                return Err(AccountStorageError::ReadFile {
+                    path: self.root.clone(),
+                    source,
+                });
+            }
+        }
+        set_private_dir_permissions(&self.root)
     }
 }
 
 #[derive(Debug, Error)]
 pub enum AccountStorageError {
+    #[error("account ID must be one normal path component")]
+    InvalidAccountId,
     #[error("failed to create account directory {path}")]
     CreateDir {
         path: PathBuf,
@@ -293,6 +508,20 @@ pub enum AccountStorageError {
     },
     #[error("refusing to delete symlinked account directory {path}")]
     RefuseSymlink { path: PathBuf },
+    #[error("account directory is not a directory: {path}")]
+    NotDirectory { path: PathBuf },
+    #[error("account file is not a regular file: {path}")]
+    NotFile { path: PathBuf },
+    #[error("account directory does not exist: {path}")]
+    MissingAccountDirectory { path: PathBuf },
+    #[error("failed to resolve account storage path {path}")]
+    ResolvePath {
+        path: PathBuf,
+        #[source]
+        source: std::io::Error,
+    },
+    #[error("account directory resolves outside the storage root: {path}")]
+    OutsideStorageRoot { path: PathBuf },
     #[error("failed to delete account directory {path}")]
     DeleteDir {
         path: PathBuf,
@@ -305,6 +534,116 @@ pub enum AccountStorageError {
         #[source]
         source: std::io::Error,
     },
+}
+
+pub fn validate_account_id(account_id: &str) -> Result<(), AccountStorageError> {
+    if account_id.is_empty()
+        || account_id.contains(['/', '\\'])
+        || Path::new(account_id).is_absolute()
+    {
+        return Err(AccountStorageError::InvalidAccountId);
+    }
+    let mut components = Path::new(account_id).components();
+    if !matches!(components.next(), Some(Component::Normal(_))) || components.next().is_some() {
+        return Err(AccountStorageError::InvalidAccountId);
+    }
+    Ok(())
+}
+
+pub fn validated_account_dir(
+    root: &Path,
+    account_id: &str,
+) -> Result<PathBuf, AccountStorageError> {
+    validate_account_id(account_id)?;
+    Ok(root.join(account_id))
+}
+
+fn checked_account_file_path(
+    account_dir: &Path,
+    file_name: &str,
+) -> Result<PathBuf, AccountStorageError> {
+    validate_account_id(file_name)?;
+    let path = account_dir.join(file_name);
+    match fs::symlink_metadata(&path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            Err(AccountStorageError::RefuseSymlink { path })
+        }
+        Ok(metadata) if !metadata.is_file() => Err(AccountStorageError::NotFile { path }),
+        Ok(_) => Ok(path),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(path),
+        Err(source) => Err(AccountStorageError::ReadFile { path, source }),
+    }
+}
+
+fn write_checked_file(path: &Path, contents: &[u8]) -> Result<(), AccountStorageError> {
+    let mut options = OpenOptions::new();
+    options.write(true).create(true).truncate(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW).mode(0o600);
+    }
+    let mut file = options
+        .open(path)
+        .map_err(|source| AccountStorageError::WriteFile {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    #[cfg(unix)]
+    file.set_permissions(fs::Permissions::from_mode(0o600))
+        .map_err(|source| AccountStorageError::SetPermissions {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    std::io::Write::write_all(&mut file, contents).map_err(|source| {
+        AccountStorageError::WriteFile {
+            path: path.to_path_buf(),
+            source,
+        }
+    })?;
+    Ok(())
+}
+
+fn read_checked_file(path: &Path) -> Result<Vec<u8>, AccountStorageError> {
+    match fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            return Err(AccountStorageError::RefuseSymlink {
+                path: path.to_path_buf(),
+            });
+        }
+        Ok(metadata) if !metadata.is_file() => {
+            return Err(AccountStorageError::NotFile {
+                path: path.to_path_buf(),
+            });
+        }
+        Ok(_) => {}
+        Err(source) => {
+            return Err(AccountStorageError::ReadFile {
+                path: path.to_path_buf(),
+                source,
+            });
+        }
+    }
+    let mut options = OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let mut file = options
+        .open(path)
+        .map_err(|source| AccountStorageError::ReadFile {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    let mut contents = Vec::new();
+    file.read_to_end(&mut contents)
+        .map_err(|source| AccountStorageError::ReadFile {
+            path: path.to_path_buf(),
+            source,
+        })?;
+    Ok(contents)
 }
 
 /// # Errors

@@ -3,11 +3,17 @@ use super::applet::{
     applet_percent_cell_alignment, applet_percent_cell_width, applet_percent_text, select_provider,
     selected_provider_all_bar_layouts,
 };
-use super::popup_view::{POPUP_COLUMN_WIDTH, popup_session_size, popup_settings_size};
+use super::popup_view::{
+    POPUP_COLUMN_WIDTH, PROVIDER_TAB_ROW_HEIGHT, account_page_next, account_page_previous,
+    clamp_account_page, longest_provider_label_glyphs, pager_account_label, popup_session_size,
+    popup_session_size_with_body_height, popup_settings_size, provider_nav_height,
+    provider_tab_bar_area_height, provider_tab_card_inner_width, provider_tab_content_height,
+    provider_tab_row_sizes, settings_category_row_sizes, settings_nav_height, tab_percents,
+};
 use super::{
     APPLET_ACCOUNT_GAP, APPLET_ICON_GAP, APPLET_PERCENT_ACCOUNT_GAP, AppModel, AppState, Config,
-    LaunchMode, Message, PanelIconStyle, PopupBodyMeasurements, PopupRoute, ProviderId, Size,
-    UsageAmountFormat, automatic_refresh_poll_interval, format_retry_delay,
+    LaunchMode, Message, PagerDirection, PanelIconStyle, PopupBodyMeasurements, PopupRoute,
+    ProviderId, Size, UsageAmountFormat, automatic_refresh_poll_interval, format_retry_delay,
     popup_size_limits_with_max_width, popup_size_tuple, update_retry_delay,
 };
 use crate::account_storage::{NewProviderAccount, ProviderAccountStorage, ProviderAccountTokens};
@@ -430,6 +436,36 @@ fn selecting_provider_preserves_local_popup_state() {
 }
 
 #[test]
+fn account_pager_cycles_without_touching_config_selection() {
+    let mut app = test_app(None);
+    {
+        let codex = app.state.provider_mut(ProviderId::Codex).unwrap();
+        codex.selected_account_ids = vec!["a".to_string(), "b".to_string()];
+    }
+    app.config.selected_codex_account_ids = vec!["a".to_string(), "b".to_string()];
+    for id in ["a", "b"] {
+        let account = ProviderAccountRuntimeState::empty(ProviderId::Codex, id, id);
+        app.state.upsert_account(account);
+    }
+
+    let _ = app.handle_message(Message::PageProviderAccount(PagerDirection::Next));
+    assert_eq!(app.detail_account_page, 1);
+    let _ = app.handle_message(Message::PageProviderAccount(PagerDirection::Next));
+    assert_eq!(app.detail_account_page, 0);
+    let _ = app.handle_message(Message::PageProviderAccount(PagerDirection::Previous));
+    assert_eq!(app.detail_account_page, 1);
+    assert_eq!(
+        app.config.selected_codex_account_ids,
+        ["a".to_string(), "b".to_string()]
+    );
+
+    ready_selected_provider(&mut app.state, ProviderId::Claude);
+    selected_account_without_usage(&mut app.state, ProviderId::Claude);
+    let _ = app.handle_message(Message::SelectProvider(ProviderId::Claude));
+    assert_eq!(app.detail_account_page, 0);
+}
+
+#[test]
 fn non_owner_account_selection_requests_owner_refresh_without_running_it() {
     let mut app = test_app(None);
     app.config.copilot_managed_accounts = vec![copilot_account("copilot-1", "octocat")];
@@ -638,12 +674,148 @@ fn applet_percent_groups_are_capped_to_four_selected_accounts() {
 }
 
 #[test]
-fn popup_session_width_is_capped_to_four_selected_accounts() {
-    let state = state_with_selected_account_percents(&[1.0, 2.0, 3.0, 4.0, 5.0]);
+fn popup_width_stays_compact_for_any_selected_account_count() {
+    for count in 1..=4 {
+        let state = state_with_selected_accounts(count);
 
-    let size = popup_session_size(&state, ProviderId::Codex);
+        assert_eq!(
+            popup_session_size(&state, ProviderId::Codex).width,
+            POPUP_COLUMN_WIDTH,
+        );
+        assert_eq!(
+            popup_session_size_with_body_height(&state, ProviderId::Codex, 300.0).width,
+            POPUP_COLUMN_WIDTH,
+        );
+    }
+}
 
-    assert_eq!(size.width, POPUP_COLUMN_WIDTH * 4.0);
+#[test]
+fn popup_height_adds_pager_for_multi_account_providers() {
+    let one = popup_session_size(&state_with_selected_accounts(1), ProviderId::Codex).height;
+    let two = popup_session_size(&state_with_selected_accounts(2), ProviderId::Codex).height;
+    let three = popup_session_size(&state_with_selected_accounts(3), ProviderId::Codex).height;
+    let four = popup_session_size(&state_with_selected_accounts(4), ProviderId::Codex).height;
+
+    assert!(two > one);
+    assert_eq!(two, three);
+    assert_eq!(three, four);
+}
+
+#[test]
+fn account_page_cycles_and_wraps_and_clamps() {
+    assert_eq!(account_page_next(0, 3), 1);
+    assert_eq!(account_page_next(2, 3), 0);
+    assert_eq!(account_page_next(0, 0), 0);
+    assert_eq!(account_page_previous(0, 3), 2);
+    assert_eq!(account_page_previous(2, 3), 1);
+    assert_eq!(account_page_previous(0, 0), 0);
+    assert_eq!(clamp_account_page(5, 3), 2);
+    assert_eq!(clamp_account_page(1, 3), 1);
+    assert_eq!(clamp_account_page(4, 0), 0);
+}
+
+#[test]
+fn pager_label_uses_runtime_label_or_numbered_fallback() {
+    let strip = |text: String| text.replace(['\u{2068}', '\u{2069}'], "");
+    assert_eq!(pager_account_label(0, "pro@example.com"), "pro@example.com");
+    assert_eq!(strip(pager_account_label(2, "")), "Account 3");
+    assert_eq!(strip(pager_account_label(0, "  ")), "Account 1");
+}
+
+#[test]
+fn opencode_go_tab_shows_first_two_summary_bars() {
+    let state = single_account_state(ProviderId::OpenCodeGo, &[25.0, 50.0, 80.0]);
+    let provider = state.provider(ProviderId::OpenCodeGo).unwrap();
+
+    assert_eq!(tab_percents(&state, provider), vec![25.0, 50.0]);
+}
+
+#[test]
+fn legacy_snapshot_provider_tab_shows_first_two_summary_bars() {
+    let mut state = AppState::empty();
+    let legacy = snapshot_with_percents(ProviderId::OpenCodeGo, &[45.5, 30.0, 15.0]);
+    state
+        .provider_mut(ProviderId::OpenCodeGo)
+        .unwrap()
+        .legacy_display_snapshot = Some(legacy);
+    let provider = state.provider(ProviderId::OpenCodeGo).unwrap();
+
+    assert_eq!(tab_percents(&state, provider), vec![45.5, 30.0]);
+}
+
+#[test]
+fn provider_tab_bar_area_reserves_two_full_girth_slots() {
+    assert_eq!(provider_tab_bar_area_height(), 2.0 * 4.0 + 3.0);
+}
+
+#[test]
+fn provider_tab_single_line_content_fits_fixed_row_height() {
+    assert!(
+        provider_tab_content_height() < PROVIDER_TAB_ROW_HEIGHT,
+        "one-line label and reserved two-bar area ({}) must fit the {}px tab row",
+        provider_tab_content_height(),
+        PROVIDER_TAB_ROW_HEIGHT,
+    );
+}
+
+#[test]
+fn provider_tab_single_line_width_fits_longest_provider_label() {
+    const CONSERVATIVE_GLYPH_WIDTH_AT_SIZE_10: f32 = 6.0;
+    let label_width = longest_provider_label_glyphs() * CONSERVATIVE_GLYPH_WIDTH_AT_SIZE_10;
+
+    assert!(
+        label_width < provider_tab_card_inner_width(),
+        "longest one-line label ({label_width}px) must fit the {}px card inner width",
+        provider_tab_card_inner_width(),
+    );
+}
+
+#[test]
+fn single_window_provider_tab_shows_one_bar() {
+    let state = single_account_state(ProviderId::Minimax, &[40.0]);
+    let provider = state.provider(ProviderId::Minimax).unwrap();
+
+    assert_eq!(tab_percents(&state, provider), vec![40.0]);
+}
+
+#[test]
+fn multi_account_tab_bars_are_prioritized_and_bounded() {
+    let state = state_with_selected_account_percents(&[10.0, 20.0, 30.0, 40.0]);
+    let provider = state.provider(ProviderId::Codex).unwrap();
+
+    assert_eq!(tab_percents(&state, provider), vec![10.0, 20.0]);
+}
+
+#[test]
+fn settings_category_rows_wrap_current_and_future_categories() {
+    assert_eq!(settings_category_row_sizes(0), Vec::<usize>::new());
+    assert_eq!(settings_category_row_sizes(4), vec![4]);
+    assert_eq!(settings_category_row_sizes(9), vec![5, 4]);
+    assert_eq!(settings_category_row_sizes(10), vec![5, 5]);
+    assert_eq!(settings_category_row_sizes(11), vec![4, 4, 3]);
+}
+
+#[test]
+fn settings_nav_height_grows_per_category_row() {
+    let one_row = settings_nav_height(4);
+    let two_rows = settings_nav_height(9);
+
+    assert!(one_row > 0.0);
+    assert!((two_rows - (2.0 * one_row + 8.0)).abs() < f32::EPSILON);
+}
+
+fn state_with_selected_accounts(count: usize) -> AppState {
+    state_with_selected_account_percents(&vec![0.0; count])
+}
+
+fn single_account_state(provider: ProviderId, percents: &[f32]) -> AppState {
+    let mut state = AppState::empty();
+    let account_id = format!("{provider:?}-1");
+    state.provider_mut(provider).unwrap().selected_account_ids = vec![account_id.clone()];
+    let mut account = ProviderAccountRuntimeState::empty(provider, account_id, provider.label());
+    account.snapshot = Some(snapshot_with_percents(provider, percents));
+    state.upsert_account(account);
+    state
 }
 
 #[test]
@@ -684,6 +856,82 @@ fn popup_provider_height_is_independent_from_settings_height() {
 
     assert!(settings.height > provider.height);
     assert_eq!(provider.width, POPUP_COLUMN_WIDTH);
+}
+
+#[test]
+fn provider_tab_row_sizes_are_empty_with_no_enabled_providers() {
+    assert_eq!(provider_tab_row_sizes(0), Vec::<usize>::new());
+}
+
+#[test]
+fn provider_tab_row_sizes_fit_within_one_row_up_to_four() {
+    assert_eq!(provider_tab_row_sizes(1), vec![1]);
+    assert_eq!(provider_tab_row_sizes(2), vec![2]);
+    assert_eq!(provider_tab_row_sizes(3), vec![3]);
+    assert_eq!(provider_tab_row_sizes(4), vec![4]);
+}
+
+#[test]
+fn provider_tab_row_sizes_balance_across_rows() {
+    assert_eq!(provider_tab_row_sizes(5), vec![3, 2]);
+    assert_eq!(provider_tab_row_sizes(6), vec![3, 3]);
+    assert_eq!(provider_tab_row_sizes(7), vec![4, 3]);
+    assert_eq!(provider_tab_row_sizes(8), vec![4, 4]);
+    assert_eq!(provider_tab_row_sizes(9), vec![3, 3, 3]);
+}
+
+#[test]
+fn provider_nav_height_stays_flat_within_one_tab_row() {
+    assert_eq!(
+        provider_nav_height(&state_with_enabled_provider_count(1)),
+        provider_nav_height(&state_with_enabled_provider_count(4)),
+    );
+}
+
+#[test]
+fn provider_nav_height_is_compact_and_two_rows_at_eight_providers() {
+    let one_row = provider_nav_height(&state_with_enabled_provider_count(1));
+    let eight_tabs = provider_nav_height(&state_with_enabled_provider_count(8));
+
+    assert!((64.0..=72.0).contains(&one_row));
+    assert!((eight_tabs - (2.0 * one_row + 8.0)).abs() < f32::EPSILON);
+}
+
+#[test]
+fn popup_provider_height_adds_nav_rows_for_extra_tab_rows() {
+    let four_tabs = state_with_enabled_provider_count(4);
+    let eight_tabs = state_with_enabled_provider_count(8);
+
+    let nav_growth = provider_nav_height(&eight_tabs) - provider_nav_height(&four_tabs);
+    let popup_growth = popup_session_size_with_body_height(&eight_tabs, ProviderId::Codex, 300.0)
+        .height
+        - popup_session_size_with_body_height(&four_tabs, ProviderId::Codex, 300.0).height;
+
+    assert!(nav_growth > 0.0);
+    assert_eq!(popup_growth, nav_growth);
+}
+
+#[test]
+fn popup_settings_height_ignores_provider_tab_rows() {
+    let four_tabs = state_with_enabled_provider_count(4);
+    let eight_tabs = state_with_enabled_provider_count(8);
+
+    assert_eq!(
+        popup_settings_size(&four_tabs).height,
+        popup_settings_size(&eight_tabs).height,
+    );
+}
+
+fn state_with_enabled_provider_count(count: usize) -> AppState {
+    let providers: Vec<(ProviderId, usize, bool)> = ProviderId::ALL
+        .into_iter()
+        .map(|provider| (provider, 1, false))
+        .collect();
+    let mut state = state_with_provider_window_counts(&providers);
+    for (index, provider) in ProviderId::ALL.into_iter().enumerate() {
+        state.provider_mut(provider).unwrap().enabled = index < count;
+    }
+    state
 }
 
 #[test]
@@ -870,6 +1118,7 @@ pub(super) fn test_app(refresh_owner: Option<RefreshOwner>) -> AppModel {
         config: Config::default(),
         state: AppState::empty(),
         selected_provider: ProviderId::Codex,
+        detail_account_page: 0,
         popup_route: PopupRoute::ProviderDetail,
         update_status: UpdateStatus::Unchecked,
         launch_mode: LaunchMode::Standalone,
@@ -884,6 +1133,7 @@ pub(super) fn test_app(refresh_owner: Option<RefreshOwner>) -> AppModel {
             lock_path,
         },
         refresh_owner,
+        opencode_import_availability: Default::default(),
         codex_login: None,
         codex_login_handle: None,
         claude_login: None,
@@ -898,6 +1148,8 @@ pub(super) fn test_app(refresh_owner: Option<RefreshOwner>) -> AppModel {
         minimax_login_handle: None,
         kimi_login: None,
         kimi_login_handle: None,
+        opencode_go_login: None,
+        opencode_go_login_handle: None,
     }
 }
 
@@ -1023,6 +1275,17 @@ fn kimi_account(id: &str) -> ManagedKimiAccountConfig {
     }
 }
 
+fn opencode_go_account(id: &str) -> crate::config::ManagedOpenCodeGoAccountConfig {
+    crate::config::ManagedOpenCodeGoAccountConfig {
+        id: id.to_string(),
+        label: id.to_string(),
+        api_key_source: "env:OPENCODE_GO_API_KEY".to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        last_authenticated_at: None,
+    }
+}
+
 fn seed_account_storage(dir: PathBuf, provider: ProviderId, id: &str, email: &str) {
     let storage = ProviderAccountStorage::new(dir);
     storage
@@ -1140,6 +1403,16 @@ fn delete_account_requests_refresh_for_all_providers() {
                     .kimi_managed_accounts
                     .push(kimi_account("remove"));
                 app.config.selected_kimi_account_ids = vec![keep_id.to_string()];
+                "remove".to_string()
+            }
+            ProviderId::OpenCodeGo => {
+                app.config
+                    .opencode_go_managed_accounts
+                    .push(opencode_go_account(keep_id));
+                app.config
+                    .opencode_go_managed_accounts
+                    .push(opencode_go_account("remove"));
+                app.config.selected_opencode_go_account_ids = vec![keep_id.to_string()];
                 "remove".to_string()
             }
         };

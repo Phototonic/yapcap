@@ -13,7 +13,7 @@ fn copilot_on_event_code_populates_device_code_fields() {
         output: Vec::new(),
         error: None,
         code_copied: false,
-        expected_github_user_id: None,
+        importing_from_opencode: false,
     });
 
     let _ = CopilotLoginFlow::on_event(
@@ -45,7 +45,7 @@ fn copilot_on_event_finished_ok_applies_account_and_succeeds() {
         output: Vec::new(),
         error: None,
         code_copied: false,
-        expected_github_user_id: None,
+        importing_from_opencode: false,
     });
 
     let _ = CopilotLoginFlow::on_event(

@@ -11,6 +11,7 @@ fn codex_on_event_output_buffers_lines_and_captures_login_url() {
         login_url: None,
         output: (0..8).map(|i| format!("line-{i}")).collect(),
         error: None,
+        importing_from_opencode: false,
     });
 
     let _ = CodexLoginFlow::on_event(
@@ -41,6 +42,7 @@ fn codex_on_event_finished_err_marks_login_failed() {
         login_url: None,
         output: Vec::new(),
         error: None,
+        importing_from_opencode: false,
     });
 
     let _ = CodexLoginFlow::on_event(
@@ -66,6 +68,7 @@ fn codex_on_event_finished_ok_applies_account_and_succeeds() {
         login_url: None,
         output: Vec::new(),
         error: None,
+        importing_from_opencode: false,
     });
 
     let _ = CodexLoginFlow::on_event(

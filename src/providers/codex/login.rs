@@ -6,9 +6,7 @@ use crate::account_storage::{
 use crate::auth::{CodexAuth, email_from_id_token};
 use crate::config::{Config, ManagedCodexAccountConfig};
 use crate::model::UsageSnapshot;
-use crate::providers::codex::account::{
-    create_private_dir, find_matching_account, new_account_id, normalized_email,
-};
+use crate::providers::codex::account::{find_matching_account, new_account_id, normalized_email};
 use crate::providers::codex::fetch_oauth;
 use crate::providers::codex::oauth::{
     DEFAULT_CALLBACK_PORT, FALLBACK_CALLBACK_PORT, ISSUER, TOKEN_ENDPOINT, authorization_url,
@@ -29,6 +27,7 @@ pub struct CodexLoginState {
     pub login_url: Option<String>,
     pub output: Vec<String>,
     pub error: Option<String>,
+    pub importing_from_opencode: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -58,15 +57,13 @@ pub struct CodexLoginSuccess {
 
 pub fn prepare(config: Config) -> Result<(CodexLoginState, Task<CodexLoginEvent>), String> {
     let flow_id = new_account_id();
-    let account_root = crate::config::paths().codex_accounts_dir;
-    create_private_dir(&account_root)?;
-
     let state = CodexLoginState {
         flow_id: flow_id.clone(),
         status: CodexLoginStatus::Running,
         login_url: None,
         output: Vec::new(),
         error: None,
+        importing_from_opencode: false,
     };
     let stream = cosmic::iced::stream::channel(100, move |mut output| async move {
         run_login(flow_id, config, &mut output).await;
@@ -101,14 +98,15 @@ async fn run_login_inner(
         .map_err(|error| tracing::warn!("Codex usage validation failed after login: {error}"))
         .ok();
 
-    commit_login(flow_id, config, auth, snapshot)
+    commit_login(flow_id, config, auth, snapshot, None)
 }
 
-fn commit_login(
+pub(super) fn commit_login(
     flow_id: &str,
     config: &Config,
     auth: CodexAuth,
     snapshot: Option<UsageSnapshot>,
+    target_account_id: Option<&str>,
 ) -> Result<CodexLoginSuccess, String> {
     let provider_account_id = snapshot
         .as_ref()
@@ -123,7 +121,27 @@ fn commit_login(
         "Codex login did not expose an account email; cannot create explicit account".to_string()
     })?;
     let login_email = normalized_email(&login_email);
-    let existing = find_matching_account(config, Some(&login_email)).cloned();
+    let existing = if let Some(target_account_id) = target_account_id {
+        let target = config
+            .codex_managed_accounts
+            .iter()
+            .find(|account| account.id == target_account_id)
+            .ok_or_else(|| "Codex account no longer exists".to_string())?;
+        if normalized_email(target.email.as_deref().unwrap_or(&target.label)) != login_email
+            || target
+                .provider_account_id
+                .as_deref()
+                .is_some_and(|expected| provider_account_id.as_deref() != Some(expected))
+        {
+            return Err(
+                "This is a different Codex account. The existing account was not updated."
+                    .to_string(),
+            );
+        }
+        Some(target.clone())
+    } else {
+        find_matching_account(config, Some(&login_email), provider_account_id.as_deref()).cloned()
+    };
     let storage = ProviderAccountStorage::new(crate::config::paths().codex_accounts_dir);
     let new_account =
         new_provider_account(auth, login_email, provider_account_id, snapshot.clone());
@@ -471,7 +489,7 @@ mod tests {
             ..Config::default()
         };
 
-        let found = find_matching_account(&config, Some("USER@example.com"));
+        let found = find_matching_account(&config, Some("USER@example.com"), Some("acct_123"));
 
         assert_eq!(found.map(|account| account.id.as_str()), Some("work"));
     }
@@ -488,6 +506,7 @@ mod tests {
             "codex-test",
             &Config::default(),
             auth(Some("User@Example.com"), Some("acct_123"), "access-1"),
+            None,
             None,
         )
         .unwrap();
@@ -515,7 +534,7 @@ mod tests {
     }
 
     #[test]
-    fn duplicate_codex_oauth_login_updates_existing_account() {
+    fn same_email_with_different_provider_id_creates_a_separate_account() {
         let _guard = test_support::env_lock();
         let state_root = temp_state("duplicate");
         unsafe {
@@ -525,6 +544,7 @@ mod tests {
             "codex-existing",
             &Config::default(),
             auth(Some("user@example.com"), Some("acct_old"), "access-1"),
+            None,
             None,
         )
         .unwrap();
@@ -539,23 +559,25 @@ mod tests {
             &config,
             auth(Some("USER@example.com"), Some("acct_new"), "access-2"),
             None,
+            None,
         )
         .unwrap();
         unsafe {
             std::env::remove_var("XDG_STATE_HOME");
         }
 
-        assert_eq!(second.account.id, "codex-existing");
+        assert_eq!(second.account.id, "codex-new");
         assert_eq!(
             second.account.provider_account_id.as_deref(),
             Some("acct_new")
         );
-        assert!(!second.account.codex_home.ends_with("codex-new"));
+        assert!(second.account.codex_home.ends_with("codex-new"));
 
         let storage = ProviderAccountStorage::new(state_root.join("yapcap/codex-accounts"));
-        let tokens = storage.load_tokens("codex-existing").unwrap();
-        assert_eq!(tokens.access_token, "access-2");
-        assert!(storage.load_tokens("codex-new").is_err());
+        let original_tokens = storage.load_tokens("codex-existing").unwrap();
+        assert_eq!(original_tokens.access_token, "access-1");
+        let new_tokens = storage.load_tokens("codex-new").unwrap();
+        assert_eq!(new_tokens.access_token, "access-2");
     }
 
     #[test]
@@ -571,6 +593,7 @@ mod tests {
             &Config::default(),
             auth(None, Some("acct_123"), "access-1"),
             None,
+            None,
         );
         unsafe {
             std::env::remove_var("XDG_STATE_HOME");
@@ -582,5 +605,33 @@ mod tests {
                 .join("yapcap/codex-accounts/codex-failed")
                 .exists()
         );
+    }
+
+    #[test]
+    fn targeted_reauth_rejects_a_different_codex_identity() {
+        let now = Utc::now();
+        let config = Config {
+            codex_managed_accounts: vec![ManagedCodexAccountConfig {
+                id: "codex-existing".to_string(),
+                label: "user@example.com".to_string(),
+                codex_home: std::path::PathBuf::new(),
+                email: Some("user@example.com".to_string()),
+                provider_account_id: Some("acct-user".to_string()),
+                created_at: now,
+                updated_at: now,
+                last_authenticated_at: Some(now),
+            }],
+            ..Config::default()
+        };
+
+        let result = commit_login(
+            "codex-new",
+            &config,
+            auth(Some("other@example.com"), Some("acct-other"), "access"),
+            None,
+            Some("codex-existing"),
+        );
+
+        assert!(result.is_err());
     }
 }

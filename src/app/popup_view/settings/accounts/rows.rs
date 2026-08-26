@@ -60,7 +60,8 @@ fn row_status(provider: ProviderId, account: &ProviderAccountRuntimeState) -> Op
         | ProviderId::Gemini
         | ProviderId::Copilot
         | ProviderId::Minimax
-        | ProviderId::Kimi => {
+        | ProviderId::Kimi
+        | ProviderId::OpenCodeGo => {
             (account.auth_state == AuthState::ActionRequired).then(|| RowStatus {
                 kind: RowBadgeKind::Warning,
                 badge_text: fl!("badge-login-required"),
@@ -101,7 +102,7 @@ fn reauth_capability_satisfied(
     action_support: Option<&ProviderAccountActionSupport>,
 ) -> bool {
     match provider {
-        ProviderId::Codex | ProviderId::Minimax | ProviderId::Kimi => true,
+        ProviderId::Codex | ProviderId::Minimax | ProviderId::Kimi | ProviderId::OpenCodeGo => true,
         ProviderId::Cursor => action_support.is_some_and(|support| {
             support.can_reauthenticate && support.supports_background_status_refresh
         }),
@@ -120,6 +121,7 @@ fn reauth_tooltip(provider: ProviderId) -> String {
         ProviderId::Copilot => fl!("copilot-account-reauth-tooltip"),
         ProviderId::Minimax => fl!("minimax-account-reauth-tooltip"),
         ProviderId::Kimi => fl!("kimi-account-reauth-tooltip"),
+        ProviderId::OpenCodeGo => fl!("opencode-go-account-reauth-tooltip"),
     }
 }
 
@@ -129,6 +131,7 @@ pub(super) fn account_settings_row<'a>(
     selected_ids: &[&str],
     active_id: Option<&str>,
     config: &'a Config,
+    opencode_import_available: bool,
     enabled: bool,
 ) -> Element<'a, Message> {
     let is_selected = selected_ids.contains(&account.account_id.as_str());
@@ -184,7 +187,24 @@ pub(super) fn account_settings_row<'a>(
         actions = actions.push(account_action_icon_button(
             "view-refresh-symbolic",
             reauth_tooltip(provider),
-            Some(Message::ReauthenticateAccount(provider, account_id)),
+            Some(Message::ReauthenticateAccount(provider, account_id.clone())),
+        ));
+    }
+    if enabled
+        && opencode_import_available
+        && matches!(provider, ProviderId::Codex | ProviderId::Copilot)
+    {
+        actions = actions.push(account_action_icon_button(
+            "document-import-symbolic",
+            match provider {
+                ProviderId::Codex => fl!("codex-account-import-reauth-tooltip"),
+                ProviderId::Copilot => fl!("copilot-account-import-reauth-tooltip"),
+                _ => unreachable!(),
+            },
+            Some(Message::ImportFromOpenCode(
+                provider,
+                Some(account_id.clone()),
+            )),
         ));
     }
     actions = actions.push(account_action_icon_button(

@@ -201,6 +201,45 @@ fn create_account_creates_missing_provider_root() {
     assert!(stored.account_dir.join(TOKENS_FILE).exists());
 }
 
+#[cfg(unix)]
+#[test]
+fn managed_account_storage_repairs_directory_and_file_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let storage = ProviderAccountStorage::new(test_dir("managed-permissions"));
+    let stored = storage
+        .create_account(NewProviderAccount {
+            provider: ProviderId::Claude,
+            email: "person@example.com".to_string(),
+            provider_account_id: None,
+            organization_id: None,
+            organization_name: None,
+            tokens: tokens(),
+            snapshot: Some(snapshot()),
+        })
+        .unwrap();
+
+    let mode = |path: &Path| fs::metadata(path).unwrap().permissions().mode() & 0o777;
+    assert_eq!(mode(&stored.account_dir), 0o700);
+    for file_name in [METADATA_FILE, TOKENS_FILE, SNAPSHOT_FILE] {
+        assert_eq!(mode(&stored.account_dir.join(file_name)), 0o600);
+    }
+
+    fs::set_permissions(&stored.account_dir, fs::Permissions::from_mode(0o755)).unwrap();
+    fs::set_permissions(
+        stored.account_dir.join(TOKENS_FILE),
+        fs::Permissions::from_mode(0o644),
+    )
+    .unwrap();
+
+    storage
+        .save_tokens(&stored.account_ref.account_id, &tokens())
+        .unwrap();
+
+    assert_eq!(mode(&stored.account_dir), 0o700);
+    assert_eq!(mode(&stored.account_dir.join(TOKENS_FILE)), 0o600);
+}
+
 #[test]
 fn save_snapshot_recreates_missing_account_directory() {
     let storage = ProviderAccountStorage::new(test_dir("save-missing-dir"));
@@ -254,12 +293,7 @@ fn create_account_returns_clear_error_when_path_component_is_a_file() {
         })
         .unwrap_err();
 
-    match err {
-        AccountStorageError::CreateDir { path, .. } => {
-            assert!(path.starts_with(&blocker));
-        }
-        other => panic!("expected CreateDir error, got {other:?}"),
-    }
+    assert!(matches!(err, AccountStorageError::NotDirectory { path } if path == blocker));
 }
 
 #[test]
@@ -289,6 +323,132 @@ fn delete_account_removes_account_directory() {
             .delete_account(&stored.account_ref.account_id)
             .unwrap()
     );
+}
+
+#[test]
+fn rejects_invalid_account_ids_without_touching_outside_paths() {
+    let root = test_dir("invalid-id-root");
+    let outside = root
+        .parent()
+        .unwrap()
+        .join("yapcap-account-storage-outside");
+    fs::write(&outside, "unchanged").unwrap();
+    let storage = ProviderAccountStorage::new(&root);
+
+    for account_id in [
+        "",
+        "../yapcap-account-storage-outside",
+        "/tmp/account",
+        "a/b",
+        "a\\b",
+        ".",
+        "..",
+    ] {
+        assert!(matches!(
+            storage.account_dir(account_id),
+            Err(AccountStorageError::InvalidAccountId)
+        ));
+        assert!(matches!(
+            storage.load_tokens(account_id),
+            Err(AccountStorageError::InvalidAccountId)
+        ));
+        assert!(matches!(
+            storage.delete_account(account_id),
+            Err(AccountStorageError::InvalidAccountId)
+        ));
+        assert!(matches!(
+            storage.replace_account(
+                account_id.to_string(),
+                NewProviderAccount {
+                    provider: ProviderId::Claude,
+                    email: "person@example.com".to_string(),
+                    provider_account_id: None,
+                    organization_id: None,
+                    organization_name: None,
+                    tokens: tokens(),
+                    snapshot: None,
+                },
+            ),
+            Err(AccountStorageError::InvalidAccountId)
+        ));
+    }
+
+    assert_eq!(fs::read_to_string(outside).unwrap(), "unchanged");
+}
+
+#[cfg(unix)]
+#[test]
+fn refuses_symlinked_account_directories_without_modifying_the_target() {
+    use std::os::unix::fs::symlink;
+
+    let root = test_dir("symlink-root");
+    let outside = test_dir("symlink-outside");
+    fs::create_dir_all(&outside).unwrap();
+    fs::write(outside.join("marker"), "unchanged").unwrap();
+    fs::create_dir_all(&root).unwrap();
+    symlink(&outside, root.join("account")).unwrap();
+    let storage = ProviderAccountStorage::new(&root);
+
+    assert!(matches!(
+        storage.load_metadata("account"),
+        Err(AccountStorageError::RefuseSymlink { .. })
+    ));
+    assert!(matches!(
+        storage.save_tokens("account", &tokens()),
+        Err(AccountStorageError::RefuseSymlink { .. })
+    ));
+    assert!(matches!(
+        storage.delete_account("account"),
+        Err(AccountStorageError::RefuseSymlink { .. })
+    ));
+    assert_eq!(
+        fs::read_to_string(outside.join("marker")).unwrap(),
+        "unchanged"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn refuses_symlinked_credential_files_without_following_them() {
+    use std::os::unix::fs::symlink;
+
+    let storage = ProviderAccountStorage::new(test_dir("symlinked-files-root"));
+    let stored = storage
+        .create_account(NewProviderAccount {
+            provider: ProviderId::Claude,
+            email: "person@example.com".to_string(),
+            provider_account_id: None,
+            organization_id: None,
+            organization_name: None,
+            tokens: tokens(),
+            snapshot: Some(snapshot()),
+        })
+        .unwrap();
+    let outside = test_dir("symlinked-files-outside");
+    fs::create_dir_all(&outside).unwrap();
+
+    for file_name in [TOKENS_FILE, METADATA_FILE, SNAPSHOT_FILE] {
+        let target = outside.join(file_name);
+        fs::write(&target, "unchanged").unwrap();
+        let managed = stored.account_dir.join(file_name);
+        fs::remove_file(&managed).unwrap();
+        symlink(&target, &managed).unwrap();
+
+        assert!(
+            storage
+                .read_text_file(&stored.account_ref.account_id, file_name)
+                .is_err()
+        );
+        assert!(
+            storage
+                .write_text_file(&stored.account_ref.account_id, file_name, "replacement")
+                .is_err()
+        );
+        assert_eq!(fs::read_to_string(&target).unwrap(), "unchanged");
+
+        fs::remove_file(managed).unwrap();
+        fs::write(stored.account_dir.join(file_name), "{}").unwrap();
+    }
 }
 
 #[cfg(unix)]

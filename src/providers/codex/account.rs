@@ -5,8 +5,7 @@ use crate::account_storage::ProviderAccountStorage;
 use crate::config::{Config, ManagedCodexAccountConfig, managed_codex_account_dir, paths};
 use crate::model::ProviderId;
 use chrono::Utc;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodexAccount {
@@ -29,17 +28,25 @@ pub fn discover_accounts(config: &Config) -> Vec<CodexAccount> {
         }
         let email = Some(metadata.email).filter(|email| !email.is_empty());
         let label = email.clone().unwrap_or_else(|| "Codex account".to_string());
+        let Ok(codex_home) = storage.account_dir(&managed.id) else {
+            continue;
+        };
         let discovered = CodexAccount {
             id: managed.id.clone(),
             label,
             email,
             provider_account_id: metadata.provider_account_id,
-            codex_home: storage.account_dir(&managed.id),
+            codex_home,
         };
         match discovered.email.as_deref().map(normalized_email) {
             Some(email_key) => {
                 if let Some(index) = accounts.iter().position(|existing: &CodexAccount| {
-                    existing.email.as_deref().map(normalized_email) == Some(email_key.clone())
+                    same_identity(
+                        existing.email.as_deref(),
+                        existing.provider_account_id.as_deref(),
+                        Some(&email_key),
+                        discovered.provider_account_id.as_deref(),
+                    )
                 }) {
                     let existing = &accounts[index];
                     if prefer_account(existing, &discovered, &config.selected_codex_account_ids) {
@@ -98,20 +105,18 @@ pub fn normalized_email(email: &str) -> String {
 pub(crate) fn find_matching_account<'a>(
     config: &'a Config,
     email: Option<&str>,
+    provider_account_id: Option<&str>,
 ) -> Option<&'a ManagedCodexAccountConfig> {
     let email = email?;
     let email = normalized_email(email);
-    config
-        .codex_managed_accounts
-        .iter()
-        .find(|account| account.email.as_deref().map(normalized_email) == Some(email.clone()))
-}
-
-pub(crate) fn create_private_dir(path: &Path) -> Result<(), String> {
-    fs::create_dir_all(path)
-        .map_err(|error| format!("failed to create {}: {error}", path.display()))?;
-    set_private_dir_permissions(path)?;
-    Ok(())
+    config.codex_managed_accounts.iter().find(|account| {
+        same_identity(
+            account.email.as_deref(),
+            account.provider_account_id.as_deref(),
+            Some(&email),
+            provider_account_id,
+        )
+    })
 }
 
 pub(crate) fn new_account_id() -> String {
@@ -134,7 +139,12 @@ fn dedupe_managed_accounts(config: &mut Config) -> bool {
         if let Some(index) = deduped
             .iter()
             .position(|existing: &ManagedCodexAccountConfig| {
-                existing.email.as_deref().map(normalized_email) == Some(email_key.clone())
+                same_identity(
+                    existing.email.as_deref(),
+                    existing.provider_account_id.as_deref(),
+                    Some(&email_key),
+                    account.provider_account_id.as_deref(),
+                )
             })
         {
             let existing = deduped.remove(index);
@@ -164,6 +174,21 @@ fn dedupe_managed_accounts(config: &mut Config) -> bool {
     config.codex_managed_accounts = deduped;
     config.selected_codex_account_ids = selected_ids;
     changed
+}
+
+fn same_identity(
+    existing_email: Option<&str>,
+    existing_provider_account_id: Option<&str>,
+    candidate_email: Option<&str>,
+    candidate_provider_account_id: Option<&str>,
+) -> bool {
+    match (existing_provider_account_id, candidate_provider_account_id) {
+        (Some(existing), Some(candidate)) => existing == candidate,
+        (None, None) => {
+            existing_email.map(normalized_email) == candidate_email.map(normalized_email)
+        }
+        _ => false,
+    }
 }
 
 fn prefer_account(
@@ -224,18 +249,6 @@ fn merge_account_metadata(
     }
 }
 
-#[cfg(unix)]
-fn set_private_dir_permissions(path: &Path) -> Result<(), String> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
-        .map_err(|error| format!("failed to secure {}: {error}", path.display()))
-}
-
-#[cfg(not(unix))]
-fn set_private_dir_permissions(_path: &Path) -> Result<(), String> {
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -244,6 +257,7 @@ mod tests {
     };
     use crate::model::ProviderId;
     use crate::test_support;
+    use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_dir(name: &str) -> std::path::PathBuf {
@@ -309,7 +323,7 @@ mod tests {
     }
 
     #[test]
-    fn dedupes_existing_same_email_accounts() {
+    fn preserves_same_email_accounts_with_different_known_id_states() {
         let now = Utc::now();
         let home_a = temp_dir("codex-dedupe-a");
         let home_b = temp_dir("codex-dedupe-b");
@@ -343,23 +357,13 @@ mod tests {
 
         let changed = dedupe_managed_accounts(&mut config);
 
-        assert!(changed);
-        assert_eq!(config.codex_managed_accounts.len(), 1);
-        assert_eq!(
-            config.codex_managed_accounts[0].email.as_deref(),
-            Some("USER@example.com")
-        );
+        assert!(!changed);
+        assert_eq!(config.codex_managed_accounts.len(), 2);
         assert_eq!(config.selected_codex_account_ids.as_slice(), ["codex-b"]);
-        assert_eq!(
-            config.codex_managed_accounts[0]
-                .provider_account_id
-                .as_deref(),
-            Some("acct-123")
-        );
     }
 
     #[test]
-    fn discover_accounts_returns_one_entry_per_email() {
+    fn discover_accounts_preserves_different_provider_account_ids() {
         let now = Utc::now();
         let _guard = test_support::env_lock();
         let state_root = temp_dir("codex-discover-state");
@@ -405,8 +409,17 @@ mod tests {
             std::env::remove_var("XDG_STATE_HOME");
         }
 
-        assert_eq!(accounts.len(), 1);
-        assert_eq!(accounts[0].id, account_b.account_ref.account_id);
+        assert_eq!(accounts.len(), 2);
+        assert!(
+            accounts
+                .iter()
+                .any(|account| account.id == account_a.account_ref.account_id)
+        );
+        assert!(
+            accounts
+                .iter()
+                .any(|account| account.id == account_b.account_ref.account_id)
+        );
     }
 
     #[test]

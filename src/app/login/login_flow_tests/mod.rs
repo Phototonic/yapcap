@@ -7,3 +7,4 @@ mod gemini;
 mod generic;
 mod kimi;
 mod minimax;
+mod opencode_go;

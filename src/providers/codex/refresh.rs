@@ -43,20 +43,8 @@ pub(crate) async fn refresh_access_token_at(
 
     let status = response.status();
     if !status.is_success() {
-        let snippet = response
-            .text()
-            .await
-            .ok()
-            .and_then(|body| {
-                let trimmed = body.trim();
-                (!trimmed.is_empty()).then(|| trimmed.chars().take(512).collect::<String>())
-            })
-            .map(|body| format!(" (body: {body})"))
-            .unwrap_or_default();
-
         return Err(CodexError::RefreshHttp {
             status: status.as_u16(),
-            details: snippet,
         });
     }
 

@@ -418,7 +418,7 @@ fn ensure_provider_states(state: &mut AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::{ClaudeError, CodexError};
+    use crate::error::{ClaudeError, CodexError, OpenCodeGoError};
     use crate::model::{ProviderIdentity, UsageHeadline};
 
     fn snapshot() -> UsageSnapshot {
@@ -705,6 +705,32 @@ mod tests {
 
         assert_eq!(account.health, ProviderHealth::Error);
         assert!(!result.provider.is_refreshing);
+    }
+
+    #[tokio::test]
+    async fn opencode_go_entitlement_failure_is_retryable_without_reauthentication() {
+        let result = refresh_provider_account(
+            ProviderId::OpenCodeGo,
+            true,
+            None,
+            None,
+            "opencode-go-1".to_string(),
+            "OpenCode Go".to_string(),
+            async { Err(AppError::from(OpenCodeGoError::EntitlementRequired)) },
+        )
+        .await;
+        let account = result.accounts.first().unwrap();
+
+        assert_eq!(account.auth_state, AuthState::Error);
+        assert_eq!(
+            account.error.as_deref(),
+            Some("OpenCode Go subscription required")
+        );
+        assert_eq!(
+            result.provider.account_status,
+            AccountSelectionStatus::Ready
+        );
+        assert_ne!(result.provider.error.as_deref(), Some("Login required"));
     }
 
     #[tokio::test]

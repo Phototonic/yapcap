@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::config::{Config, ManagedKimiAccountConfig, managed_kimi_account_dir};
+use crate::config::{Config, ManagedKimiAccountConfig};
 use crate::providers::kimi::opencode;
 use crate::providers::kimi::storage::write_api_key;
 use chrono::Utc;
@@ -85,7 +85,7 @@ impl KimiLoginState {
             last_authenticated_at: Some(now),
         };
 
-        write_api_key(&managed_kimi_account_dir(&account.id), &self.api_key)?;
+        write_api_key(&account.id, &self.api_key)?;
         Ok(account)
     }
 }
@@ -141,7 +141,11 @@ mod tests {
     fn prepare_marks_discovered_api_key_as_opencode_prefill() {
         let temp = tempdir().unwrap();
         let path = temp.path().join("auth.json");
-        fs::write(&path, r#"{"kimi-for-coding":{"key":"test-key"}}"#).unwrap();
+        fs::write(
+            &path,
+            r#"{"kimi-for-coding":{"type":"api","key":"test-key"}}"#,
+        )
+        .unwrap();
         let mut env = crate::test_support::test_env();
         env.set("YAPCAP_OPENCODE_AUTH_PATH", &path);
 

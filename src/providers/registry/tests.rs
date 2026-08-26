@@ -40,6 +40,15 @@ fn providers_expose_expected_capabilities() {
             requires_auth_prompt_on_auth_failure: false,
         }
     );
+    assert_eq!(
+        capabilities(ProviderId::OpenCodeGo),
+        ProviderCapabilities {
+            supports_delete: true,
+            supports_reauthentication: true,
+            supports_background_status_refresh: false,
+            requires_auth_prompt_on_auth_failure: false,
+        }
+    );
 }
 
 #[test]
@@ -110,13 +119,14 @@ fn action_support_matches_capabilities() {
 }
 
 #[test]
-fn system_active_account_id_only_supported_by_codex_claude_gemini_minimax_kimi() {
+fn system_active_account_id_only_supported_by_codex_claude_gemini_minimax_kimi_opencode_go() {
     use crate::account_storage::{
         NewProviderAccount, ProviderAccountStorage, ProviderAccountTokens,
     };
     use crate::config::{
         ManagedClaudeAccountConfig, ManagedCodexAccountConfig, ManagedGeminiAccountConfig,
-        ManagedKimiAccountConfig, ManagedMinimaxAccountConfig, paths,
+        ManagedKimiAccountConfig, ManagedMinimaxAccountConfig, ManagedOpenCodeGoAccountConfig,
+        paths,
     };
     use chrono::Utc;
     use std::fs;
@@ -132,6 +142,7 @@ fn system_active_account_id_only_supported_by_codex_claude_gemini_minimax_kimi()
     env.set("XDG_STATE_HOME", &state);
     env.set("MINIMAX_API_KEY", "test-minimax-key");
     env.set("KIMI_API_KEY", "test-kimi-key");
+    env.set("OPENCODE_GO_API_KEY", "test-opencode-go-key");
     env.remove("FLATPAK_ID");
 
     let codex_dir = home.join(".codex");
@@ -228,6 +239,14 @@ fn system_active_account_id_only_supported_by_codex_claude_gemini_minimax_kimi()
             updated_at: Utc::now(),
             last_authenticated_at: None,
         }],
+        opencode_go_managed_accounts: vec![ManagedOpenCodeGoAccountConfig {
+            id: "opencode-go-1".to_string(),
+            label: "OpenCode Go".to_string(),
+            api_key_source: "env:OPENCODE_GO_API_KEY".to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            last_authenticated_at: None,
+        }],
         ..Config::default()
     };
 
@@ -239,6 +258,7 @@ fn system_active_account_id_only_supported_by_codex_claude_gemini_minimax_kimi()
         (ProviderId::Copilot, false),
         (ProviderId::Minimax, true),
         (ProviderId::Kimi, true),
+        (ProviderId::OpenCodeGo, true),
     ];
     for (provider, expect_some) in expectations {
         let result = system_active_account_id(provider, &config);

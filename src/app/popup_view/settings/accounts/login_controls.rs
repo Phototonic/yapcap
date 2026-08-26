@@ -3,9 +3,12 @@ use super::super::super::{
     CopilotLoginState, CopilotLoginStatus, CursorScanState, Element, GeminiLoginState,
     GeminiLoginStatus, Length, Message, fl, row, widget,
 };
-use crate::app::login::{KimiLoginFlow, LoginFlow, MinimaxLoginFlow};
+use crate::app::login::{KimiLoginFlow, LoginFlow, MinimaxLoginFlow, OpenCodeGoLoginFlow};
 use crate::providers::kimi::login::{KimiLoginEvent, KimiLoginState, KimiLoginStatus};
 use crate::providers::minimax::{MinimaxLoginEvent, MinimaxLoginState, MinimaxLoginStatus};
+use crate::providers::opencode_go::login::{
+    OpenCodeGoLoginEvent, OpenCodeGoLoginState, OpenCodeGoLoginStatus,
+};
 
 fn minimax_login_message(event: MinimaxLoginEvent) -> Message {
     MinimaxLoginFlow::wrap_event(event)
@@ -15,14 +18,32 @@ fn kimi_login_message(event: KimiLoginEvent) -> Message {
     KimiLoginFlow::wrap_event(event)
 }
 
+fn opencode_go_login_message(event: OpenCodeGoLoginEvent) -> Message {
+    OpenCodeGoLoginFlow::wrap_event(event)
+}
+
 pub(super) fn codex_login_controls(
     login: Option<&CodexLoginState>,
+    opencode_import_available: bool,
     enabled: bool,
 ) -> Element<'_, Message> {
     let Some(login) = login else {
-        return widget::button::standard(fl!("account-add"))
-            .on_press_maybe(enabled.then_some(Message::StartLogin(crate::model::ProviderId::Codex)))
-            .into();
+        let mut controls = row![
+            widget::button::standard(fl!("codex-sign-in-with-chatgpt")).on_press_maybe(
+                enabled.then_some(Message::StartLogin(crate::model::ProviderId::Codex))
+            )
+        ];
+        if opencode_import_available {
+            controls = controls.push(
+                widget::button::text(fl!("import-from-opencode")).on_press_maybe(
+                    enabled.then_some(Message::ImportFromOpenCode(
+                        crate::model::ProviderId::Codex,
+                        None,
+                    )),
+                ),
+            );
+        }
+        return controls.spacing(8).into();
     };
 
     let mut content =
@@ -44,16 +65,27 @@ pub(super) fn codex_login_controls(
             enabled.then_some(Message::CancelLogin(crate::model::ProviderId::Codex)),
         ));
     } else {
+        let mut controls = row![
+            widget::button::text(fl!("codex-sign-in-with-chatgpt")).on_press_maybe(
+                enabled.then_some(Message::StartLogin(crate::model::ProviderId::Codex))
+            )
+        ];
+        if opencode_import_available {
+            controls = controls.push(
+                widget::button::text(fl!("import-from-opencode")).on_press_maybe(
+                    enabled.then_some(Message::ImportFromOpenCode(
+                        crate::model::ProviderId::Codex,
+                        None,
+                    )),
+                ),
+            );
+        }
         content = content.push(
-            row![
-                widget::button::text(fl!("account-add-another")).on_press_maybe(
-                    enabled.then_some(Message::StartLogin(crate::model::ProviderId::Codex))
-                ),
-                widget::button::text(fl!("account-dismiss")).on_press_maybe(
-                    enabled.then_some(Message::CancelLogin(crate::model::ProviderId::Codex))
-                ),
-            ]
-            .spacing(8),
+            controls
+                .push(widget::button::text(fl!("account-dismiss")).on_press_maybe(
+                    enabled.then_some(Message::CancelLogin(crate::model::ProviderId::Codex)),
+                ))
+                .spacing(8),
         );
     }
 
@@ -168,14 +200,24 @@ pub(super) fn gemini_login_controls(
 
 pub(super) fn copilot_login_controls(
     login: Option<&CopilotLoginState>,
+    opencode_import_available: bool,
     enabled: bool,
 ) -> Element<'_, Message> {
     let Some(login) = login else {
-        return widget::button::standard(fl!("account-add"))
-            .on_press_maybe(
-                enabled.then_some(Message::StartLogin(crate::model::ProviderId::Copilot)),
-            )
-            .into();
+        let mut controls = row![widget::button::standard(fl!("account-add")).on_press_maybe(
+            enabled.then_some(Message::StartLogin(crate::model::ProviderId::Copilot))
+        )];
+        if opencode_import_available {
+            controls = controls.push(
+                widget::button::text(fl!("import-from-opencode")).on_press_maybe(
+                    enabled.then_some(Message::ImportFromOpenCode(
+                        crate::model::ProviderId::Copilot,
+                        None,
+                    )),
+                ),
+            );
+        }
+        return controls.spacing(8).into();
     };
 
     let mut content =
@@ -183,7 +225,7 @@ pub(super) fn copilot_login_controls(
             .spacing(10)
             .width(Length::Fill);
 
-    if login.status == CopilotLoginStatus::Running {
+    if login.status == CopilotLoginStatus::Running && !login.importing_from_opencode {
         content = content.push(widget::text(fl!("account-browser-login-hint")).size(12));
     }
 
@@ -206,16 +248,27 @@ pub(super) fn copilot_login_controls(
             enabled.then_some(Message::CancelLogin(crate::model::ProviderId::Copilot)),
         ));
     } else {
+        let mut controls = row![
+            widget::button::text(fl!("account-add-another")).on_press_maybe(
+                enabled.then_some(Message::StartLogin(crate::model::ProviderId::Copilot))
+            )
+        ];
+        if opencode_import_available {
+            controls = controls.push(
+                widget::button::text(fl!("import-from-opencode")).on_press_maybe(
+                    enabled.then_some(Message::ImportFromOpenCode(
+                        crate::model::ProviderId::Copilot,
+                        None,
+                    )),
+                ),
+            );
+        }
         content = content.push(
-            row![
-                widget::button::text(fl!("account-add-another")).on_press_maybe(
-                    enabled.then_some(Message::StartLogin(crate::model::ProviderId::Copilot))
-                ),
-                widget::button::text(fl!("account-dismiss")).on_press_maybe(
-                    enabled.then_some(Message::CancelLogin(crate::model::ProviderId::Copilot))
-                ),
-            ]
-            .spacing(8),
+            controls
+                .push(widget::button::text(fl!("account-dismiss")).on_press_maybe(
+                    enabled.then_some(Message::CancelLogin(crate::model::ProviderId::Copilot)),
+                ))
+                .spacing(8),
         );
     }
 
@@ -256,6 +309,7 @@ fn copilot_user_code_row<'a>(code: &'a str, copied: bool, enabled: bool) -> Elem
 
 fn copilot_login_status(login: &CopilotLoginState) -> String {
     match login.status {
+        CopilotLoginStatus::Running if login.importing_from_opencode => fl!("opencode-importing"),
         CopilotLoginStatus::Running => fl!("copilot-login-running"),
         CopilotLoginStatus::Succeeded => fl!("copilot-login-succeeded"),
         CopilotLoginStatus::Failed => login
@@ -352,6 +406,7 @@ pub(super) fn cursor_scan_controls(scan: &CursorScanState, enabled: bool) -> Ele
 
 fn codex_login_status(login: &CodexLoginState) -> String {
     match login.status {
+        CodexLoginStatus::Running if login.importing_from_opencode => fl!("opencode-importing"),
         CodexLoginStatus::Running => fl!("codex-login-running"),
         CodexLoginStatus::Succeeded => fl!("codex-login-succeeded"),
         CodexLoginStatus::Failed => login
@@ -401,13 +456,22 @@ pub(super) fn minimax_login_controls(
     if login.status == MinimaxLoginStatus::Editing {
         content = content.push(widget::text(fl!("minimax-api-key-placeholder")).size(12));
         content = content.push(
-            widget::text_input(fl!("minimax-api-key-placeholder"), &login.api_key)
-                .on_input(|api_key| {
-                    minimax_login_message(MinimaxLoginEvent::ApiKeyChanged(api_key))
-                })
-                .on_submit(|_| minimax_login_message(MinimaxLoginEvent::Saved))
-                .width(Length::Fill),
+            widget::text_input::secure_input(
+                fl!("minimax-api-key-placeholder"),
+                &login.api_key,
+                Some(minimax_login_message(
+                    MinimaxLoginEvent::ApiKeyVisibilityToggled,
+                )),
+                !login.api_key_visible,
+            )
+            .on_input(|api_key| minimax_login_message(MinimaxLoginEvent::ApiKeyChanged(api_key)))
+            .on_submit(|_| minimax_login_message(MinimaxLoginEvent::Saved))
+            .width(Length::Fill),
         );
+        if login.api_key_from_opencode {
+            content =
+                content.push(widget::text(fl!("minimax-api-key-imported-from-opencode")).size(12));
+        }
         content = content.push(widget::text(fl!("account-label")).size(12));
         content = content.push(
             widget::text_input(fl!("account-label"), &login.label)
@@ -533,5 +597,98 @@ fn kimi_login_status(login: &KimiLoginState) -> String {
             .error
             .clone()
             .unwrap_or_else(|| fl!("kimi-login-failed")),
+    }
+}
+
+pub(super) fn opencode_go_login_controls(
+    login: Option<&OpenCodeGoLoginState>,
+    enabled: bool,
+) -> Element<'_, Message> {
+    let Some(login) = login else {
+        return widget::button::standard(fl!("account-add"))
+            .on_press_maybe(
+                enabled.then_some(Message::StartLogin(crate::model::ProviderId::OpenCodeGo)),
+            )
+            .into();
+    };
+
+    let mut content = if let Some(error) = &login.error {
+        cosmic::iced::widget::column![
+            widget::text(opencode_go_login_status(login)).size(13),
+            widget::text(error).size(13)
+        ]
+        .spacing(10)
+    } else {
+        cosmic::iced::widget::column![widget::text(opencode_go_login_status(login)).size(13)]
+            .spacing(10)
+    };
+
+    content = content.width(Length::Fill);
+
+    if login.status == OpenCodeGoLoginStatus::Editing {
+        content = content.push(widget::text(fl!("opencode-go-api-key-placeholder")).size(12));
+        content = content.push(
+            widget::text_input::secure_input(
+                fl!("opencode-go-api-key-placeholder"),
+                &login.api_key,
+                Some(opencode_go_login_message(
+                    OpenCodeGoLoginEvent::ApiKeyVisibilityToggled,
+                )),
+                !login.api_key_visible,
+            )
+            .on_input(|api_key| {
+                opencode_go_login_message(OpenCodeGoLoginEvent::ApiKeyChanged(api_key))
+            })
+            .on_submit(|_| opencode_go_login_message(OpenCodeGoLoginEvent::Saved))
+            .width(Length::Fill),
+        );
+        if login.api_key_from_opencode {
+            content = content
+                .push(widget::text(fl!("opencode-go-api-key-imported-from-opencode")).size(12));
+        }
+        content = content.push(widget::text(fl!("account-label")).size(12));
+        content = content.push(
+            widget::text_input(fl!("account-label"), &login.label)
+                .on_input(|label| {
+                    opencode_go_login_message(OpenCodeGoLoginEvent::LabelChanged(label))
+                })
+                .width(Length::Fill),
+        );
+        content = content.push(
+            row![
+                widget::button::standard(fl!("account-add")).on_press_maybe(
+                    enabled.then_some(opencode_go_login_message(OpenCodeGoLoginEvent::Saved))
+                ),
+                widget::button::text(fl!("account-cancel")).on_press_maybe(
+                    enabled.then_some(Message::CancelLogin(crate::model::ProviderId::OpenCodeGo))
+                ),
+            ]
+            .spacing(8),
+        );
+    } else {
+        content = content.push(
+            row![
+                widget::button::text(fl!("account-add-another")).on_press_maybe(
+                    enabled.then_some(Message::StartLogin(crate::model::ProviderId::OpenCodeGo))
+                ),
+                widget::button::text(fl!("account-dismiss")).on_press_maybe(
+                    enabled.then_some(Message::CancelLogin(crate::model::ProviderId::OpenCodeGo))
+                ),
+            ]
+            .spacing(8),
+        );
+    }
+
+    Element::from(content)
+}
+
+fn opencode_go_login_status(login: &OpenCodeGoLoginState) -> String {
+    match login.status {
+        OpenCodeGoLoginStatus::Editing => fl!("opencode-go-login-editing"),
+        OpenCodeGoLoginStatus::Saved => fl!("opencode-go-login-saved"),
+        OpenCodeGoLoginStatus::Failed => login
+            .error
+            .clone()
+            .unwrap_or_else(|| fl!("opencode-go-login-failed")),
     }
 }

@@ -1,21 +1,20 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use super::{claude_system_active_account_id, reconcile_provider_account_descriptors};
+use super::{opencode_go_system_active_account_id, reconcile_provider_account_descriptors};
 use crate::account_storage::ProviderAccountStorage;
-use crate::config::{Config, managed_claude_account_dir, paths};
+use crate::config::{Config, paths};
 use crate::error::AppError;
 use crate::model::{AppState, ProviderId, UsageSnapshot};
-use crate::providers::claude;
 use crate::providers::interface::{
     BoxFuture, ProviderAccountDescriptor, ProviderAccountHandle, ProviderAdapter,
     ProviderCapabilities,
 };
 
-pub(super) struct ClaudeAdapter;
+pub(super) struct OpenCodeGoAdapter;
 
-impl ProviderAdapter for ClaudeAdapter {
+impl ProviderAdapter for OpenCodeGoAdapter {
     fn id(&self) -> ProviderId {
-        ProviderId::Claude
+        ProviderId::OpenCodeGo
     }
 
     fn capabilities(&self) -> ProviderCapabilities {
@@ -29,11 +28,11 @@ impl ProviderAdapter for ClaudeAdapter {
 
     fn discover_accounts(&self, config: &Config) -> Vec<ProviderAccountDescriptor> {
         let capabilities = self.capabilities();
-        claude::discover_accounts(config)
+        crate::providers::opencode_go::account::discover_accounts(config)
             .into_iter()
             .filter_map(|account| {
                 config
-                    .claude_managed_accounts
+                    .opencode_go_managed_accounts
                     .iter()
                     .find(|managed| managed.id == account.id)
                     .cloned()
@@ -42,7 +41,7 @@ impl ProviderAdapter for ClaudeAdapter {
                         account_id: account.id,
                         label: account.label,
                         capabilities,
-                        handle: ProviderAccountHandle::Claude(managed),
+                        handle: ProviderAccountHandle::OpenCodeGo(managed),
                     })
             })
             .collect()
@@ -50,23 +49,23 @@ impl ProviderAdapter for ClaudeAdapter {
 
     fn delete_account(&self, account_id: &str, config: &mut Config) -> bool {
         if !config
-            .claude_managed_accounts
+            .opencode_go_managed_accounts
             .iter()
-            .any(|a| a.id == account_id)
+            .any(|account| account.id == account_id)
         {
             return false;
         }
-        if ProviderAccountStorage::new(paths().claude_accounts_dir)
+        if ProviderAccountStorage::new(paths().opencode_go_accounts_dir)
             .delete_account(account_id)
             .is_err()
         {
             return false;
         }
         config
-            .claude_managed_accounts
-            .retain(|a| a.id != account_id);
+            .opencode_go_managed_accounts
+            .retain(|account| account.id != account_id);
         config
-            .selected_claude_account_ids
+            .selected_opencode_go_account_ids
             .retain(|id| id != account_id);
         true
     }
@@ -74,13 +73,13 @@ impl ProviderAdapter for ClaudeAdapter {
     fn reconcile_provider_accounts(&self, config: &Config, state: &mut AppState) {
         let accounts = self.discover_accounts(config);
         reconcile_provider_account_descriptors(self.id(), config, state, &accounts);
-        if let Some(provider_state) = state.provider_mut(ProviderId::Claude) {
+        if let Some(provider_state) = state.provider_mut(ProviderId::OpenCodeGo) {
             provider_state.system_active_account_id = self.system_active_account_id(config);
         }
     }
 
     fn system_active_account_id(&self, config: &Config) -> Option<String> {
-        claude_system_active_account_id(&config.claude_managed_accounts)
+        opencode_go_system_active_account_id(&config.opencode_go_managed_accounts)
     }
 
     fn fetch_account<'a>(
@@ -90,8 +89,8 @@ impl ProviderAdapter for ClaudeAdapter {
     ) -> BoxFuture<'a, crate::error::Result<UsageSnapshot, AppError>> {
         Box::pin(async move {
             match handle {
-                ProviderAccountHandle::Claude(account) => {
-                    claude::fetch(client, &account.id, managed_claude_account_dir(&account.id))
+                ProviderAccountHandle::OpenCodeGo(account) => {
+                    crate::providers::opencode_go::fetch(client, account)
                         .await
                         .map_err(AppError::from)
                 }

@@ -21,9 +21,7 @@ use serde::Deserialize;
 use std::path::PathBuf;
 use tracing::warn;
 
-pub use account::{
-    apply_login_account, discover_accounts, remove_managed_config_dir, sync_managed_account_dirs,
-};
+pub use account::{apply_login_account, discover_accounts, sync_managed_account_dirs};
 #[cfg(test)]
 pub use login::ClaudeLoginSuccess;
 pub use login::{

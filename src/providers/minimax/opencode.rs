@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 pub fn discover_api_key() -> Option<String> {
-    match crate::providers::opencode_auth::discover("kimi-for-coding")? {
+    match crate::providers::opencode_auth::discover("minimax")? {
         crate::providers::opencode_auth::OpenCodeCredential::Api { key } if !key.is_empty() => {
             Some(key)
         }
@@ -16,20 +16,15 @@ mod tests {
     use tempfile::tempdir;
 
     #[test]
-    fn discovers_kimi_for_coding_api_key() {
+    fn discovers_minimax_api_key() {
         let temp = tempdir().unwrap();
         let path = temp.path().join("auth.json");
-        fs::write(
-            &path,
-            r#"{"kimi-for-coding":{"type":"api","key":"test-key"}}"#,
-        )
-        .unwrap();
+        fs::write(&path, r#"{"minimax":{"type":"api","key":"test-key"}}"#).unwrap();
         let mut env = crate::test_support::test_env();
         env.set(
             crate::providers::opencode_auth::OPENCODE_AUTH_PATH_ENV,
             &path,
         );
-
         assert_eq!(discover_api_key().as_deref(), Some("test-key"));
     }
 
@@ -41,7 +36,6 @@ mod tests {
             crate::providers::opencode_auth::OPENCODE_AUTH_PATH_ENV,
             temp.path().join("auth.json"),
         );
-
         assert_eq!(discover_api_key(), None);
     }
 
@@ -55,7 +49,6 @@ mod tests {
             crate::providers::opencode_auth::OPENCODE_AUTH_PATH_ENV,
             &path,
         );
-
         assert_eq!(discover_api_key(), None);
     }
 
@@ -63,13 +56,12 @@ mod tests {
     fn wrong_auth_shape_has_no_api_key() {
         let temp = tempdir().unwrap();
         let path = temp.path().join("auth.json");
-        fs::write(&path, r#"{"kimi-for-coding":{"token":"test-key"}}"#).unwrap();
+        fs::write(&path, r#"{"minimax":{"token":"test-key"}}"#).unwrap();
         let mut env = crate::test_support::test_env();
         env.set(
             crate::providers::opencode_auth::OPENCODE_AUTH_PATH_ENV,
             &path,
         );
-
         assert_eq!(discover_api_key(), None);
     }
 
@@ -77,17 +69,12 @@ mod tests {
     fn environment_override_selects_auth_file() {
         let temp = tempdir().unwrap();
         let path = temp.path().join("auth.json");
-        fs::write(
-            &path,
-            r#"{"kimi-for-coding":{"type":"api","key":"test-key"}}"#,
-        )
-        .unwrap();
+        fs::write(&path, r#"{"minimax":{"type":"api","key":"test-key"}}"#).unwrap();
         let mut env = crate::test_support::test_env();
         env.set(
             crate::providers::opencode_auth::OPENCODE_AUTH_PATH_ENV,
             &path,
         );
-
         assert_eq!(discover_api_key().as_deref(), Some("test-key"));
     }
 }

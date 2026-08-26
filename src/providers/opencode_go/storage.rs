@@ -7,14 +7,14 @@ pub const API_KEY_FILE: &str = "api_key.txt";
 
 pub fn write_api_key(account_id: &str, api_key: &str) -> Result<(), String> {
     write_api_key_at(
-        &crate::config::paths().kimi_accounts_dir,
+        &crate::config::paths().opencode_go_accounts_dir,
         account_id,
         api_key,
     )
 }
 
 pub fn load_api_key(account_id: &str) -> Result<String, String> {
-    load_api_key_at(&crate::config::paths().kimi_accounts_dir, account_id)
+    load_api_key_at(&crate::config::paths().opencode_go_accounts_dir, account_id)
 }
 
 pub(crate) fn write_api_key_at(root: &Path, account_id: &str, api_key: &str) -> Result<(), String> {
@@ -38,9 +38,9 @@ mod tests {
     #[test]
     fn writes_under_the_managed_root() {
         let temp = tempdir().unwrap();
-        let root = temp.path().join("kimi-accounts");
-        write_api_key_at(&root, "kimi-1", "test-key").unwrap();
-        assert_eq!(load_api_key_at(&root, "kimi-1").unwrap(), "test-key");
+        let root = temp.path().join("opencode-go-accounts");
+        write_api_key_at(&root, "go-1", "test-key").unwrap();
+        assert_eq!(load_api_key_at(&root, "go-1").unwrap(), "test-key");
     }
 
     #[cfg(unix)]
@@ -49,24 +49,24 @@ mod tests {
         use std::os::unix::fs::symlink;
 
         let temp = tempdir().unwrap();
-        let root = temp.path().join("kimi-accounts");
+        let root = temp.path().join("opencode-go-accounts");
         let outside = temp.path().join("outside");
         fs::create_dir_all(&outside).unwrap();
         let target = outside.join("api_key.txt");
         fs::write(&target, "unchanged").unwrap();
         fs::create_dir_all(&root).unwrap();
-        symlink(&outside, root.join("kimi-1")).unwrap();
+        symlink(&outside, root.join("go-1")).unwrap();
 
-        assert!(write_api_key_at(&root, "kimi-1", "replacement").is_err());
-        assert!(load_api_key_at(&root, "kimi-1").is_err());
+        assert!(write_api_key_at(&root, "go-1", "replacement").is_err());
+        assert!(load_api_key_at(&root, "go-1").is_err());
         assert_eq!(fs::read_to_string(&target).unwrap(), "unchanged");
 
-        fs::remove_file(root.join("kimi-1")).unwrap();
-        fs::create_dir(root.join("kimi-1")).unwrap();
-        symlink(&target, root.join("kimi-1").join(API_KEY_FILE)).unwrap();
+        fs::remove_file(root.join("go-1")).unwrap();
+        fs::create_dir(root.join("go-1")).unwrap();
+        symlink(&target, root.join("go-1").join(API_KEY_FILE)).unwrap();
 
-        assert!(write_api_key_at(&root, "kimi-1", "replacement").is_err());
-        assert!(load_api_key_at(&root, "kimi-1").is_err());
+        assert!(write_api_key_at(&root, "go-1", "replacement").is_err());
+        assert!(load_api_key_at(&root, "go-1").is_err());
         assert_eq!(fs::read_to_string(&target).unwrap(), "unchanged");
     }
 }

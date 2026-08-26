@@ -9,4 +9,6 @@ pub mod gemini;
 pub mod interface;
 pub mod kimi;
 pub mod minimax;
+pub mod opencode_auth;
+pub mod opencode_go;
 pub mod registry;

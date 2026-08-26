@@ -37,17 +37,23 @@ impl LoginFlow for MinimaxLoginFlow {
             .any(|a| a.id == account_id)
     }
     fn failed_state(error: String) -> Self::State {
-        MinimaxLoginState {
-            account_id: "failed".to_string(),
-            label: String::new(),
-            status: MinimaxLoginStatus::Failed,
-            api_key: String::new(),
-            error: Some(error),
-        }
+        let mut state = MinimaxLoginState::new("failed".to_string());
+        state.status = MinimaxLoginStatus::Failed;
+        state.error = Some(error);
+        state
     }
     fn prepare(config: Config) -> Result<(Self::State, cosmic::iced::Task<Self::Event>), String> {
         let _ = config;
         Ok((minimax::prepare_login(), cosmic::iced::Task::none()))
+    }
+    fn prepare_for_reauth(
+        config: Config,
+        account_id: &str,
+    ) -> Result<(Self::State, cosmic::iced::Task<Self::Event>), String> {
+        Ok((
+            minimax::login::prepare_for_reauth(config, account_id)?,
+            cosmic::iced::Task::none(),
+        ))
     }
     fn wrap_event(event: Self::Event) -> Message {
         Message::LoginEvent(
@@ -61,6 +67,12 @@ impl LoginFlow for MinimaxLoginFlow {
             MinimaxLoginEvent::ApiKeyChanged(api_key) => {
                 if let Some(login) = app.minimax_login.as_mut() {
                     login.update_api_key(api_key);
+                }
+                Task::none()
+            }
+            MinimaxLoginEvent::ApiKeyVisibilityToggled => {
+                if let Some(login) = app.minimax_login.as_mut() {
+                    login.toggle_api_key_visibility();
                 }
                 Task::none()
             }

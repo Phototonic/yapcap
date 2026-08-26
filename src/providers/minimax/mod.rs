@@ -2,16 +2,16 @@
 
 pub mod account;
 pub mod login;
+pub mod opencode;
 pub mod storage;
 
-use crate::config::{Config, ManagedMinimaxAccountConfig, managed_minimax_account_dir};
+use crate::config::{Config, ManagedMinimaxAccountConfig};
 use crate::error::MinimaxError;
 use crate::model::{ProviderId, UsageSnapshot};
 use chrono::Utc;
 use serde::Deserialize;
-use std::path::Path;
 
-pub use account::{discover_accounts, remove_managed_config_dir};
+pub use account::discover_accounts;
 pub use login::{
     MinimaxLoginEvent, MinimaxLoginState, MinimaxLoginStatus, prepare as prepare_login,
 };
@@ -64,20 +64,7 @@ pub async fn fetch(
     client: &reqwest::Client,
     account: &ManagedMinimaxAccountConfig,
 ) -> Result<UsageSnapshot, MinimaxError> {
-    fetch_at(
-        client,
-        &managed_minimax_account_dir(&account.id),
-        MINIMAX_API_URL,
-    )
-    .await
-}
-
-async fn fetch_at(
-    client: &reqwest::Client,
-    account_root: &Path,
-    endpoint: &str,
-) -> Result<UsageSnapshot, MinimaxError> {
-    let api_key = load_api_key(account_root)
+    let api_key = load_api_key(&account.id)
         .ok()
         .filter(|key| !key.is_empty())
         .or_else(|| std::env::var(MINIMAX_API_KEY_ENV).ok())
@@ -88,7 +75,7 @@ async fn fetch_at(
     }
 
     let response = client
-        .get(endpoint)
+        .get(MINIMAX_API_URL)
         .bearer_auth(&api_key)
         .send()
         .await

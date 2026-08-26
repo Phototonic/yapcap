@@ -1,67 +1,72 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::account_storage;
-use std::fs;
+use crate::account_storage::ProviderAccountStorage;
 use std::path::Path;
 
 pub const API_KEY_FILE: &str = "api_key.txt";
 
-pub fn write_api_key(account_dir: &Path, api_key: &str) -> Result<(), String> {
-    create_private_dir(account_dir)?;
-    let path = account_dir.join(API_KEY_FILE);
-    fs::write(&path, api_key).map_err(|error| format!("failed to write api key: {error}"))?;
-    account_storage::set_private_file_permissions(&path).map_err(stringify)?;
-    Ok(())
+pub fn write_api_key(account_id: &str, api_key: &str) -> Result<(), String> {
+    write_api_key_at(
+        &crate::config::paths().minimax_accounts_dir,
+        account_id,
+        api_key,
+    )
 }
 
-pub fn load_api_key(account_dir: &Path) -> Result<String, String> {
-    fs::read_to_string(account_dir.join(API_KEY_FILE))
-        .map_err(|error| format!("failed to read api key: {error}"))
+pub fn load_api_key(account_id: &str) -> Result<String, String> {
+    load_api_key_at(&crate::config::paths().minimax_accounts_dir, account_id)
 }
 
-pub fn create_private_dir(path: &Path) -> Result<(), String> {
-    account_storage::create_private_dir(path).map_err(stringify)
+pub(crate) fn write_api_key_at(root: &Path, account_id: &str, api_key: &str) -> Result<(), String> {
+    ProviderAccountStorage::new(root)
+        .write_text_file(account_id, API_KEY_FILE, api_key)
+        .map_err(|error| error.to_string())
 }
 
-fn stringify(error: account_storage::AccountStorageError) -> String {
-    error.to_string()
+pub(crate) fn load_api_key_at(root: &Path, account_id: &str) -> Result<String, String> {
+    ProviderAccountStorage::new(root)
+        .read_text_file(account_id, API_KEY_FILE)
+        .map_err(|error| error.to_string())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
     use tempfile::tempdir;
 
     #[test]
-    fn write_api_key_creates_missing_provider_root() {
+    fn writes_under_the_managed_root() {
         let temp = tempdir().unwrap();
-        let provider_root = temp.path().join("minimax-accounts");
-        assert!(!provider_root.exists());
-        let dir = provider_root.join("minimax-1");
-
-        write_api_key(&dir, "sk-test").unwrap();
-
-        assert!(provider_root.is_dir());
-        assert_eq!(load_api_key(&dir).unwrap(), "sk-test");
+        let root = temp.path().join("minimax-accounts");
+        write_api_key_at(&root, "minimax-1", "test-key").unwrap();
+        assert_eq!(load_api_key_at(&root, "minimax-1").unwrap(), "test-key");
     }
 
     #[cfg(unix)]
     #[test]
-    fn write_api_key_sets_private_directory_and_file_permissions() {
-        use std::os::unix::fs::PermissionsExt;
+    fn rejects_symlinked_account_and_api_key_paths() {
+        use std::os::unix::fs::symlink;
 
         let temp = tempdir().unwrap();
-        let dir = temp.path().join("minimax-1");
+        let root = temp.path().join("minimax-accounts");
+        let outside = temp.path().join("outside");
+        fs::create_dir_all(&outside).unwrap();
+        let target = outside.join("api_key.txt");
+        fs::write(&target, "unchanged").unwrap();
+        fs::create_dir_all(&root).unwrap();
+        symlink(&outside, root.join("minimax-1")).unwrap();
 
-        write_api_key(&dir, "sk-test").unwrap();
+        assert!(write_api_key_at(&root, "minimax-1", "replacement").is_err());
+        assert!(load_api_key_at(&root, "minimax-1").is_err());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "unchanged");
 
-        let dir_mode = fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
-        assert_eq!(dir_mode, 0o700);
-        let file_mode = fs::metadata(dir.join(API_KEY_FILE))
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o777;
-        assert_eq!(file_mode, 0o600);
+        fs::remove_file(root.join("minimax-1")).unwrap();
+        fs::create_dir(root.join("minimax-1")).unwrap();
+        symlink(&target, root.join("minimax-1").join(API_KEY_FILE)).unwrap();
+
+        assert!(write_api_key_at(&root, "minimax-1", "replacement").is_err());
+        assert!(load_api_key_at(&root, "minimax-1").is_err());
+        assert_eq!(fs::read_to_string(&target).unwrap(), "unchanged");
     }
 }

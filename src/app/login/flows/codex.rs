@@ -42,6 +42,7 @@ impl LoginFlow for CodexLoginFlow {
             login_url: None,
             output: Vec::new(),
             error: Some(error),
+            importing_from_opencode: false,
         }
     }
     fn prepare(config: Config) -> Result<(Self::State, cosmic::iced::Task<Self::Event>), String> {

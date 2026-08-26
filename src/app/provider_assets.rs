@@ -47,6 +47,12 @@ pub fn provider_icon_handle(provider: ProviderId, variant: ProviderIconVariant) 
         (ProviderId::Kimi, ProviderIconVariant::Reversed) => {
             include_bytes!("../../resources/providers/kimi-reversed.svg")
         }
+        (ProviderId::OpenCodeGo, ProviderIconVariant::Default) => {
+            include_bytes!("../../resources/providers/opencode-go.svg")
+        }
+        (ProviderId::OpenCodeGo, ProviderIconVariant::Reversed) => {
+            include_bytes!("../../resources/providers/opencode-go-reversed.svg")
+        }
     };
 
     icon::from_svg_bytes(bytes)

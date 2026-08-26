@@ -16,6 +16,7 @@ pub(super) fn test_app() -> AppModel {
         config: Config::default(),
         state: crate::model::AppState::empty(),
         selected_provider: ProviderId::Codex,
+        detail_account_page: 0,
         popup_route: crate::app::PopupRoute::ProviderDetail,
         update_status: crate::updates::UpdateStatus::Unchecked,
         launch_mode: crate::app::LaunchMode::Standalone,
@@ -30,6 +31,7 @@ pub(super) fn test_app() -> AppModel {
             lock_path,
         },
         refresh_owner: None,
+        opencode_import_availability: Default::default(),
         codex_login: None,
         codex_login_handle: None,
         claude_login: None,
@@ -44,6 +46,8 @@ pub(super) fn test_app() -> AppModel {
         minimax_login_handle: None,
         kimi_login: None,
         kimi_login_handle: None,
+        opencode_go_login: None,
+        opencode_go_login_handle: None,
     }
 }
 

@@ -3,7 +3,7 @@
 use crate::config::{
     Config, ManagedClaudeAccountConfig, ManagedCodexAccountConfig, ManagedCopilotAccountConfig,
     ManagedCursorAccountConfig, ManagedGeminiAccountConfig, ManagedKimiAccountConfig,
-    ManagedMinimaxAccountConfig, ProviderVisibilityMode, paths,
+    ManagedMinimaxAccountConfig, ManagedOpenCodeGoAccountConfig, ProviderVisibilityMode, paths,
 };
 use crate::model::{
     AccountSelectionStatus, AppState, AuthState, ExtraUsageState, ProviderAccountRuntimeState,
@@ -27,6 +27,7 @@ const COPILOT_FREE_ID: &str = "yapcap-demo:copilot-casey-free";
 const COPILOT_PRO_ID: &str = "yapcap-demo:copilot-morgan-pro";
 const MINIMAX_PRIMARY_ID: &str = "yapcap-demo:minimax-primary";
 const KIMI_PRIMARY_ID: &str = "yapcap-demo:kimi-primary";
+const OPENCODE_GO_PRIMARY_ID: &str = "yapcap-demo:opencode-go-primary";
 
 fn env_truthy() -> bool {
     std::env::var(DEMO_ENV).is_ok_and(|value| {
@@ -57,6 +58,7 @@ pub fn apply_config(config: &mut Config) {
     config.copilot_enabled = true;
     config.minimax_enabled = true;
     config.kimi_enabled = true;
+    config.opencode_go_enabled = true;
 
     config.codex_managed_accounts = demo_codex_accounts();
     config.claude_managed_accounts = demo_claude_accounts();
@@ -65,6 +67,7 @@ pub fn apply_config(config: &mut Config) {
     config.copilot_managed_accounts = demo_copilot_accounts();
     config.minimax_managed_accounts = demo_minimax_accounts();
     config.kimi_managed_accounts = demo_kimi_accounts();
+    config.opencode_go_managed_accounts = demo_opencode_go_accounts();
 
     config.provider_visibility_mode = ProviderVisibilityMode::UserManaged;
 
@@ -102,6 +105,10 @@ pub fn apply_config(config: &mut Config) {
         config.selected_kimi_account_ids = vec![KIMI_PRIMARY_ID.to_string()];
         config.set_provider_show_all(ProviderId::Kimi, false);
     }
+    if config.selected_opencode_go_account_ids.is_empty() {
+        config.selected_opencode_go_account_ids = vec![OPENCODE_GO_PRIMARY_ID.to_string()];
+        config.set_provider_show_all(ProviderId::OpenCodeGo, false);
+    }
 }
 
 pub fn strip_leaked_state(config: &mut Config) -> bool {
@@ -119,6 +126,10 @@ pub fn strip_leaked_state(config: &mut Config) -> bool {
     changed |= retain_len_changed(&mut config.minimax_managed_accounts, |account| &account.id);
     changed |= strip_ids(&mut config.selected_kimi_account_ids);
     changed |= retain_len_changed(&mut config.kimi_managed_accounts, |account| &account.id);
+    changed |= strip_ids(&mut config.selected_opencode_go_account_ids);
+    changed |= retain_len_changed(&mut config.opencode_go_managed_accounts, |account| {
+        &account.id
+    });
     changed
 }
 
@@ -185,6 +196,7 @@ fn demo_system_active_account_id(provider: ProviderId) -> Option<String> {
         ProviderId::Copilot => return None,
         ProviderId::Minimax => return None,
         ProviderId::Kimi => return None,
+        ProviderId::OpenCodeGo => return None,
     };
     Some(id.to_string())
 }
@@ -197,6 +209,7 @@ fn demo_source(provider: ProviderId) -> String {
         ProviderId::Cursor => "Managed Account".to_string(),
         ProviderId::Minimax => "API Key".to_string(),
         ProviderId::Kimi => "API Key".to_string(),
+        ProviderId::OpenCodeGo => "API Key".to_string(),
     }
 }
 
@@ -339,6 +352,18 @@ fn demo_runtime_accounts(provider: ProviderId) -> Vec<ProviderAccountRuntimeStat
                 auth_state: AuthState::Ready,
                 error: None,
                 snapshot: snapshot_kimi_primary(),
+            },
+        )],
+        ProviderId::OpenCodeGo => vec![demo_account(
+            provider,
+            DemoAccount {
+                account_id: OPENCODE_GO_PRIMARY_ID,
+                label: "jordan-opencode-go",
+                last_success_at: now - Duration::minutes(3),
+                health: ProviderHealth::Ok,
+                auth_state: AuthState::Ready,
+                error: None,
+                snapshot: snapshot_opencode_go_primary(),
             },
         )],
     }
@@ -749,6 +774,18 @@ fn demo_kimi_accounts() -> Vec<ManagedKimiAccountConfig> {
     }]
 }
 
+fn demo_opencode_go_accounts() -> Vec<ManagedOpenCodeGoAccountConfig> {
+    let now = demo_timestamp();
+    vec![ManagedOpenCodeGoAccountConfig {
+        id: OPENCODE_GO_PRIMARY_ID.to_string(),
+        label: "jordan-opencode-go".to_string(),
+        api_key_source: "demo".to_string(),
+        created_at: now,
+        updated_at: now,
+        last_authenticated_at: Some(now),
+    }]
+}
+
 fn snapshot_minimax_primary() -> UsageSnapshot {
     let now = Utc::now();
     UsageSnapshot {
@@ -816,6 +853,45 @@ fn snapshot_kimi_primary() -> UsageSnapshot {
             plan: Some("LEVEL_INTERMEDIATE".to_string()),
             display_name: Some("jordan-kimi".to_string()),
         },
+    }
+}
+
+fn snapshot_opencode_go_primary() -> UsageSnapshot {
+    let now = Utc::now();
+    let rolling_reset = now + Duration::hours(3);
+    let weekly_reset = now + Duration::days(4);
+    let monthly_reset = now + Duration::days(12);
+    UsageSnapshot {
+        provider: ProviderId::OpenCodeGo,
+        source: "API Key".to_string(),
+        updated_at: now,
+        headline: UsageHeadline(0),
+        windows: vec![
+            UsageWindow {
+                label: "5 Hour".to_string(),
+                used_percent: 45.5,
+                reset_at: Some(rolling_reset),
+                window_seconds: Some(5 * 3600),
+                reset_description: Some(rolling_reset.to_rfc3339()),
+            },
+            UsageWindow {
+                label: "Weekly".to_string(),
+                used_percent: 30.0,
+                reset_at: Some(weekly_reset),
+                window_seconds: Some(7 * 24 * 3600),
+                reset_description: Some(weekly_reset.to_rfc3339()),
+            },
+            UsageWindow {
+                label: "Monthly".to_string(),
+                used_percent: 15.0,
+                reset_at: Some(monthly_reset),
+                window_seconds: Some(30 * 24 * 3600),
+                reset_description: Some(monthly_reset.to_rfc3339()),
+            },
+        ],
+        provider_cost: None,
+        extra_usage: None,
+        identity: ProviderIdentity::default(),
     }
 }
 

@@ -4,10 +4,11 @@ pub mod account;
 pub mod device_flow;
 pub mod headers;
 pub mod login;
+mod opencode_import;
 pub mod parse;
 pub mod storage;
 
-use crate::config::{Config, ManagedCopilotAccountConfig, managed_copilot_account_dir};
+use crate::config::{Config, ManagedCopilotAccountConfig};
 use crate::error::CopilotError;
 use crate::model::UsageSnapshot;
 use chrono::Utc;
@@ -19,6 +20,7 @@ pub use login::CopilotLoginSuccess;
 pub use login::{
     CopilotLoginEvent, CopilotLoginState, CopilotLoginStatus, prepare, prepare_for_reauth,
 };
+pub use opencode_import::{is_available as opencode_import_available, prepare_opencode_import};
 
 pub fn sync_managed_accounts(config: &mut Config) -> bool {
     let mut changed = false;
@@ -44,7 +46,8 @@ pub async fn fetch(
 ) -> Result<UsageSnapshot, CopilotError> {
     fetch_at(
         client,
-        &managed_copilot_account_dir(&account.id),
+        &crate::config::paths().copilot_accounts_dir,
+        &account.id,
         headers::COPILOT_USER_URL,
     )
     .await
@@ -53,17 +56,22 @@ pub async fn fetch(
 async fn fetch_at(
     client: &reqwest::Client,
     account_root: &Path,
+    account_id: &str,
     endpoint: &str,
 ) -> Result<UsageSnapshot, CopilotError> {
-    let tokens = storage::load_tokens(account_root)
-        .map_err(CopilotError::AccountStorage)
-        .and_then(|tokens| {
-            if tokens.access_token.trim().is_empty() {
-                Err(CopilotError::LoginRequired)
-            } else {
-                Ok(tokens)
-            }
-        })?;
+    let tokens = if account_root == crate::config::paths().copilot_accounts_dir {
+        storage::load_tokens(account_id)
+    } else {
+        storage::load_tokens_at(account_root, account_id)
+    }
+    .map_err(CopilotError::AccountStorage)
+    .and_then(|tokens| {
+        if tokens.access_token.trim().is_empty() {
+            Err(CopilotError::LoginRequired)
+        } else {
+            Ok(tokens)
+        }
+    })?;
 
     let response = headers::apply_copilot_headers(client.get(endpoint), tokens.access_token.trim())
         .send()
@@ -163,8 +171,9 @@ mod tests {
     }
 
     fn write_test_account(root: &std::path::Path) {
-        storage::write_account(
+        storage::write_account_at(
             root,
+            "copilot-1",
             &storage::CopilotTokens {
                 access_token: "ghu_test".to_string(),
             },
@@ -185,7 +194,7 @@ mod tests {
         write_test_account(temp.path());
         let (endpoint, handle) = server(200, free_body(), &[]).await;
 
-        let snapshot = fetch_at(&reqwest::Client::new(), temp.path(), &endpoint)
+        let snapshot = fetch_at(&reqwest::Client::new(), temp.path(), "copilot-1", &endpoint)
             .await
             .unwrap();
 
@@ -207,7 +216,7 @@ mod tests {
         write_test_account(temp.path());
         let (endpoint, handle) = server(401, "{}".to_string(), &[]).await;
 
-        let error = fetch_at(&reqwest::Client::new(), temp.path(), &endpoint)
+        let error = fetch_at(&reqwest::Client::new(), temp.path(), "copilot-1", &endpoint)
             .await
             .unwrap_err();
 
@@ -228,7 +237,7 @@ mod tests {
         write_test_account(temp.path());
         let (endpoint, _handle) = server(403, "{}".to_string(), &[]).await;
 
-        let error = fetch_at(&reqwest::Client::new(), temp.path(), &endpoint)
+        let error = fetch_at(&reqwest::Client::new(), temp.path(), "copilot-1", &endpoint)
             .await
             .unwrap_err();
 
@@ -243,7 +252,7 @@ mod tests {
         write_test_account(temp.path());
         let (endpoint, _handle) = server(429, "{}".to_string(), &[("Retry-After", "42")]).await;
 
-        let error = fetch_at(&reqwest::Client::new(), temp.path(), &endpoint)
+        let error = fetch_at(&reqwest::Client::new(), temp.path(), "copilot-1", &endpoint)
             .await
             .unwrap_err();
 
@@ -263,7 +272,7 @@ mod tests {
         write_test_account(temp.path());
         let (endpoint, _handle) = server(429, "{}".to_string(), &[]).await;
 
-        let error = fetch_at(&reqwest::Client::new(), temp.path(), &endpoint)
+        let error = fetch_at(&reqwest::Client::new(), temp.path(), "copilot-1", &endpoint)
             .await
             .unwrap_err();
 
@@ -283,7 +292,7 @@ mod tests {
         write_test_account(temp.path());
         let (endpoint, _handle) = server(500, "{}".to_string(), &[]).await;
 
-        let error = fetch_at(&reqwest::Client::new(), temp.path(), &endpoint)
+        let error = fetch_at(&reqwest::Client::new(), temp.path(), "copilot-1", &endpoint)
             .await
             .unwrap_err();
 
@@ -300,6 +309,7 @@ mod tests {
         let error = fetch_at(
             &reqwest::Client::new(),
             temp.path(),
+            "copilot-1",
             "http://127.0.0.1:9/copilot_internal/user",
         )
         .await
@@ -328,7 +338,9 @@ mod tests {
             .build()
             .unwrap();
 
-        let error = fetch_at(&client, temp.path(), &endpoint).await.unwrap_err();
+        let error = fetch_at(&client, temp.path(), "copilot-1", &endpoint)
+            .await
+            .unwrap_err();
 
         assert!(matches!(error, CopilotError::UsageRequest(_)));
         assert!(error.is_transient());

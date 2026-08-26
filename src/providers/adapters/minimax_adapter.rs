@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{minimax_system_active_account_id, reconcile_provider_account_descriptors};
-use crate::config::{Config, managed_minimax_account_dir};
+use crate::account_storage::ProviderAccountStorage;
+use crate::config::{Config, paths};
 use crate::error::AppError;
 use crate::model::{AppState, ProviderId, UsageSnapshot};
 use crate::providers::interface::{
@@ -55,7 +56,12 @@ impl ProviderAdapter for MinimaxAdapter {
         {
             return false;
         }
-        minimax::remove_managed_config_dir(&managed_minimax_account_dir(account_id));
+        if ProviderAccountStorage::new(paths().minimax_accounts_dir)
+            .delete_account(account_id)
+            .is_err()
+        {
+            return false;
+        }
         config
             .minimax_managed_accounts
             .retain(|a| a.id != account_id);

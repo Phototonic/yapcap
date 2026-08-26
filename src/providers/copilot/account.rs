@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::account_selection::select_account_after_login;
-use crate::config::{Config, ManagedCopilotAccountConfig, managed_copilot_account_dir};
+use crate::config::{Config, ManagedCopilotAccountConfig};
 use crate::model::ProviderId;
 use chrono::{DateTime, Utc};
-use std::path::PathBuf;
 
 pub fn find_matching_account(
     config: &Config,
@@ -28,7 +27,6 @@ pub fn apply_login_account(config: &mut Config, account: ManagedCopilotAccountCo
 
 pub struct ResolvedAccount {
     pub id: String,
-    pub account_dir: PathBuf,
     pub created_at: DateTime<Utc>,
 }
 
@@ -38,11 +36,9 @@ pub fn resolve_account_target(
     now: DateTime<Utc>,
 ) -> ResolvedAccount {
     let id = crate::providers::copilot::storage::account_id_for_github_user(github_user_id);
-    let account_dir = managed_copilot_account_dir(&id);
     let existing = find_matching_account(config, github_user_id);
     ResolvedAccount {
         id,
-        account_dir,
         created_at: existing.map_or(now, |account| account.created_at),
     }
 }

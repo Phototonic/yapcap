@@ -5,12 +5,11 @@ pub mod login;
 pub mod opencode;
 pub mod storage;
 
-use crate::config::{Config, ManagedKimiAccountConfig, managed_kimi_account_dir};
+use crate::config::{Config, ManagedKimiAccountConfig};
 use crate::error::KimiError;
 use crate::model::{ProviderId, ProviderIdentity, UsageHeadline, UsageSnapshot, UsageWindow};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use std::path::Path;
 
 pub use storage::load_api_key;
 
@@ -67,15 +66,7 @@ pub async fn fetch(
     client: &reqwest::Client,
     account: &ManagedKimiAccountConfig,
 ) -> Result<UsageSnapshot, KimiError> {
-    fetch_at(client, &managed_kimi_account_dir(&account.id), KIMI_API_URL).await
-}
-
-async fn fetch_at(
-    client: &reqwest::Client,
-    account_root: &Path,
-    endpoint: &str,
-) -> Result<UsageSnapshot, KimiError> {
-    let api_key = load_api_key(account_root)
+    let api_key = load_api_key(&account.id)
         .ok()
         .filter(|key| !key.is_empty())
         .or_else(|| std::env::var(KIMI_API_KEY_ENV).ok())
@@ -83,7 +74,7 @@ async fn fetch_at(
         .ok_or(KimiError::LoginRequired)?;
 
     let response = client
-        .get(endpoint)
+        .get(KIMI_API_URL)
         .header(reqwest::header::ACCEPT, "application/json")
         .bearer_auth(api_key)
         .send()

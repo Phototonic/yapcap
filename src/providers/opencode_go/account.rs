@@ -1,24 +1,24 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::account_storage::validated_account_dir;
-use crate::config::{Config, ManagedKimiAccountConfig, paths};
+use crate::config::{Config, ManagedOpenCodeGoAccountConfig, paths};
 use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct KimiAccount {
+pub struct OpenCodeGoAccount {
     pub id: String,
     pub label: String,
     pub config_dir: PathBuf,
 }
 
-pub fn discover_accounts(config: &Config) -> Vec<KimiAccount> {
+pub fn discover_accounts(config: &Config) -> Vec<OpenCodeGoAccount> {
     config
-        .kimi_managed_accounts
+        .opencode_go_managed_accounts
         .iter()
         .filter_map(|managed| {
-            validated_account_dir(&paths().kimi_accounts_dir, &managed.id)
+            validated_account_dir(&paths().opencode_go_accounts_dir, &managed.id)
                 .ok()
-                .map(|config_dir| KimiAccount {
+                .map(|config_dir| OpenCodeGoAccount {
                     id: managed.id.clone(),
                     label: managed.label.clone(),
                     config_dir,
@@ -27,12 +27,12 @@ pub fn discover_accounts(config: &Config) -> Vec<KimiAccount> {
         .collect()
 }
 
-pub fn apply_login_account(config: &mut Config, account: ManagedKimiAccountConfig) {
+pub fn apply_login_account(config: &mut Config, account: ManagedOpenCodeGoAccountConfig) {
     let account_id = account.id.clone();
     config
-        .kimi_managed_accounts
+        .opencode_go_managed_accounts
         .retain(|existing| existing.id != account_id);
-    config.kimi_managed_accounts.push(account);
+    config.opencode_go_managed_accounts.push(account);
 }
 
 #[cfg(test)]
@@ -43,19 +43,17 @@ mod tests {
     #[test]
     fn apply_login_account_replaces_matching_account() {
         let mut config = Config {
-            kimi_managed_accounts: vec![account("kimi-1", "First")],
+            opencode_go_managed_accounts: vec![account("go-1", "First")],
             ..Config::default()
         };
-
-        apply_login_account(&mut config, account("kimi-1", "Updated"));
-
-        assert_eq!(config.kimi_managed_accounts.len(), 1);
-        assert_eq!(config.kimi_managed_accounts[0].label, "Updated");
+        apply_login_account(&mut config, account("go-1", "Updated"));
+        assert_eq!(config.opencode_go_managed_accounts.len(), 1);
+        assert_eq!(config.opencode_go_managed_accounts[0].label, "Updated");
     }
 
-    fn account(id: &str, label: &str) -> ManagedKimiAccountConfig {
+    fn account(id: &str, label: &str) -> ManagedOpenCodeGoAccountConfig {
         let now = Utc::now();
-        ManagedKimiAccountConfig {
+        ManagedOpenCodeGoAccountConfig {
             id: id.to_string(),
             label: label.to_string(),
             api_key_source: "stored".to_string(),

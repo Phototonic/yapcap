@@ -34,6 +34,8 @@ pub struct Config {
     pub minimax_enabled: bool,
     #[serde(default = "default_kimi_enabled")]
     pub kimi_enabled: bool,
+    #[serde(default = "default_opencode_go_enabled")]
+    pub opencode_go_enabled: bool,
     #[serde(default)]
     pub show_all_accounts: HashSet<ProviderId>,
     pub selected_codex_account_ids: Vec<String>,
@@ -58,6 +60,10 @@ pub struct Config {
     pub selected_kimi_account_ids: Vec<String>,
     #[serde(default)]
     pub kimi_managed_accounts: Vec<ManagedKimiAccountConfig>,
+    #[serde(default)]
+    pub selected_opencode_go_account_ids: Vec<String>,
+    #[serde(default)]
+    pub opencode_go_managed_accounts: Vec<ManagedOpenCodeGoAccountConfig>,
     pub log_level: String,
 }
 
@@ -77,6 +83,10 @@ fn default_kimi_enabled() -> bool {
     true
 }
 
+fn default_opencode_go_enabled() -> bool {
+    true
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -93,6 +103,7 @@ impl Default for Config {
             copilot_enabled: true,
             minimax_enabled: true,
             kimi_enabled: true,
+            opencode_go_enabled: true,
             show_all_accounts: HashSet::new(),
             selected_codex_account_ids: Vec::new(),
             codex_managed_accounts: Vec::new(),
@@ -108,6 +119,8 @@ impl Default for Config {
             minimax_managed_accounts: Vec::new(),
             selected_kimi_account_ids: Vec::new(),
             kimi_managed_accounts: Vec::new(),
+            selected_opencode_go_account_ids: Vec::new(),
+            opencode_go_managed_accounts: Vec::new(),
             log_level: "info".to_string(),
         }
     }
@@ -132,6 +145,7 @@ impl Config {
             ProviderId::Copilot => self.copilot_enabled,
             ProviderId::Minimax => self.minimax_enabled,
             ProviderId::Kimi => self.kimi_enabled,
+            ProviderId::OpenCodeGo => self.opencode_go_enabled,
         }
     }
 
@@ -145,6 +159,7 @@ impl Config {
             ProviderId::Copilot => &self.selected_copilot_account_ids,
             ProviderId::Minimax => &self.selected_minimax_account_ids,
             ProviderId::Kimi => &self.selected_kimi_account_ids,
+            ProviderId::OpenCodeGo => &self.selected_opencode_go_account_ids,
         }
     }
 
@@ -157,6 +172,7 @@ impl Config {
             ProviderId::Copilot => &mut self.selected_copilot_account_ids,
             ProviderId::Minimax => &mut self.selected_minimax_account_ids,
             ProviderId::Kimi => &mut self.selected_kimi_account_ids,
+            ProviderId::OpenCodeGo => &mut self.selected_opencode_go_account_ids,
         }
     }
 
@@ -182,6 +198,7 @@ impl Config {
             ProviderId::Copilot => &mut self.copilot_enabled,
             ProviderId::Minimax => &mut self.minimax_enabled,
             ProviderId::Kimi => &mut self.kimi_enabled,
+            ProviderId::OpenCodeGo => &mut self.opencode_go_enabled,
         };
         let changed = *target != enabled;
         *target = enabled;
@@ -313,6 +330,16 @@ pub struct ManagedKimiAccountConfig {
     pub last_authenticated_at: Option<DateTime<Utc>>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ManagedOpenCodeGoAccountConfig {
+    pub id: String,
+    pub label: String,
+    pub api_key_source: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub last_authenticated_at: Option<DateTime<Utc>>,
+}
+
 fn deserialize_cursor_email<'de, D>(deserializer: D) -> Result<String, D::Error>
 where
     D: Deserializer<'de>,
@@ -340,6 +367,7 @@ pub struct AppPaths {
     pub copilot_accounts_dir: PathBuf,
     pub minimax_accounts_dir: PathBuf,
     pub kimi_accounts_dir: PathBuf,
+    pub opencode_go_accounts_dir: PathBuf,
     pub log_dir: PathBuf,
 }
 
@@ -439,21 +467,6 @@ pub fn managed_gemini_account_dir(account_id: &str) -> PathBuf {
 }
 
 #[must_use]
-pub fn managed_copilot_account_dir(account_id: &str) -> PathBuf {
-    paths().copilot_accounts_dir.join(account_id)
-}
-
-#[must_use]
-pub fn managed_minimax_account_dir(account_id: &str) -> PathBuf {
-    paths().minimax_accounts_dir.join(account_id)
-}
-
-#[must_use]
-pub fn managed_kimi_account_dir(account_id: &str) -> PathBuf {
-    paths().kimi_accounts_dir.join(account_id)
-}
-
-#[must_use]
 pub fn paths() -> AppPaths {
     let cache_root = cache_root_dir();
     let state_root = state_parent_dir();
@@ -466,6 +479,7 @@ pub fn paths() -> AppPaths {
     let copilot_accounts_dir = state_dir.join("copilot-accounts");
     let minimax_accounts_dir = state_dir.join("minimax-accounts");
     let kimi_accounts_dir = state_dir.join("kimi-accounts");
+    let opencode_go_accounts_dir = state_dir.join("opencode-go-accounts");
     let log_dir = state_dir.join("logs");
     AppPaths {
         cache_dir,
@@ -477,6 +491,7 @@ pub fn paths() -> AppPaths {
         copilot_accounts_dir,
         minimax_accounts_dir,
         kimi_accounts_dir,
+        opencode_go_accounts_dir,
         log_dir,
     }
 }
@@ -495,6 +510,7 @@ mod tests {
         assert!(config.provider_enabled(ProviderId::Copilot));
         assert!(config.provider_enabled(ProviderId::Minimax));
         assert!(config.provider_enabled(ProviderId::Kimi));
+        assert!(config.provider_enabled(ProviderId::OpenCodeGo));
         assert_eq!(
             config.provider_visibility_mode,
             ProviderVisibilityMode::AutoInitPending
