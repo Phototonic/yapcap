@@ -324,6 +324,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn targeted_restore_preserves_codex_account_identity_and_creation_time() {
+        let temp = tempdir().unwrap();
+        let auth_path = temp.path().join("auth.json");
+        let state_root = temp.path().join("state");
+        let mut env = crate::test_support::test_env();
+        env.set(OPENCODE_AUTH_PATH_ENV, &auth_path);
+        env.set("XDG_STATE_HOME", &state_root);
+        write_auth_fixture(&auth_path);
+        let (config, _) = seed_target();
+        let target = config.codex_managed_accounts[0].clone();
+        fs::remove_file(target.codex_home.join("metadata.json")).unwrap();
+        let body = r#"{"account_id":"expected-account","email":"user@example.com","rate_limit":{"primary_window":{"used_percent":1.0,"reset_at":2000000000}}}"#;
+        let (endpoint, _) = server(200, body).await;
+
+        let restored = run_import_with(
+            "codex-restore".to_string(),
+            config,
+            Some(target.id.clone()),
+            &reqwest::Client::new(),
+            Some(&endpoint),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(restored.account.id, target.id);
+        assert_eq!(restored.account.created_at, target.created_at);
+        assert!(restored.account.updated_at >= target.updated_at);
+        assert!(restored.account.last_authenticated_at.is_some());
+        let metadata = ProviderAccountStorage::new(paths().codex_accounts_dir)
+            .load_metadata(&target.id)
+            .unwrap();
+        assert_eq!(metadata.created_at, target.created_at);
+    }
+
+    #[tokio::test]
     async fn validation_failure_does_not_create_codex_storage() {
         let temp = tempdir().unwrap();
         let auth_path = temp.path().join("auth.json");

@@ -125,6 +125,22 @@ fn reauth_tooltip(provider: ProviderId) -> String {
     }
 }
 
+fn can_restore_from_opencode(
+    provider: ProviderId,
+    status: Option<&RowStatus>,
+    opencode_import_available: bool,
+    enabled: bool,
+) -> bool {
+    if !enabled || !opencode_import_available {
+        return false;
+    }
+    match provider {
+        ProviderId::Codex => status.is_some_and(|status| status.style_as_action_required),
+        ProviderId::Copilot => true,
+        _ => false,
+    }
+}
+
 pub(super) fn account_settings_row<'a>(
     provider: ProviderId,
     account: &'a ProviderAccountRuntimeState,
@@ -190,21 +206,16 @@ pub(super) fn account_settings_row<'a>(
             Some(Message::ReauthenticateAccount(provider, account_id.clone())),
         ));
     }
-    if enabled
-        && opencode_import_available
-        && matches!(provider, ProviderId::Codex | ProviderId::Copilot)
-    {
+    if can_restore_from_opencode(
+        provider,
+        status.as_ref(),
+        opencode_import_available,
+        enabled,
+    ) {
         actions = actions.push(account_action_icon_button(
             "document-import-symbolic",
-            match provider {
-                ProviderId::Codex => fl!("codex-account-import-reauth-tooltip"),
-                ProviderId::Copilot => fl!("copilot-account-import-reauth-tooltip"),
-                _ => unreachable!(),
-            },
-            Some(Message::ImportFromOpenCode(
-                provider,
-                Some(account_id.clone()),
-            )),
+            fl!("restore-from-opencode"),
+            Some(Message::RestoreFromOpenCode(provider, account_id.clone())),
         ));
     }
     actions = actions.push(account_action_icon_button(
@@ -653,6 +664,51 @@ mod tests {
             ProviderAccountRuntimeState::empty(ProviderId::Codex, "codex-1", "Codex account");
         account.auth_state = AuthState::Ready;
         assert!(row_status(ProviderId::Codex, &account).is_none());
+    }
+
+    #[test]
+    fn restore_action_limits_codex_and_retains_copilot_action() {
+        assert!(reauth_capability_satisfied(ProviderId::Codex, None));
+        let status = RowStatus {
+            kind: RowBadgeKind::Warning,
+            badge_text: String::new(),
+            tooltip_text: String::new(),
+            reauth_eligible: true,
+            style_as_action_required: true,
+        };
+        assert!(can_restore_from_opencode(
+            ProviderId::Codex,
+            Some(&status),
+            true,
+            true,
+        ));
+        assert!(can_restore_from_opencode(
+            ProviderId::Copilot,
+            None,
+            true,
+            true,
+        ));
+        assert!(!can_restore_from_opencode(
+            ProviderId::Codex,
+            None,
+            true,
+            true,
+        ));
+        let mut invalid_account =
+            ProviderAccountRuntimeState::empty(ProviderId::Codex, "codex-1", "Codex account");
+        invalid_account.auth_state = AuthState::Error;
+        assert!(!can_restore_from_opencode(
+            ProviderId::Codex,
+            row_status(ProviderId::Codex, &invalid_account).as_ref(),
+            true,
+            true,
+        ));
+        assert!(!can_restore_from_opencode(
+            ProviderId::Kimi,
+            Some(&status),
+            true,
+            true,
+        ));
     }
 
     #[test]

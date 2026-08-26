@@ -3,7 +3,7 @@
 use super::{codex_system_active_account_id, reconcile_provider_account_descriptors};
 use crate::config::{Config, managed_codex_account_dir};
 use crate::error::AppError;
-use crate::model::{AppState, ProviderId, UsageSnapshot};
+use crate::model::{AppState, AuthState, ProviderHealth, ProviderId, UsageSnapshot};
 use crate::providers::adapters::remove_managed_codex_account;
 use crate::providers::codex;
 use crate::providers::interface::{
@@ -66,8 +66,31 @@ impl ProviderAdapter for CodexAdapter {
     }
 
     fn reconcile_provider_accounts(&self, config: &Config, state: &mut AppState) {
+        let discovered_accounts = codex::discover_accounts(config);
         let accounts = self.discover_accounts(config);
         reconcile_provider_account_descriptors(self.id(), config, state, &accounts);
+        for discovered in discovered_accounts {
+            if discovered.credentials_available {
+                continue;
+            }
+            let Some(account) = state.provider_accounts.iter_mut().find(|account| {
+                account.provider == ProviderId::Codex && account.account_id == discovered.id
+            }) else {
+                continue;
+            };
+            account.health = ProviderHealth::Error;
+            account.retry_after = None;
+            if let Some(error) = discovered.credentials_error {
+                account.auth_state = AuthState::Error;
+                account.error = Some(error);
+            } else {
+                account.auth_state = AuthState::ActionRequired;
+                account.error = Some(
+                    "Codex credentials are missing; restore from OpenCode or sign in again"
+                        .to_string(),
+                );
+            }
+        }
         if let Some(provider_state) = state.provider_mut(ProviderId::Codex) {
             provider_state.system_active_account_id = self.system_active_account_id(config);
         }

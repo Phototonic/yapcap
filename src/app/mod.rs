@@ -197,6 +197,7 @@ pub enum Message {
     ReauthenticateAccount(ProviderId, String),
     StartLogin(ProviderId),
     ImportFromOpenCode(ProviderId, Option<String>),
+    RestoreFromOpenCode(ProviderId, String),
     CancelLogin(ProviderId),
     LoginEvent(ProviderId, Box<login::LoginEventKind>),
     StartCursorScan,
@@ -680,6 +681,9 @@ impl AppModel {
                     provider,
                     target_account_id,
                 ));
+            }
+            Message::RestoreFromOpenCode(provider, account_id) => {
+                return Some(session::restore_from_opencode(self, provider, account_id));
             }
             Message::CancelLogin(provider) => session::cancel_login(self, provider),
             Message::LoginEvent(provider, kind) => {

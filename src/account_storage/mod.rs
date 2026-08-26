@@ -110,6 +110,15 @@ impl ProviderAccountStorage {
         self.write_account(account_id, account, created_at)
     }
 
+    pub fn replace_account_with_created_at(
+        &self,
+        account_id: String,
+        account: NewProviderAccount,
+        created_at: DateTime<Utc>,
+    ) -> Result<StoredProviderAccount, AccountStorageError> {
+        self.write_account(account_id, account, Some(created_at))
+    }
+
     fn write_account(
         &self,
         account_id: String,
@@ -534,6 +543,17 @@ pub enum AccountStorageError {
         #[source]
         source: std::io::Error,
     },
+}
+
+impl AccountStorageError {
+    #[must_use]
+    pub fn is_missing(&self) -> bool {
+        match self {
+            Self::MissingAccountDirectory { .. } => true,
+            Self::ReadFile { source, .. } => source.kind() == std::io::ErrorKind::NotFound,
+            _ => false,
+        }
+    }
 }
 
 pub fn validate_account_id(account_id: &str) -> Result<(), AccountStorageError> {

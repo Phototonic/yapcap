@@ -63,6 +63,14 @@ pub(super) fn import_from_opencode(
     }
 }
 
+pub(super) fn restore_from_opencode(
+    app: &mut AppModel,
+    provider: ProviderId,
+    account_id: String,
+) -> Task<Message> {
+    import_from_opencode(app, provider, Some(account_id))
+}
+
 pub(super) fn cancel_login(app: &mut AppModel, provider: ProviderId) {
     match provider {
         ProviderId::Codex => login::cancel_login::<login::CodexLoginFlow>(app),
@@ -198,6 +206,21 @@ mod tests {
 
         assert_eq!(task.units(), 0);
         assert!(app.claude_login.is_none());
+    }
+
+    #[test]
+    fn restore_from_opencode_requires_a_known_account() {
+        let mut app = test_app();
+
+        let task = restore_from_opencode(&mut app, ProviderId::Codex, "codex-missing".to_string());
+
+        assert_eq!(task.units(), 0);
+        let login = app.codex_login.as_ref().unwrap();
+        assert_eq!(login.status, crate::app::CodexLoginStatus::Failed);
+        assert_eq!(
+            login.error.as_deref(),
+            Some("Codex account no longer exists")
+        );
     }
 
     #[test]

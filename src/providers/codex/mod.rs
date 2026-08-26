@@ -9,7 +9,7 @@ mod refresh;
 mod tests;
 
 use crate::account_storage::{
-    ProviderAccountMetadata, ProviderAccountStorage, ProviderAccountTokens,
+    AccountStorageError, ProviderAccountMetadata, ProviderAccountStorage, ProviderAccountTokens,
 };
 use crate::auth::{CodexAuth, user_id_from_token};
 use crate::error::{CodexError, Result};
@@ -80,10 +80,10 @@ async fn fetch_at(
     let storage = ProviderAccountStorage::new(root);
     let metadata = storage
         .load_metadata(account_id)
-        .map_err(|error| CodexError::AccountStorage(error.to_string()))?;
+        .map_err(map_account_storage_error)?;
     let mut tokens = storage
         .load_tokens(account_id)
-        .map_err(|error| CodexError::AccountStorage(error.to_string()))?;
+        .map_err(map_account_storage_error)?;
 
     if tokens.expires_at <= Utc::now() + REFRESH_BEFORE_EXPIRY {
         tokens = refresh_tokens(client, &storage, account_id, &tokens, token_endpoint).await?;
@@ -112,6 +112,14 @@ async fn fetch_at(
             }
             Err(error)
         }
+    }
+}
+
+fn map_account_storage_error(error: AccountStorageError) -> CodexError {
+    if error.is_missing() {
+        CodexError::CredentialsMissing
+    } else {
+        CodexError::AccountStorage(error.to_string())
     }
 }
 

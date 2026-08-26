@@ -418,8 +418,13 @@ fn ensure_provider_states(state: &mut AppState) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::account_storage::{
+        NewProviderAccount, ProviderAccountStorage, ProviderAccountTokens,
+    };
+    use crate::config::{ManagedCodexAccountConfig, paths};
     use crate::error::{ClaudeError, CodexError, OpenCodeGoError};
     use crate::model::{ProviderIdentity, UsageHeadline};
+    use std::fs;
 
     fn snapshot() -> UsageSnapshot {
         UsageSnapshot {
@@ -504,6 +509,71 @@ mod tests {
         reconcile_shared_state(&config, &mut state);
 
         assert!(state.provider(ProviderId::Codex).unwrap().is_refreshing);
+    }
+
+    #[test]
+    fn reconcile_state_keeps_missing_codex_credentials_actionable() {
+        let _guard = crate::test_support::env_lock();
+        let state_root = tempfile::tempdir().unwrap();
+        unsafe {
+            std::env::set_var("XDG_STATE_HOME", state_root.path());
+        }
+
+        let storage = ProviderAccountStorage::new(paths().codex_accounts_dir);
+        let stored = storage
+            .create_account(NewProviderAccount {
+                provider: ProviderId::Codex,
+                email: "user@example.com".to_string(),
+                provider_account_id: Some("acct-123".to_string()),
+                organization_id: None,
+                organization_name: None,
+                tokens: ProviderAccountTokens {
+                    access_token: "access".to_string(),
+                    refresh_token: "refresh".to_string(),
+                    expires_at: Utc::now() + chrono::Duration::hours(1),
+                    scope: Vec::new(),
+                    token_id: None,
+                },
+                snapshot: None,
+            })
+            .unwrap();
+        fs::remove_file(stored.account_dir.join("tokens.json")).unwrap();
+        let now = Utc::now();
+        let account_id = stored.account_ref.account_id.clone();
+        let config = Config {
+            selected_codex_account_ids: vec![account_id.clone()],
+            codex_managed_accounts: vec![ManagedCodexAccountConfig {
+                id: account_id.clone(),
+                label: "user@example.com".to_string(),
+                codex_home: stored.account_dir,
+                email: Some("user@example.com".to_string()),
+                provider_account_id: Some("acct-123".to_string()),
+                created_at: now,
+                updated_at: now,
+                last_authenticated_at: Some(now),
+            }],
+            ..Config::default()
+        };
+        let mut state = AppState::empty();
+
+        reconcile_state(&config, &mut state);
+
+        unsafe {
+            std::env::remove_var("XDG_STATE_HOME");
+        }
+
+        let account = state
+            .provider_accounts
+            .iter()
+            .find(|account| account.account_id == account_id)
+            .unwrap();
+        assert_eq!(account.auth_state, AuthState::ActionRequired);
+        assert!(
+            account
+                .error
+                .as_deref()
+                .is_some_and(|error| { error.contains("restore from OpenCode") })
+        );
     }
 
     fn state_with_refreshing_provider(started_at: Option<chrono::DateTime<Utc>>) -> AppState {

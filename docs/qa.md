@@ -97,6 +97,15 @@ In Settings → General, cycle through all four panel icon styles and verify the
 - Corrupt `tokens.json` → `access_token` only, remove `refresh_token`. Verify "Login required" state after one failed refresh.
 - Set `expires_at` to one minute in the past with a valid `refresh_token`. On next refresh, YapCap should transparently renew the token and fetch usage without showing an error. Verify `tokens.json` `expires_at` is updated.
 - Set `expires_at` far in the past and set `refresh_token` to a junk value. Verify `ActionRequired` state ("Login" badge) and re-auth prompt in Settings.
+- With a managed Codex entry still present in config, remove `tokens.json` or
+  `metadata.json`. Restart or reconcile and verify the account row remains
+  visible, shows an action-required state, and offers **Restore from OpenCode**
+  rather than disappearing.
+- With a matching test-only `openai` OAuth fixture, click **Restore from
+  OpenCode** on that row. Verify the same managed account id and `created_at`
+  remain, credentials are restored, and the OpenCode auth file is unchanged.
+- Repeat with a mismatched email or provider account id. Verify restore is
+  rejected and the existing account/configuration remains unchanged.
 
 ### 6.4 Remove account
 
@@ -321,6 +330,10 @@ In Settings → General, cycle through all four panel icon styles and verify the
 - Verify the re-auth icon appears in Settings.
 - Re-auth with the same GitHub account and verify the account refreshes successfully.
 - Re-auth with a different GitHub account and verify YapCap rejects it with a different-account error without replacing the stored account.
+- Verify an existing Copilot account row offers **Restore from OpenCode**. Restore
+  with a matching GitHub identity and verify the same managed account id is
+  updated without a duplicate; a mismatched identity must be rejected without
+  changing existing storage.
 
 ### 10.10 Transient errors
 
@@ -525,9 +538,12 @@ Expected diagnostic log patterns for this section:
 - With an OpenCode installation but no relevant provider entry, add and
   reauthenticate forms remain usable manually and no account is created at
   startup. Repeat with a malformed file and an unknown credential type.
-- Confirm discovery occurs only when adding or reauthenticating. Starting YapCap,
-  refreshing, or changing provider tabs does not create accounts or reread the
-  file.
+- Startup and opening settings may reread OpenCode only to refresh import
+  availability. Verify this does not create accounts, import credentials, or
+  write any YapCap/OpenCode credential data. Full credential discovery and
+  validation occurs only after adding, reauthenticating, or explicitly restoring
+  an existing account; periodic refresh and changing provider tabs do not import
+  or synchronize the file.
 - For fixtures only, set `YAPCAP_OPENCODE_AUTH_PATH` to a temporary auth file;
   do not use a production key. The normal default remains
   `~/.local/share/opencode/auth.json`.
@@ -551,16 +567,18 @@ Expected diagnostic log patterns for this section:
 ### 21.3 OAuth compatibility and native login priority
 
 - Codex: use the normal **Sign in with ChatGPT** browser flow and verify it
-  remains the primary action. With a fixture containing a valid `openai` OAuth
-  record, use the separate **Import from OpenCode** action and verify the
-  confirmed credential creates or updates the managed account. An `openai` API
-  key is not offered as Codex subscription authentication.
+  remains the primary add-account action. With a fixture containing a valid
+  `openai` OAuth record, use **Import from OpenCode** for a new account and
+  **Restore from OpenCode** only on an existing action-required row. Verify the
+  confirmed credential creates or updates the intended managed account. An
+  `openai` API key is not offered as Codex subscription authentication.
 - Copilot: complete the native GitHub device flow and verify it remains primary.
   With a fixture containing a valid `github-copilot` OAuth record, use the
-  explicit OpenCode import action. Verify the OAuth `refresh` value is validated
-  with GitHub identity and becomes the stored Copilot API token; the OAuth
-  `access` value is not used for the API request. A GitHub Enterprise credential
-  is declined; YapCap supports github.com only.
+  explicit **Import from OpenCode** action for adding and **Restore from
+  OpenCode** on an existing managed row. Verify the OAuth `refresh` value is
+  validated with GitHub identity and becomes the stored Copilot API token; the
+  OAuth `access` value is not used for the API request. A GitHub Enterprise
+  credential is declined; YapCap supports github.com only.
 - Cancel imports and submit invalid, incomplete, or wrong-provider credentials.
   Verify existing accounts and stored tokens remain unchanged. Claude, Gemini,
   and Cursor forms remain unchanged: Anthropic/Google API keys and unconfirmed

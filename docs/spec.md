@@ -64,8 +64,10 @@ Gemini supports only Google OAuth accounts; gemini-cli API-key and Vertex AI
 configurations are out of scope. Minimax uses API key authentication without host
 CLI integration. Kimi and OpenCode Go optionally prefill API keys once for add or
 reauthentication from OpenCode's local auth file; they have no live host-auth
-synchronization or refresh dependency. OpenCode discovery is also an explicit
-secondary import path for compatible Codex and Copilot OAuth credentials.
+synchronization or refresh dependency. Startup and settings may read OpenCode
+only to refresh import availability. Credential discovery/import remains an
+explicit secondary path for compatible Codex and Copilot OAuth credentials,
+including targeted restore of existing managed accounts.
 
 ## 2. Architecture
 
@@ -285,8 +287,10 @@ Codex account model:
 - YapCap does not import ambient `CODEX_HOME`/`~/.codex` accounts at startup.
   Legacy `system` selections are dropped during startup sync.
 - `discover_accounts` builds the account list from YapCap-owned metadata and
-  requires matching stored tokens. Config metadata is not treated as proof that
-  credentials exist.
+  requires matching stored tokens for normal usage. A managed entry whose
+  metadata or tokens are missing remains visible using its durable config
+  identity metadata and is marked as requiring user action; config metadata is
+  not treated as proof that credentials exist.
 - Codex account identity is the normalized stored account email (`trim + ASCII
   lowercase`). `provider_account_id` is stored only as non-identity metadata for
   API headers, display, diagnostics, and compatibility.
@@ -345,6 +349,16 @@ Managed Codex add-account flow:
   rejected because they are not Codex subscription authentication. Import
   validation completes before any YapCap account is changed, and the confirmed
   OAuth material is copied into the existing managed Codex storage.
+- When a managed Codex account is action-required because its YapCap-owned
+  credential files are missing, its account row remains visible and exposes
+  **Restore from OpenCode**. Restore rereads OpenCode only for that explicit
+  action, validates the email and provider account id, replaces only the
+  targeted YapCap-owned credentials, and preserves the managed account id and
+  lifecycle timestamps. Failed or mismatched validation leaves the existing
+  account unchanged; YapCap never writes back to OpenCode.
+- Malformed, inaccessible, insecure, or symlinked account storage remains a
+  storage error rather than being classified as missing credentials, and does
+  not expose the restore action as if the files were absent.
 - Rename is still future work.
 
 Usage request: `GET https://chatgpt.com/backend-api/wham/usage` with:
@@ -582,6 +596,11 @@ Managed login flow:
   the Copilot API request. GitHub Enterprise credentials are declined because
   YapCap supports github.com only; cancel or failed validation leaves existing
   account storage unchanged.
+- A managed Copilot row, including an action-required row, exposes **Restore from
+  OpenCode**. The restore targets that account id and requires the validated
+  GitHub numeric user id to match before replacing its YapCap-owned token; failed
+  validation leaves the existing account unchanged and OpenCode is never
+  modified.
 
 Usage request:
 
@@ -1217,9 +1236,11 @@ log_level = "info"
 
 ### 4.4 OpenCode Auth Discovery
 
-OpenCode discovery is a shared, optional source used only by add-account and
-reauthentication flows. It is not a provider runtime, account synchronizer, or
-startup importer.
+OpenCode discovery is a shared, optional source. Startup and settings may read
+the auth file only to refresh whether an explicit import or restore action is
+available; credential discovery, validation, and copying happen only after the
+user starts add-account, reauthentication, or targeted restore. It is not a
+provider runtime, account synchronizer, or startup importer.
 
 - The default path is `~/.local/share/opencode/auth.json`. Native builds use the
   host user's home directory. Flatpak uses the existing passwd/host-home
@@ -1248,6 +1269,9 @@ startup importer.
   `github-copilot` OAuth through an explicit secondary import action, and keeps
   GitHub device login primary. GitHub Enterprise, OpenAI API keys, Anthropic API
   keys, Google/Gemini API keys, and Cursor credentials are not compatible.
+- Existing action-required Codex rows and managed Copilot rows may explicitly
+  restore their targeted credentials from the same validated OpenCode OAuth
+  sources; this is separate from add-account import and never runs automatically.
 - Secret values, auth-file contents, access paths outside YapCap's managed roots,
   and imported tokens are not logged. Managed account directories are created and
   repaired to `0o700`; credential files are created or replaced as `0o600` before

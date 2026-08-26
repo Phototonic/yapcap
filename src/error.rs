@@ -206,6 +206,8 @@ fn format_retry_secs(secs: u64) -> String {
 pub enum CodexError {
     #[error("failed to read Codex account storage: {0}")]
     AccountStorage(String),
+    #[error("Codex credentials are missing; restore from OpenCode or sign in again")]
+    CredentialsMissing,
     #[error("invalid codex bearer header")]
     InvalidBearerHeader(#[source] reqwest::header::InvalidHeaderValue),
     #[error("invalid codex account id header")]
@@ -252,6 +254,7 @@ impl CodexError {
         matches!(
             self,
             Self::Unauthorized
+                | Self::CredentialsMissing
                 | Self::RefreshUnavailable
                 | Self::RefreshHttp {
                     status: 400 | 401 | 403,
@@ -786,6 +789,15 @@ mod tests {
             assert!(!err.requires_user_action());
             assert!(err.is_transient());
         }
+    }
+
+    #[test]
+    fn missing_codex_credentials_require_user_action() {
+        let error = AppError::Provider(ProviderError::Codex(CodexError::CredentialsMissing));
+
+        assert!(error.requires_user_action());
+        assert!(!error.is_transient());
+        assert!(error.user_message().contains("restore from OpenCode"));
     }
 
     #[test]

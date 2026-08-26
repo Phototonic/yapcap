@@ -146,9 +146,16 @@ pub(super) fn commit_login(
     let new_account =
         new_provider_account(auth, login_email, provider_account_id, snapshot.clone());
     let stored = if let Some(existing) = &existing {
-        storage
-            .replace_account(existing.id.clone(), new_account)
-            .map_err(|error| format!("failed to update Codex account: {error}"))?
+        let stored = if target_account_id.is_some() {
+            storage.replace_account_with_created_at(
+                existing.id.clone(),
+                new_account,
+                existing.created_at,
+            )
+        } else {
+            storage.replace_account(existing.id.clone(), new_account)
+        };
+        stored.map_err(|error| format!("failed to update Codex account: {error}"))?
     } else {
         storage
             .replace_account(flow_id.to_string(), new_account)
