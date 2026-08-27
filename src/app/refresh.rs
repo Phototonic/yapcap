@@ -650,6 +650,43 @@ mod tests {
     }
 
     #[test]
+    fn forced_refresh_retries_opencode_go_entitlement_failure() {
+        let _env = test_env_without_demo();
+        let config = Config::default();
+        let mut state = AppState::empty();
+        mark_all_ready(&mut state);
+        state.upsert_account(crate::model::ProviderAccountRuntimeState {
+            provider: ProviderId::OpenCodeGo,
+            account_id: "opencode-go-1".to_string(),
+            label: "OpenCode Go".to_string(),
+            source_label: None,
+            last_success_at: None,
+            snapshot: None,
+            health: crate::model::ProviderHealth::Error,
+            auth_state: AuthState::Error,
+            error: Some("OpenCode Go subscription required".to_string()),
+            retry_after: Some(Utc::now() + chrono::Duration::minutes(5)),
+            consecutive_failures: 1,
+        });
+
+        let task = refresh_provider_task_for_process(
+            &config,
+            &mut state,
+            ProviderId::OpenCodeGo,
+            None,
+            true,
+        );
+
+        assert!(task.units() > 0);
+        assert!(
+            state
+                .provider(ProviderId::OpenCodeGo)
+                .unwrap()
+                .is_refreshing
+        );
+    }
+
+    #[test]
     fn forced_refresh_still_skips_action_required_account() {
         let _env = test_env_without_demo();
         let config = Config::default();

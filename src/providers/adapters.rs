@@ -7,6 +7,7 @@ mod cursor_adapter;
 mod gemini_adapter;
 mod kimi_adapter;
 mod minimax_adapter;
+mod opencode_go_adapter;
 
 use crate::account_storage::ProviderAccountStorage;
 use crate::config::{Config, host_user_home_dir, paths};
@@ -25,6 +26,7 @@ pub(super) fn adapter(provider: ProviderId) -> &'static dyn ProviderAdapter {
         ProviderId::Copilot => &COPILOT_ADAPTER,
         ProviderId::Kimi => &KIMI_ADAPTER,
         ProviderId::Minimax => &MINIMAX_ADAPTER,
+        ProviderId::OpenCodeGo => &OPENCODE_GO_ADAPTER,
     }
 }
 
@@ -35,6 +37,8 @@ static GEMINI_ADAPTER: gemini_adapter::GeminiAdapter = gemini_adapter::GeminiAda
 static COPILOT_ADAPTER: copilot_adapter::CopilotAdapter = copilot_adapter::CopilotAdapter;
 static KIMI_ADAPTER: kimi_adapter::KimiAdapter = kimi_adapter::KimiAdapter;
 static MINIMAX_ADAPTER: minimax_adapter::MinimaxAdapter = minimax_adapter::MinimaxAdapter;
+static OPENCODE_GO_ADAPTER: opencode_go_adapter::OpenCodeGoAdapter =
+    opencode_go_adapter::OpenCodeGoAdapter;
 
 pub(super) fn reconcile_provider_account_descriptors(
     provider: ProviderId,
@@ -193,4 +197,21 @@ pub(super) fn kimi_system_active_account_id(
                 .map(|account| account.id.clone())
         }
     })
+}
+
+pub(super) fn opencode_go_system_active_account_id(
+    managed_accounts: &[crate::config::ManagedOpenCodeGoAccountConfig],
+) -> Option<String> {
+    std::env::var("OPENCODE_GO_API_KEY")
+        .ok()
+        .and_then(|api_key| {
+            if api_key.is_empty() {
+                None
+            } else {
+                managed_accounts
+                    .iter()
+                    .find(|account| account.api_key_source == "env:OPENCODE_GO_API_KEY")
+                    .map(|account| account.id.clone())
+            }
+        })
 }

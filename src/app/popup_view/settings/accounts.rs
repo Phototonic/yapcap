@@ -3,7 +3,7 @@ mod rows;
 
 use self::login_controls::{
     claude_login_controls, codex_login_controls, copilot_login_controls, cursor_scan_controls,
-    gemini_login_controls, kimi_login_controls, minimax_login_controls,
+    gemini_login_controls, kimi_login_controls, minimax_login_controls, opencode_go_login_controls,
 };
 use self::rows::{account_selector_list, account_settings_row, show_all_accounts_row};
 use super::super::{
@@ -17,6 +17,7 @@ use crate::providers::cursor::CursorScanState;
 use crate::providers::gemini::GeminiLoginState;
 use crate::providers::kimi::login::KimiLoginState;
 use crate::providers::minimax::MinimaxLoginState;
+use crate::providers::opencode_go::login::OpenCodeGoLoginState;
 
 pub(super) fn provider_settings_view<'a>(
     state: &'a AppState,
@@ -36,13 +37,28 @@ pub(super) fn provider_settings_view<'a>(
     );
 
     let accounts_section = match provider_id {
-        ProviderId::Codex => codex_accounts_section(state, config, logins.codex, enabled),
+        ProviderId::Codex => codex_accounts_section(
+            state,
+            config,
+            logins.codex,
+            logins.opencode_import_availability.codex,
+            enabled,
+        ),
         ProviderId::Claude => claude_accounts_section(state, config, logins.claude, enabled),
         ProviderId::Cursor => cursor_accounts_section(state, config, logins.cursor_scan, enabled),
         ProviderId::Gemini => gemini_accounts_section(state, config, logins.gemini, enabled),
-        ProviderId::Copilot => copilot_accounts_section(state, config, logins.copilot, enabled),
+        ProviderId::Copilot => copilot_accounts_section(
+            state,
+            config,
+            logins.copilot,
+            logins.opencode_import_availability.copilot,
+            enabled,
+        ),
         ProviderId::Minimax => minimax_accounts_section(state, config, logins.minimax, enabled),
         ProviderId::Kimi => kimi_accounts_section(state, config, logins.kimi, enabled),
+        ProviderId::OpenCodeGo => {
+            opencode_go_accounts_section(state, config, logins.opencode_go, enabled)
+        }
     };
 
     Element::from(
@@ -56,6 +72,7 @@ fn codex_accounts_section<'a>(
     state: &'a AppState,
     config: &'a Config,
     codex_login: Option<&'a CodexLoginState>,
+    opencode_import_available: bool,
     enabled: bool,
 ) -> Element<'a, Message> {
     let codex = state.provider(ProviderId::Codex);
@@ -87,6 +104,7 @@ fn codex_accounts_section<'a>(
                 &selected_ids,
                 active_id,
                 config,
+                opencode_import_available,
                 enabled,
             ));
         }
@@ -107,7 +125,11 @@ fn codex_accounts_section<'a>(
         ));
     }
 
-    rows = rows.push(codex_login_controls(codex_login, enabled));
+    rows = rows.push(codex_login_controls(
+        codex_login,
+        opencode_import_available,
+        enabled,
+    ));
 
     settings_block_enabled(
         widget::text(fl!("codex-accounts-title")).size(16).into(),
@@ -153,6 +175,7 @@ fn claude_accounts_section<'a>(
                 &selected_ids,
                 active_id,
                 config,
+                false,
                 enabled,
             ));
         }
@@ -218,6 +241,7 @@ fn gemini_accounts_section<'a>(
                 &selected_ids,
                 active_id,
                 config,
+                false,
                 enabled,
             ));
         }
@@ -278,6 +302,7 @@ fn cursor_accounts_section<'a>(
                 &selected_ids,
                 active_id,
                 config,
+                false,
                 enabled,
             ));
         }
@@ -305,6 +330,7 @@ fn copilot_accounts_section<'a>(
     state: &'a AppState,
     config: &'a Config,
     copilot_login: Option<&'a CopilotLoginState>,
+    opencode_import_available: bool,
     enabled: bool,
 ) -> Element<'a, Message> {
     let selected_ids: Vec<&str> = state
@@ -338,6 +364,7 @@ fn copilot_accounts_section<'a>(
                 &selected_ids,
                 active_id,
                 config,
+                opencode_import_available,
                 enabled,
             ));
         }
@@ -352,7 +379,11 @@ fn copilot_accounts_section<'a>(
         ));
     }
 
-    rows = rows.push(copilot_login_controls(copilot_login, enabled));
+    rows = rows.push(copilot_login_controls(
+        copilot_login,
+        opencode_import_available,
+        enabled,
+    ));
 
     settings_block_enabled(
         widget::text(fl!("copilot-accounts-title")).size(16).into(),
@@ -396,6 +427,7 @@ fn minimax_accounts_section<'a>(
                 &selected_ids,
                 active_id,
                 config,
+                false,
                 enabled,
             ));
         }
@@ -460,6 +492,7 @@ fn kimi_accounts_section<'a>(
                 &selected_ids,
                 active_id,
                 config,
+                false,
                 enabled,
             ));
         }
@@ -484,6 +517,73 @@ fn kimi_accounts_section<'a>(
 
     settings_block_enabled(
         widget::text(fl!("kimi-accounts-title")).size(16).into(),
+        rows,
+        enabled,
+    )
+}
+
+fn opencode_go_accounts_section<'a>(
+    state: &'a AppState,
+    config: &'a Config,
+    opencode_go_login: Option<&'a OpenCodeGoLoginState>,
+    enabled: bool,
+) -> Element<'a, Message> {
+    let opencode_go = state.provider(ProviderId::OpenCodeGo);
+    let selected_ids: Vec<&str> = opencode_go
+        .map(|provider| {
+            provider
+                .selected_account_ids
+                .iter()
+                .map(String::as_str)
+                .collect()
+        })
+        .unwrap_or_default();
+    let accounts = state.accounts_for(ProviderId::OpenCodeGo);
+    let active_id = opencode_go.and_then(|provider| provider.system_active_account_id.as_deref());
+    let mut rows = cosmic::iced::widget::column![]
+        .spacing(8)
+        .width(Length::Fill);
+
+    if accounts.is_empty() {
+        rows = rows.push(widget::text(fl!("opencode-go-accounts-empty")).size(13));
+    } else {
+        let mut account_rows = cosmic::iced::widget::column![]
+            .spacing(6)
+            .width(Length::Fill);
+        for account in &accounts {
+            account_rows = account_rows.push(account_settings_row(
+                ProviderId::OpenCodeGo,
+                account,
+                &selected_ids,
+                active_id,
+                config,
+                false,
+                enabled,
+            ));
+        }
+        rows = rows.push(account_selector_list(account_rows));
+    }
+
+    if let Some(provider) = opencode_go
+        && provider.account_status == crate::model::AccountSelectionStatus::SelectionRequired
+    {
+        rows = rows.push(widget::text(fl!("opencode-go-account-select-required")).size(13));
+    }
+
+    if accounts.len() > 1 {
+        rows = rows.push(show_all_accounts_row(
+            ProviderId::OpenCodeGo,
+            config.show_all_accounts(ProviderId::OpenCodeGo),
+            enabled,
+        ));
+    }
+
+    rows = rows.push(opencode_go_login_controls(opencode_go_login, enabled));
+
+    settings_block_enabled(
+        widget::text(fl!("opencode-go-accounts-title"))
+            .size(16)
+            .into(),
         rows,
         enabled,
     )

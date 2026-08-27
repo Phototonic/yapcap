@@ -21,8 +21,7 @@ pub struct CopilotLoginState {
     pub output: Vec<String>,
     pub error: Option<String>,
     pub code_copied: bool,
-    #[allow(dead_code)]
-    pub expected_github_user_id: Option<u64>,
+    pub importing_from_opencode: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -85,8 +84,6 @@ fn prepare_with_options(
     config: Config,
     options: ReauthOptions,
 ) -> Result<(CopilotLoginState, Task<CopilotLoginEvent>), String> {
-    let account_root = crate::config::paths().copilot_accounts_dir;
-    crate::providers::copilot::storage::create_private_dir(&account_root)?;
     let flow_id = new_flow_id();
 
     let state = CopilotLoginState {
@@ -97,7 +94,7 @@ fn prepare_with_options(
         output: Vec::new(),
         error: None,
         code_copied: false,
-        expected_github_user_id: options.expected_github_user_id,
+        importing_from_opencode: false,
     };
     let stream = cosmic::iced::stream::channel(100, move |mut output| async move {
         run_login(flow_id, config, options, &mut output).await;
@@ -151,13 +148,37 @@ async fn run_login_inner(
     let access_token =
         poll_for_token(&client, endpoints.token, &device_code, output, flow_id).await?;
     let identity = fetch_identity(&client, endpoints.identity, &access_token).await?;
-    verify_reauth_github_user_id(options.expected_github_user_id, identity.id)?;
+    commit_validated_login(
+        config,
+        options.expected_github_user_id,
+        None,
+        identity,
+        access_token,
+    )
+}
+
+pub(super) fn commit_validated_login(
+    config: &Config,
+    expected_github_user_id: Option<u64>,
+    target_account_id: Option<&str>,
+    identity: super::device_flow::CopilotIdentity,
+    access_token: String,
+) -> Result<CopilotLoginSuccess, String> {
+    verify_reauth_github_user_id(expected_github_user_id, identity.id)?;
     let now = Utc::now();
-    let ResolvedAccount {
-        id,
-        account_dir,
-        created_at,
-    } = resolve_account_target(config, identity.id, now);
+    let ResolvedAccount { id, created_at } = if let Some(target_account_id) = target_account_id {
+        let target = config
+            .copilot_managed_accounts
+            .iter()
+            .find(|account| account.id == target_account_id)
+            .ok_or_else(|| "Copilot account no longer exists".to_string())?;
+        ResolvedAccount {
+            id: target.id.clone(),
+            created_at: target.created_at,
+        }
+    } else {
+        resolve_account_target(config, identity.id, now)
+    };
     let tokens = CopilotTokens { access_token };
     let metadata = CopilotMetadata {
         github_user_id: identity.id,
@@ -166,7 +187,7 @@ async fn run_login_inner(
         updated_at: now,
         last_authenticated_at: Some(now),
     };
-    write_account(&account_dir, &tokens, &metadata)?;
+    write_account(&id, &tokens, &metadata)?;
     let account = ManagedCopilotAccountConfig {
         id,
         label: identity.login.clone(),
@@ -245,7 +266,6 @@ pub(super) fn commit_login_for_test(
 ) -> Result<CopilotLoginSuccess, String> {
     let now = Utc::now();
     let id = crate::providers::copilot::storage::account_id_for_github_user(identity_id);
-    let account_dir = account_root.join(&id);
     let existing = crate::providers::copilot::account::find_matching_account(config, identity_id);
     let created_at = existing.map_or(now, |account| account.created_at);
     let tokens = CopilotTokens { access_token };
@@ -256,7 +276,7 @@ pub(super) fn commit_login_for_test(
         updated_at: now,
         last_authenticated_at: Some(now),
     };
-    write_account(&account_dir, &tokens, &metadata)?;
+    crate::providers::copilot::storage::write_account_at(&account_root, &id, &tokens, &metadata)?;
     let account = ManagedCopilotAccountConfig {
         id,
         label: login.clone(),
@@ -329,5 +349,35 @@ mod tests {
     #[test]
     fn add_account_allows_any_github_user_id() {
         assert!(verify_reauth_github_user_id(None, 7).is_ok());
+    }
+
+    #[test]
+    fn targeted_reauth_rejects_a_different_github_identity_before_storage() {
+        let now = Utc::now();
+        let config = Config {
+            copilot_managed_accounts: vec![ManagedCopilotAccountConfig {
+                id: "copilot-42".to_string(),
+                label: "octocat".to_string(),
+                github_user_id: 42,
+                login: "octocat".to_string(),
+                created_at: now,
+                updated_at: now,
+                last_authenticated_at: Some(now),
+            }],
+            ..Config::default()
+        };
+
+        let result = commit_validated_login(
+            &config,
+            Some(42),
+            Some("copilot-42"),
+            super::super::device_flow::CopilotIdentity {
+                id: 7,
+                login: "other".to_string(),
+            },
+            "token".to_string(),
+        );
+
+        assert!(result.is_err());
     }
 }

@@ -34,6 +34,7 @@ impl Config {
             "copilot_enabled" => self.copilot_enabled = update.copilot_enabled,
             "minimax_enabled" => self.minimax_enabled = update.minimax_enabled,
             "kimi_enabled" => self.kimi_enabled = update.kimi_enabled,
+            "opencode_go_enabled" => self.opencode_go_enabled = update.opencode_go_enabled,
             "show_all_accounts" => self.show_all_accounts = update.show_all_accounts.clone(),
             "log_level" => self.log_level.clone_from(&update.log_level),
             _ => return false,
@@ -84,6 +85,13 @@ impl Config {
             }
             "kimi_managed_accounts" => {
                 self.kimi_managed_accounts = update.kimi_managed_accounts.clone();
+            }
+            "selected_opencode_go_account_ids" => {
+                self.selected_opencode_go_account_ids =
+                    update.selected_opencode_go_account_ids.clone();
+            }
+            "opencode_go_managed_accounts" => {
+                self.opencode_go_managed_accounts = update.opencode_go_managed_accounts.clone();
             }
             _ => {}
         }
@@ -151,6 +159,36 @@ mod tests {
     }
 
     #[test]
+    fn applies_opencode_go_watcher_keys_without_replacing_unrelated_configuration() {
+        let mut config = Config::default();
+        let mut update = Config {
+            codex_enabled: false,
+            opencode_go_enabled: false,
+            selected_opencode_go_account_ids: vec!["go-2".to_string()],
+            opencode_go_managed_accounts: vec![opencode_go_account("go-2")],
+            ..Config::default()
+        };
+        update.opencode_go_managed_accounts[0].label = "Second OpenCode Go".to_string();
+
+        config.apply_watcher_update(
+            update,
+            &[
+                "opencode_go_enabled",
+                "selected_opencode_go_account_ids",
+                "opencode_go_managed_accounts",
+            ],
+        );
+
+        assert!(!config.opencode_go_enabled);
+        assert_eq!(config.selected_opencode_go_account_ids, ["go-2"]);
+        assert_eq!(
+            config.opencode_go_managed_accounts[0].label,
+            "Second OpenCode Go"
+        );
+        assert!(config.codex_enabled);
+    }
+
+    #[test]
     fn ignores_unknown_keys() {
         let mut config = Config::default();
         let update = Config {
@@ -191,6 +229,18 @@ mod tests {
     fn kimi_account(id: &str) -> ManagedKimiAccountConfig {
         let now = Utc::now();
         ManagedKimiAccountConfig {
+            id: id.to_string(),
+            label: id.to_string(),
+            api_key_source: "stored".to_string(),
+            created_at: now,
+            updated_at: now,
+            last_authenticated_at: None,
+        }
+    }
+
+    fn opencode_go_account(id: &str) -> crate::config::ManagedOpenCodeGoAccountConfig {
+        let now = Utc::now();
+        crate::config::ManagedOpenCodeGoAccountConfig {
             id: id.to_string(),
             label: id.to_string(),
             api_key_source: "stored".to_string(),

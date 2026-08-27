@@ -58,6 +58,12 @@ impl From<KimiError> for AppError {
     }
 }
 
+impl From<OpenCodeGoError> for AppError {
+    fn from(value: OpenCodeGoError) -> Self {
+        Self::Provider(ProviderError::OpenCodeGo(value))
+    }
+}
+
 impl AppError {
     #[must_use]
     pub fn user_message(&self) -> String {
@@ -100,6 +106,7 @@ impl AppError {
             Self::Provider(ProviderError::Copilot(e)) => e.rate_limit_retry_after_secs(),
             Self::Provider(ProviderError::Minimax(e)) => e.rate_limit_retry_after_secs(),
             Self::Provider(ProviderError::Kimi(e)) => e.rate_limit_retry_after_secs(),
+            Self::Provider(ProviderError::OpenCodeGo(e)) => e.rate_limit_retry_after_secs(),
             _ => None,
         }
     }
@@ -133,6 +140,8 @@ pub enum ProviderError {
     Minimax(#[from] MinimaxError),
     #[error(transparent)]
     Kimi(#[from] KimiError),
+    #[error(transparent)]
+    OpenCodeGo(#[from] OpenCodeGoError),
 }
 
 impl ProviderError {
@@ -146,6 +155,7 @@ impl ProviderError {
             Self::Copilot(error) => error.is_network_unavailable(),
             Self::Minimax(error) => error.is_network_unavailable(),
             Self::Kimi(error) => error.is_network_unavailable(),
+            Self::OpenCodeGo(error) => error.is_network_unavailable(),
         }
     }
 
@@ -159,6 +169,7 @@ impl ProviderError {
             Self::Copilot(error) => error.requires_user_action(),
             Self::Minimax(error) => error.requires_user_action(),
             Self::Kimi(error) => error.requires_user_action(),
+            Self::OpenCodeGo(error) => error.requires_user_action(),
         }
     }
 
@@ -172,6 +183,7 @@ impl ProviderError {
             Self::Copilot(error) => error.is_transient(),
             Self::Minimax(error) => error.is_transient(),
             Self::Kimi(error) => error.is_transient(),
+            Self::OpenCodeGo(error) => error.is_transient(),
         }
     }
 }
@@ -194,6 +206,8 @@ fn format_retry_secs(secs: u64) -> String {
 pub enum CodexError {
     #[error("failed to read Codex account storage: {0}")]
     AccountStorage(String),
+    #[error("Codex credentials are missing; restore from OpenCode or sign in again")]
+    CredentialsMissing,
     #[error("invalid codex bearer header")]
     InvalidBearerHeader(#[source] reqwest::header::InvalidHeaderValue),
     #[error("invalid codex account id header")]
@@ -202,16 +216,16 @@ pub enum CodexError {
     UsageRequest(#[source] reqwest::Error),
     #[error("Codex login required")]
     Unauthorized,
-    #[error("codex usage endpoint returned HTTP {status}{details}")]
-    UsageHttp { status: u16, details: String },
+    #[error("codex usage endpoint returned HTTP {status}")]
+    UsageHttp { status: u16 },
     #[error("failed to decode codex usage response")]
     DecodeUsageJson(#[source] serde_json::Error),
     #[error("codex token refresh not available")]
     RefreshUnavailable,
     #[error("codex token refresh request failed")]
     RefreshRequest(#[source] reqwest::Error),
-    #[error("codex token refresh returned HTTP {status}{details}")]
-    RefreshHttp { status: u16, details: String },
+    #[error("codex token refresh returned HTTP {status}")]
+    RefreshHttp { status: u16 },
     #[error("failed to decode codex token refresh response")]
     RefreshDecode(#[source] reqwest::Error),
     #[error("Codex response had no usage windows")]
@@ -240,6 +254,7 @@ impl CodexError {
         matches!(
             self,
             Self::Unauthorized
+                | Self::CredentialsMissing
                 | Self::RefreshUnavailable
                 | Self::RefreshHttp {
                     status: 400 | 401 | 403,
@@ -656,6 +671,56 @@ impl KimiError {
     }
 }
 
+#[derive(Debug, Error)]
+pub enum OpenCodeGoError {
+    #[error("OpenCode Go login required")]
+    LoginRequired,
+    #[error("OpenCode Go subscription required")]
+    EntitlementRequired,
+    #[error("OpenCode Go usage request failed")]
+    UsageRequest(#[source] reqwest::Error),
+    #[error("OpenCode Go usage endpoint returned HTTP {status}")]
+    UsageHttp { status: u16 },
+    #[error("OpenCode Go usage endpoint returned error")]
+    UsageEndpoint(#[source] reqwest::Error),
+    #[error("failed to decode OpenCode Go usage response")]
+    DecodeUsage(#[source] serde_json::Error),
+    #[error("OpenCode Go response had no usage windows")]
+    NoUsageData,
+    #[error("Rate limited by OpenCode Go — will retry automatically")]
+    RateLimited { retry_after_secs: Option<u64> },
+}
+
+impl OpenCodeGoError {
+    #[must_use]
+    pub fn is_network_unavailable(&self) -> bool {
+        matches!(self, Self::UsageRequest(source) if request_could_not_reach_network(source))
+    }
+
+    #[must_use]
+    pub fn requires_user_action(&self) -> bool {
+        matches!(self, Self::LoginRequired)
+    }
+
+    #[must_use]
+    pub fn rate_limit_retry_after_secs(&self) -> Option<u64> {
+        match self {
+            Self::RateLimited { retry_after_secs } => *retry_after_secs,
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn is_transient(&self) -> bool {
+        match self {
+            Self::RateLimited { .. } => true,
+            Self::UsageRequest(source) => request_could_not_reach_network(source),
+            Self::UsageHttp { status } => *status >= 500,
+            _ => false,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -711,10 +776,7 @@ mod tests {
     #[test]
     fn codex_refresh_auth_failures_require_user_action() {
         for status in [400, 401, 403] {
-            let err = AppError::Provider(ProviderError::Codex(CodexError::RefreshHttp {
-                status,
-                details: String::new(),
-            }));
+            let err = AppError::Provider(ProviderError::Codex(CodexError::RefreshHttp { status }));
             assert!(err.requires_user_action());
             assert!(!err.is_transient());
         }
@@ -723,13 +785,19 @@ mod tests {
     #[test]
     fn codex_refresh_rate_limit_and_server_errors_are_transient() {
         for status in [429, 500, 503] {
-            let err = AppError::Provider(ProviderError::Codex(CodexError::RefreshHttp {
-                status,
-                details: String::new(),
-            }));
+            let err = AppError::Provider(ProviderError::Codex(CodexError::RefreshHttp { status }));
             assert!(!err.requires_user_action());
             assert!(err.is_transient());
         }
+    }
+
+    #[test]
+    fn missing_codex_credentials_require_user_action() {
+        let error = AppError::Provider(ProviderError::Codex(CodexError::CredentialsMissing));
+
+        assert!(error.requires_user_action());
+        assert!(!error.is_transient());
+        assert!(error.user_message().contains("restore from OpenCode"));
     }
 
     #[test]
@@ -791,5 +859,23 @@ mod tests {
         assert_eq!(err.rate_limit_retry_after_secs(), Some(42));
         assert!(err.is_transient());
         assert!(!err.requires_user_action());
+    }
+
+    #[test]
+    fn opencode_go_statuses_distinguish_auth_from_entitlement_and_rate_limits() {
+        let unauthorized = AppError::from(OpenCodeGoError::LoginRequired);
+        assert!(unauthorized.requires_user_action());
+        assert!(!unauthorized.is_transient());
+
+        let entitlement = AppError::from(OpenCodeGoError::EntitlementRequired);
+        assert!(!entitlement.requires_user_action());
+        assert!(!entitlement.is_transient());
+
+        let rate_limited = AppError::from(OpenCodeGoError::RateLimited {
+            retry_after_secs: Some(42),
+        });
+        assert!(!rate_limited.requires_user_action());
+        assert!(rate_limited.is_transient());
+        assert_eq!(rate_limited.rate_limit_retry_after_secs(), Some(42));
     }
 }

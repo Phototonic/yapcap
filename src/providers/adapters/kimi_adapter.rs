@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use super::{kimi_system_active_account_id, reconcile_provider_account_descriptors};
-use crate::config::{Config, managed_kimi_account_dir};
+use crate::account_storage::ProviderAccountStorage;
+use crate::config::{Config, paths};
 use crate::error::AppError;
 use crate::model::{AppState, ProviderId, UsageSnapshot};
 use crate::providers::interface::{
@@ -54,9 +55,12 @@ impl ProviderAdapter for KimiAdapter {
         {
             return false;
         }
-        crate::providers::kimi::account::remove_managed_config_dir(&managed_kimi_account_dir(
-            account_id,
-        ));
+        if ProviderAccountStorage::new(paths().kimi_accounts_dir)
+            .delete_account(account_id)
+            .is_err()
+        {
+            return false;
+        }
         config
             .kimi_managed_accounts
             .retain(|account| account.id != account_id);

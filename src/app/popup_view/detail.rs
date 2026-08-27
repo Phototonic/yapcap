@@ -1,8 +1,9 @@
 use super::{
-    Message, PROVIDER_ACCOUNT_HEADER_HEIGHT, PROVIDER_CARD_SPACING, PROVIDER_SECTION_HEIGHT,
-    PROVIDER_SECTION_WITH_ACTION_HEIGHT, PROVIDER_SUMMARY_HEIGHT, PopupRoute, SettingsRoute,
-    account_label_text, apply_alpha, badge_destructive, badge_neutral, badge_success,
-    badge_warning, badge_with_tooltip, card, info_block, plan_badge, provider_summary,
+    ACCOUNT_PAGER_HEIGHT, Message, PROVIDER_ACCOUNT_HEADER_HEIGHT, PROVIDER_CARD_SPACING,
+    PROVIDER_SECTION_HEIGHT, PROVIDER_SECTION_WITH_ACTION_HEIGHT, PROVIDER_SUMMARY_HEIGHT,
+    PagerDirection, PopupRoute, SettingsRoute, account_label_text, apply_alpha, badge_destructive,
+    badge_neutral, badge_success, badge_warning, badge_with_tooltip, card, clamp_account_page,
+    info_block, pager_account_label, plan_badge, provider_summary,
 };
 use crate::config::{Config, ResetTimeFormat, UsageAmountFormat};
 use crate::currency_format;
@@ -22,6 +23,7 @@ pub(super) fn selected_provider_view<'a>(
     provider: Option<&'a ProviderRuntimeState>,
     state: &'a AppState,
     config: &'a Config,
+    account_page: usize,
 ) -> Element<'a, Message> {
     let Some(provider) = provider else {
         return no_providers_view();
@@ -38,18 +40,65 @@ pub(super) fn selected_provider_view<'a>(
         for item in items {
             content = content.push(item);
         }
-        Element::from(content)
-    } else {
-        let mut content = column![summary]
-            .spacing(PROVIDER_CARD_SPACING)
-            .width(Length::Fill);
-        let mut cols_row = row![].spacing(8);
-        for account in &accounts {
-            cols_row = cols_row.push(account_column_view(account, provider, state, config));
-        }
-        content = content.push(cols_row);
-        Element::from(content)
+        return Element::from(content);
     }
+
+    let total = accounts.len();
+    let active = clamp_account_page(account_page, total);
+    let account = accounts[active];
+    let mut content = column![summary, account_pager(account, active, total)]
+        .spacing(PROVIDER_CARD_SPACING)
+        .width(Length::Fill);
+    content = content.push(account_column_view(account, provider, state, config));
+    Element::from(content)
+}
+
+fn account_pager(
+    account: &ProviderAccountRuntimeState,
+    active: usize,
+    total: usize,
+) -> Element<'static, Message> {
+    let name = pager_account_label(active, &account.label);
+    let position = fl!(
+        "account-pager-position",
+        current = i64::try_from(active + 1).unwrap_or(i64::MAX),
+        total = i64::try_from(total).unwrap_or(i64::MAX)
+    );
+    let previous = widget::tooltip::tooltip(
+        widget::button::icon(widget::icon::from_name("go-previous-symbolic"))
+            .extra_small()
+            .on_press(Message::PageProviderAccount(PagerDirection::Previous)),
+        widget::text(fl!("account-pager-previous")).size(12),
+        widget::tooltip::Position::Top,
+    );
+    let next = widget::tooltip::tooltip(
+        widget::button::icon(widget::icon::from_name("go-next-symbolic"))
+            .extra_small()
+            .on_press(Message::PageProviderAccount(PagerDirection::Next)),
+        widget::text(fl!("account-pager-next")).size(12),
+        widget::tooltip::Position::Top,
+    );
+    let center = container(
+        column![
+            widget::text(name)
+                .size(14)
+                .width(Length::Fill)
+                .align_x(Alignment::Center),
+            widget::text(position)
+                .size(12)
+                .width(Length::Fill)
+                .align_x(Alignment::Center),
+        ]
+        .spacing(2)
+        .align_x(Alignment::Center),
+    )
+    .width(Length::Fill)
+    .align_x(Alignment::Center);
+
+    row![previous, center, next]
+        .spacing(8)
+        .align_y(Alignment::Center)
+        .into()
 }
 
 pub(super) fn provider_body_height_multi(
@@ -60,13 +109,22 @@ pub(super) fn provider_body_height_multi(
         return PROVIDER_SUMMARY_HEIGHT;
     };
     let accounts = state.display_selected_accounts(provider.provider);
-    if accounts.is_empty() {
-        return provider_body_height_for_account(provider, None);
+    if accounts.len() <= 1 {
+        return provider_body_height_for_account(provider, accounts.first().copied());
     }
-    accounts
+    let max_column = accounts
         .iter()
-        .map(|account| provider_body_height_for_account(provider, Some(account)))
-        .fold(PROVIDER_SUMMARY_HEIGHT, f32::max)
+        .map(|account| {
+            provider_body_height_for_account(provider, Some(account))
+                - PROVIDER_SUMMARY_HEIGHT
+                - PROVIDER_CARD_SPACING
+        })
+        .fold(0.0_f32, f32::max);
+    PROVIDER_SUMMARY_HEIGHT
+        + PROVIDER_CARD_SPACING
+        + ACCOUNT_PAGER_HEIGHT
+        + PROVIDER_CARD_SPACING
+        + max_column
 }
 
 pub(super) fn active_snapshot<'a>(

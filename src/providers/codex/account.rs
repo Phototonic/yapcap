@@ -1,12 +1,13 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::account_selection::select_account_after_login;
-use crate::account_storage::ProviderAccountStorage;
+use crate::account_storage::{
+    AccountStorageError, ProviderAccountMetadata, ProviderAccountStorage, ProviderAccountTokens,
+};
 use crate::config::{Config, ManagedCodexAccountConfig, managed_codex_account_dir, paths};
 use crate::model::ProviderId;
 use chrono::Utc;
-use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct CodexAccount {
@@ -15,31 +16,56 @@ pub struct CodexAccount {
     pub email: Option<String>,
     pub provider_account_id: Option<String>,
     pub codex_home: PathBuf,
+    pub credentials_available: bool,
+    pub credentials_error: Option<String>,
 }
 
 pub fn discover_accounts(config: &Config) -> Vec<CodexAccount> {
     let storage = ProviderAccountStorage::new(paths().codex_accounts_dir);
     let mut accounts = Vec::new();
     for managed in &config.codex_managed_accounts {
-        let Ok(metadata) = storage.load_metadata(&managed.id) else {
+        let metadata_result = storage.load_metadata(&managed.id);
+        let tokens_result = storage.load_tokens(&managed.id);
+        let (credentials_available, credentials_error) =
+            credential_status(&metadata_result, &tokens_result);
+        let metadata = metadata_result.ok();
+        let email = metadata
+            .as_ref()
+            .map(|metadata| metadata.email.clone())
+            .filter(|email| !email.is_empty())
+            .or_else(|| managed.email.clone().filter(|email| !email.is_empty()));
+        let label = email.clone().unwrap_or_else(|| {
+            if managed.label.trim().is_empty() {
+                "Codex account".to_string()
+            } else {
+                managed.label.clone()
+            }
+        });
+        let provider_account_id = metadata
+            .as_ref()
+            .and_then(|metadata| metadata.provider_account_id.clone())
+            .or_else(|| managed.provider_account_id.clone());
+        let Ok(codex_home) = storage.account_dir(&managed.id) else {
             continue;
         };
-        if storage.load_tokens(&managed.id).is_err() {
-            continue;
-        }
-        let email = Some(metadata.email).filter(|email| !email.is_empty());
-        let label = email.clone().unwrap_or_else(|| "Codex account".to_string());
         let discovered = CodexAccount {
             id: managed.id.clone(),
             label,
             email,
-            provider_account_id: metadata.provider_account_id,
-            codex_home: storage.account_dir(&managed.id),
+            provider_account_id,
+            codex_home,
+            credentials_available,
+            credentials_error,
         };
         match discovered.email.as_deref().map(normalized_email) {
             Some(email_key) => {
                 if let Some(index) = accounts.iter().position(|existing: &CodexAccount| {
-                    existing.email.as_deref().map(normalized_email) == Some(email_key.clone())
+                    same_identity(
+                        existing.email.as_deref(),
+                        existing.provider_account_id.as_deref(),
+                        Some(&email_key),
+                        discovered.provider_account_id.as_deref(),
+                    )
                 }) {
                     let existing = &accounts[index];
                     if prefer_account(existing, &discovered, &config.selected_codex_account_ids) {
@@ -54,6 +80,20 @@ pub fn discover_accounts(config: &Config) -> Vec<CodexAccount> {
         }
     }
     accounts
+}
+
+fn credential_status(
+    metadata: &Result<ProviderAccountMetadata, AccountStorageError>,
+    tokens: &Result<ProviderAccountTokens, AccountStorageError>,
+) -> (bool, Option<String>) {
+    let non_missing_error = [metadata.as_ref().err(), tokens.as_ref().err()]
+        .into_iter()
+        .flatten()
+        .find(|error| !error.is_missing());
+    if let Some(error) = non_missing_error {
+        return (false, Some(error.to_string()));
+    }
+    (metadata.is_ok() && tokens.is_ok(), None)
 }
 
 pub fn sync_managed_accounts(config: &mut Config) -> bool {
@@ -98,20 +138,18 @@ pub fn normalized_email(email: &str) -> String {
 pub(crate) fn find_matching_account<'a>(
     config: &'a Config,
     email: Option<&str>,
+    provider_account_id: Option<&str>,
 ) -> Option<&'a ManagedCodexAccountConfig> {
     let email = email?;
     let email = normalized_email(email);
-    config
-        .codex_managed_accounts
-        .iter()
-        .find(|account| account.email.as_deref().map(normalized_email) == Some(email.clone()))
-}
-
-pub(crate) fn create_private_dir(path: &Path) -> Result<(), String> {
-    fs::create_dir_all(path)
-        .map_err(|error| format!("failed to create {}: {error}", path.display()))?;
-    set_private_dir_permissions(path)?;
-    Ok(())
+    config.codex_managed_accounts.iter().find(|account| {
+        same_identity(
+            account.email.as_deref(),
+            account.provider_account_id.as_deref(),
+            Some(&email),
+            provider_account_id,
+        )
+    })
 }
 
 pub(crate) fn new_account_id() -> String {
@@ -134,7 +172,12 @@ fn dedupe_managed_accounts(config: &mut Config) -> bool {
         if let Some(index) = deduped
             .iter()
             .position(|existing: &ManagedCodexAccountConfig| {
-                existing.email.as_deref().map(normalized_email) == Some(email_key.clone())
+                same_identity(
+                    existing.email.as_deref(),
+                    existing.provider_account_id.as_deref(),
+                    Some(&email_key),
+                    account.provider_account_id.as_deref(),
+                )
             })
         {
             let existing = deduped.remove(index);
@@ -164,6 +207,21 @@ fn dedupe_managed_accounts(config: &mut Config) -> bool {
     config.codex_managed_accounts = deduped;
     config.selected_codex_account_ids = selected_ids;
     changed
+}
+
+fn same_identity(
+    existing_email: Option<&str>,
+    existing_provider_account_id: Option<&str>,
+    candidate_email: Option<&str>,
+    candidate_provider_account_id: Option<&str>,
+) -> bool {
+    match (existing_provider_account_id, candidate_provider_account_id) {
+        (Some(existing), Some(candidate)) => existing == candidate,
+        (None, None) => {
+            existing_email.map(normalized_email) == candidate_email.map(normalized_email)
+        }
+        _ => false,
+    }
 }
 
 fn prefer_account(
@@ -224,18 +282,6 @@ fn merge_account_metadata(
     }
 }
 
-#[cfg(unix)]
-fn set_private_dir_permissions(path: &Path) -> Result<(), String> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
-        .map_err(|error| format!("failed to secure {}: {error}", path.display()))
-}
-
-#[cfg(not(unix))]
-fn set_private_dir_permissions(_path: &Path) -> Result<(), String> {
-    Ok(())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -244,6 +290,7 @@ mod tests {
     };
     use crate::model::ProviderId;
     use crate::test_support;
+    use std::fs;
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn temp_dir(name: &str) -> std::path::PathBuf {
@@ -309,7 +356,7 @@ mod tests {
     }
 
     #[test]
-    fn dedupes_existing_same_email_accounts() {
+    fn preserves_same_email_accounts_with_different_known_id_states() {
         let now = Utc::now();
         let home_a = temp_dir("codex-dedupe-a");
         let home_b = temp_dir("codex-dedupe-b");
@@ -343,23 +390,13 @@ mod tests {
 
         let changed = dedupe_managed_accounts(&mut config);
 
-        assert!(changed);
-        assert_eq!(config.codex_managed_accounts.len(), 1);
-        assert_eq!(
-            config.codex_managed_accounts[0].email.as_deref(),
-            Some("USER@example.com")
-        );
+        assert!(!changed);
+        assert_eq!(config.codex_managed_accounts.len(), 2);
         assert_eq!(config.selected_codex_account_ids.as_slice(), ["codex-b"]);
-        assert_eq!(
-            config.codex_managed_accounts[0]
-                .provider_account_id
-                .as_deref(),
-            Some("acct-123")
-        );
     }
 
     #[test]
-    fn discover_accounts_returns_one_entry_per_email() {
+    fn discover_accounts_preserves_different_provider_account_ids() {
         let now = Utc::now();
         let _guard = test_support::env_lock();
         let state_root = temp_dir("codex-discover-state");
@@ -405,8 +442,17 @@ mod tests {
             std::env::remove_var("XDG_STATE_HOME");
         }
 
-        assert_eq!(accounts.len(), 1);
-        assert_eq!(accounts[0].id, account_b.account_ref.account_id);
+        assert_eq!(accounts.len(), 2);
+        assert!(
+            accounts
+                .iter()
+                .any(|account| account.id == account_a.account_ref.account_id)
+        );
+        assert!(
+            accounts
+                .iter()
+                .any(|account| account.id == account_b.account_ref.account_id)
+        );
     }
 
     #[test]
@@ -446,5 +492,212 @@ mod tests {
         assert_eq!(accounts[0].label, "user@example.com");
         assert_eq!(accounts[0].email.as_deref(), Some("user@example.com"));
         assert_eq!(accounts[0].provider_account_id.as_deref(), Some("acct-123"));
+        assert!(accounts[0].credentials_available);
+        assert!(accounts[0].credentials_error.is_none());
+    }
+
+    #[test]
+    fn discover_accounts_keeps_managed_account_when_credentials_are_missing() {
+        let _guard = test_support::env_lock();
+        let state_root = temp_dir("codex-missing-credentials-state");
+
+        unsafe {
+            std::env::set_var("XDG_STATE_HOME", &state_root);
+        }
+
+        let storage = ProviderAccountStorage::new(paths().codex_accounts_dir);
+        let stored = create_stored_account(&storage, "user@example.com", "acct-123");
+        fs::remove_file(stored.account_dir.join("tokens.json")).unwrap();
+        let now = Utc::now();
+        let config = Config {
+            selected_codex_account_ids: vec![stored.account_ref.account_id.clone()],
+            codex_managed_accounts: vec![ManagedCodexAccountConfig {
+                id: stored.account_ref.account_id.clone(),
+                label: "old label".to_string(),
+                codex_home: stored.account_dir,
+                email: Some("user@example.com".to_string()),
+                provider_account_id: Some("acct-123".to_string()),
+                created_at: now,
+                updated_at: now,
+                last_authenticated_at: Some(now),
+            }],
+            ..Config::default()
+        };
+
+        let accounts = discover_accounts(&config);
+
+        unsafe {
+            std::env::remove_var("XDG_STATE_HOME");
+        }
+
+        assert_eq!(accounts.len(), 1);
+        assert_eq!(accounts[0].id, stored.account_ref.account_id);
+        assert_eq!(accounts[0].label, "user@example.com");
+        assert_eq!(accounts[0].email.as_deref(), Some("user@example.com"));
+        assert_eq!(accounts[0].provider_account_id.as_deref(), Some("acct-123"));
+        assert!(!accounts[0].credentials_available);
+        assert!(accounts[0].credentials_error.is_none());
+    }
+
+    #[test]
+    fn discover_accounts_does_not_treat_malformed_credentials_as_missing() {
+        let state_root = temp_dir("codex-malformed-credentials-state");
+        let mut env = test_support::test_env();
+        env.set("XDG_STATE_HOME", &state_root);
+
+        let storage = ProviderAccountStorage::new(paths().codex_accounts_dir);
+        let stored = create_stored_account(&storage, "user@example.com", "acct-123");
+        fs::write(stored.account_dir.join("metadata.json"), b"not json").unwrap();
+        let now = Utc::now();
+        let account_id = stored.account_ref.account_id.clone();
+        let config = Config {
+            codex_managed_accounts: vec![ManagedCodexAccountConfig {
+                id: account_id,
+                label: "old label".to_string(),
+                codex_home: stored.account_dir,
+                email: Some("user@example.com".to_string()),
+                provider_account_id: Some("acct-123".to_string()),
+                created_at: now,
+                updated_at: now,
+                last_authenticated_at: Some(now),
+            }],
+            ..Config::default()
+        };
+
+        let accounts = discover_accounts(&config);
+
+        assert_eq!(accounts.len(), 1);
+        assert!(!accounts[0].credentials_available);
+        assert!(
+            accounts[0]
+                .credentials_error
+                .as_deref()
+                .is_some_and(|error| { error.contains("failed to parse account file") })
+        );
+    }
+
+    #[test]
+    fn discover_accounts_prioritizes_malformed_tokens_over_missing_metadata() {
+        let state_root = temp_dir("codex-missing-metadata-malformed-tokens-state");
+        let mut env = test_support::test_env();
+        env.set("XDG_STATE_HOME", &state_root);
+
+        let storage = ProviderAccountStorage::new(paths().codex_accounts_dir);
+        let stored = create_stored_account(&storage, "user@example.com", "acct-123");
+        fs::remove_file(stored.account_dir.join("metadata.json")).unwrap();
+        fs::write(stored.account_dir.join("tokens.json"), b"not json").unwrap();
+        let now = Utc::now();
+        let account_id = stored.account_ref.account_id.clone();
+        let config = Config {
+            codex_managed_accounts: vec![ManagedCodexAccountConfig {
+                id: account_id,
+                label: "old label".to_string(),
+                codex_home: stored.account_dir,
+                email: Some("user@example.com".to_string()),
+                provider_account_id: Some("acct-123".to_string()),
+                created_at: now,
+                updated_at: now,
+                last_authenticated_at: Some(now),
+            }],
+            ..Config::default()
+        };
+
+        let accounts = discover_accounts(&config);
+
+        assert_eq!(accounts.len(), 1);
+        assert!(!accounts[0].credentials_available);
+        assert!(
+            accounts[0]
+                .credentials_error
+                .as_deref()
+                .is_some_and(|error| { error.contains("failed to parse account file") })
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discover_accounts_does_not_treat_symlinked_credentials_as_missing() {
+        use std::os::unix::fs::symlink;
+
+        let state_root = temp_dir("codex-symlinked-credentials-state");
+        let mut env = test_support::test_env();
+        env.set("XDG_STATE_HOME", &state_root);
+
+        let storage = ProviderAccountStorage::new(paths().codex_accounts_dir);
+        let stored = create_stored_account(&storage, "user@example.com", "acct-123");
+        let external_metadata = state_root.join("external-metadata.json");
+        fs::write(&external_metadata, "{}").unwrap();
+        fs::remove_file(stored.account_dir.join("metadata.json")).unwrap();
+        symlink(external_metadata, stored.account_dir.join("metadata.json")).unwrap();
+        let now = Utc::now();
+        let account_id = stored.account_ref.account_id.clone();
+        let config = Config {
+            codex_managed_accounts: vec![ManagedCodexAccountConfig {
+                id: account_id,
+                label: "old label".to_string(),
+                codex_home: stored.account_dir,
+                email: Some("user@example.com".to_string()),
+                provider_account_id: Some("acct-123".to_string()),
+                created_at: now,
+                updated_at: now,
+                last_authenticated_at: Some(now),
+            }],
+            ..Config::default()
+        };
+
+        let accounts = discover_accounts(&config);
+
+        assert_eq!(accounts.len(), 1);
+        assert!(!accounts[0].credentials_available);
+        assert!(
+            accounts[0]
+                .credentials_error
+                .as_deref()
+                .is_some_and(|error| { error.contains("symlinked") })
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn discover_accounts_prioritizes_symlinked_tokens_over_missing_metadata() {
+        use std::os::unix::fs::symlink;
+
+        let state_root = temp_dir("codex-missing-metadata-symlinked-tokens-state");
+        let mut env = test_support::test_env();
+        env.set("XDG_STATE_HOME", &state_root);
+
+        let storage = ProviderAccountStorage::new(paths().codex_accounts_dir);
+        let stored = create_stored_account(&storage, "user@example.com", "acct-123");
+        let external_tokens = state_root.join("external-tokens.json");
+        fs::write(&external_tokens, "{}").unwrap();
+        fs::remove_file(stored.account_dir.join("metadata.json")).unwrap();
+        fs::remove_file(stored.account_dir.join("tokens.json")).unwrap();
+        symlink(external_tokens, stored.account_dir.join("tokens.json")).unwrap();
+        let now = Utc::now();
+        let account_id = stored.account_ref.account_id.clone();
+        let config = Config {
+            codex_managed_accounts: vec![ManagedCodexAccountConfig {
+                id: account_id,
+                label: "old label".to_string(),
+                codex_home: stored.account_dir,
+                email: Some("user@example.com".to_string()),
+                provider_account_id: Some("acct-123".to_string()),
+                created_at: now,
+                updated_at: now,
+                last_authenticated_at: Some(now),
+            }],
+            ..Config::default()
+        };
+
+        let accounts = discover_accounts(&config);
+
+        assert_eq!(accounts.len(), 1);
+        assert!(!accounts[0].credentials_available);
+        assert!(
+            accounts[0]
+                .credentials_error
+                .as_deref()
+                .is_some_and(|error| { error.contains("symlinked") })
+        );
     }
 }

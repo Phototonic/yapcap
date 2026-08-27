@@ -5,9 +5,7 @@ use crate::account_storage::{
 };
 use crate::config::{Config, ManagedGeminiAccountConfig};
 use crate::model::ProviderId;
-use crate::providers::gemini::account::{
-    create_private_dir, find_matching_account, new_account_id, normalized_email,
-};
+use crate::providers::gemini::account::{find_matching_account, new_account_id, normalized_email};
 use crate::providers::gemini::code_assist::{LoadCodeAssist, load_code_assist};
 use crate::providers::gemini::id_token::{IdTokenClaims, decode};
 use crate::providers::gemini::oauth::{
@@ -98,9 +96,6 @@ fn prepare_with_options(
     options: ReauthOptions,
 ) -> Result<(GeminiLoginState, Task<GeminiLoginEvent>), String> {
     let flow_id = new_account_id();
-    let account_root = crate::config::paths().gemini_accounts_dir;
-    create_private_dir(&account_root)?;
-
     let state = GeminiLoginState {
         flow_id: flow_id.clone(),
         status: GeminiLoginStatus::Running,

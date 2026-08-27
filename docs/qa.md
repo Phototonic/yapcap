@@ -22,7 +22,7 @@ Do not expect the Flatpak build to use `~/.local/state/yapcap/` for YapCap data�
 
 ## 1. Fresh install
 
-- `just clear-all-data` then install. All seven provider tabs visible with "Login required" state (not hidden).
+- `just clear-all-data` then install. All eight provider tabs visible with "Login required" state (not hidden).
 - Existing `v501` COSMIC settings are not loaded after the `v502` schema boundary; users must re-add accounts.
 - Existing account directories, old snapshot caches, and logs are not automatically deleted by the schema boundary and may remain orphaned.
 - Settings → General → About shows correct version and dist label ("Native" or "Flatpak").
@@ -97,6 +97,15 @@ In Settings → General, cycle through all four panel icon styles and verify the
 - Corrupt `tokens.json` → `access_token` only, remove `refresh_token`. Verify "Login required" state after one failed refresh.
 - Set `expires_at` to one minute in the past with a valid `refresh_token`. On next refresh, YapCap should transparently renew the token and fetch usage without showing an error. Verify `tokens.json` `expires_at` is updated.
 - Set `expires_at` far in the past and set `refresh_token` to a junk value. Verify `ActionRequired` state ("Login" badge) and re-auth prompt in Settings.
+- With a managed Codex entry still present in config, remove `tokens.json` or
+  `metadata.json`. Restart or reconcile and verify the account row remains
+  visible, shows an action-required state, and offers **Restore from OpenCode**
+  rather than disappearing.
+- With a matching test-only `openai` OAuth fixture, click **Restore from
+  OpenCode** on that row. Verify the same managed account id and `created_at`
+  remain, credentials are restored, and the OpenCode auth file is unchanged.
+- Repeat with a mismatched email or provider account id. Verify restore is
+  rejected and the existing account/configuration remains unchanged.
 
 ### 6.4 Remove account
 
@@ -321,6 +330,10 @@ In Settings → General, cycle through all four panel icon styles and verify the
 - Verify the re-auth icon appears in Settings.
 - Re-auth with the same GitHub account and verify the account refreshes successfully.
 - Re-auth with a different GitHub account and verify YapCap rejects it with a different-account error without replacing the stored account.
+- Verify an existing Copilot account row offers **Restore from OpenCode**. Restore
+  with a matching GitHub identity and verify the same managed account id is
+  updated without a duplicate; a mismatched identity must be rejected without
+  changing existing storage.
 
 ### 10.10 Transient errors
 
@@ -408,7 +421,7 @@ In Settings → General, cycle through all four panel icon styles and verify the
 - Add a second account for any provider.
 - `Show all accounts` toggle appears only when the provider has more than one account.
 - `Show all accounts` off — single active account column in popup.
-- `Show all accounts` on — one column per selected account side by side. Popup width expands by 420 px per additional column.
+- `Show all accounts` on — one panel usage-bar group per selected account; the popup keeps its fixed width and pages through selected accounts using the full-width account pager.
 - Panel bars expand horizontally: one two-bar group per selected account.
 - Unloaded accounts show 0% fill in panel until their snapshot arrives.
 - Switching the active account in single-account mode triggers a refresh for only that provider, not a global refresh.
@@ -435,12 +448,14 @@ In Settings → General, cycle through all four panel icon styles and verify the
 
 ## 15. Popup sizing
 
-- Single-account provider: popup is 420 px wide.
-- Two-account provider: popup is 840 px wide.
-- Switching from a two-account tab to a one-account tab shrinks popup immediately.
-- Switching from provider view to Settings shrinks to settings width.
+- Popup width is 420 px for every provider and route, regardless of selected account count.
+- Multi-account provider: a pager sits above one full-width account detail; previous/next buttons cycle accounts (wrapping at both ends), the active account name (or `Account N`) and `current of total` position are centered, and paging does not change the config selection.
+- Multi-account provider paging a taller account resizes the popup height without clipping; switching provider tabs resets the pager to the first account.
+- Provider nav tabs stay compact with two balanced rows at eight providers; labels stay readable and the selected tab keeps its accent border.
+- Settings category navigation wraps into two balanced rows with all nine categories visible and clickable.
+- OpenCode Go's provider tab shows the compact **5 Hour** and **Weekly** summary bars; opening its detail view also shows **Monthly**.
+- Switching between provider tabs or routes updates the popup height immediately.
 - Content taller than 1080 px: body scrolls, header/nav/footer stay fixed.
-- Header, nav, and footer stay centred at 420 px even in wide multi-account popup.
 
 ---
 
@@ -510,3 +525,112 @@ Expected diagnostic log patterns for this section:
 - Account state for the Flatpak build lives under `~/.var/app/io.github.TopiCsarno.YapCap/data/yapcap/` (not `~/.local/state/yapcap/`).
 - `just flatpak-run` launches the installed Flatpak version.
 - Native install (`just install`) About section shows "Native".
+
+---
+
+## 21. OpenCode discovery and OpenCode Go
+
+### 21.1 Discovery boundaries
+
+- Test with no OpenCode installation and no `~/.local/share/opencode/auth.json`.
+  YapCap starts normally, shows the normal manual/native login controls, and does
+  not require or attempt to launch an `opencode` executable.
+- With an OpenCode installation but no relevant provider entry, add and
+  reauthenticate forms remain usable manually and no account is created at
+  startup. Repeat with a malformed file and an unknown credential type.
+- Startup and opening settings may reread OpenCode only to refresh import
+  availability. Verify this does not create accounts, import credentials, or
+  write any YapCap/OpenCode credential data. Full credential discovery and
+  validation occurs only after adding, reauthenticating, or explicitly restoring
+  an existing account; periodic refresh and changing provider tabs do not import
+  or synchronize the file.
+- For fixtures only, set `YAPCAP_OPENCODE_AUTH_PATH` to a temporary auth file;
+  do not use a production key. The normal default remains
+  `~/.local/share/opencode/auth.json`.
+
+### 21.2 API-key prefill and form behavior
+
+- Put test-only `api` credentials for `kimi-for-coding`, `minimax`, and
+  `opencode-go` in a fixture. Open each provider's Add account form and verify
+  the key is prefilled, masked by default, and marked as imported from OpenCode.
+- Edit the prefilled key or clear it. Verify the imported hint/provenance clears,
+  the edited value remains the value that would be saved, and reveal/hide toggles
+  never expose the key unless explicitly requested.
+- Cancel each form and verify no account, key file, config value, or external
+  OpenCode file is created or changed. Save a test-only value and verify it is
+  copied to YapCap private storage only.
+- For Minimax and Kimi, add a second labeled account, switch selection with
+  **Show all accounts** off and on, reauthenticate each existing account, and
+  delete each account. Verify labels, selected ids, private key files, and the
+  normal four-account selection cap remain correct.
+
+### 21.3 OAuth compatibility and native login priority
+
+- Codex: use the normal **Sign in with ChatGPT** browser flow and verify it
+  remains the primary add-account action. With a fixture containing a valid
+  `openai` OAuth record, use **Import from OpenCode** for a new account and
+  **Restore from OpenCode** only on an existing action-required row. Verify the
+  confirmed credential creates or updates the intended managed account. An
+  `openai` API key is not offered as Codex subscription authentication.
+- Copilot: complete the native GitHub device flow and verify it remains primary.
+  With a fixture containing a valid `github-copilot` OAuth record, use the
+  explicit **Import from OpenCode** action for adding and **Restore from
+  OpenCode** on an existing managed row. Verify the OAuth `refresh` value is
+  validated with GitHub identity and becomes the stored Copilot API token; the
+  OAuth `access` value is not used for the API request. A GitHub Enterprise
+  credential is declined; YapCap supports github.com only.
+- Cancel imports and submit invalid, incomplete, or wrong-provider credentials.
+  Verify existing accounts and stored tokens remain unchanged. Claude, Gemini,
+  and Cursor forms remain unchanged: Anthropic/Google API keys and unconfirmed
+  Cursor sources are not imported from OpenCode.
+
+### 21.4 OpenCode Go auth and usage
+
+- Add an OpenCode Go account with a manually entered test key. Verify the API-key
+  field is masked/revealable, the account is stored privately, and the account is
+  selected in single-account mode. Add multiple labeled accounts, switch the
+  selected account, enable **Show all accounts**, and verify the normal selection
+  cap and per-account refresh behavior.
+- Add or reauthenticate with an `opencode-go` API-key fixture. Verify the field is
+  editable and clearing it prevents saving. Reauthentication preserves the
+  target account identity and does not create a second account.
+- Stub or fixture `GET https://opencode.ai/zen/go/v1/usage` with Bearer
+  authentication and valid server percentages/reset timestamps. Verify the popup
+  shows **5 Hour**, **Weekly**, and **Monthly** windows in that order.
+- Return HTTP 401 and verify authentication-required state without deleting the
+  account. Return HTTP 403 and verify entitlement-required messaging without
+  recommending reauthentication as a cure. Return HTTP 429 with and without
+  `Retry-After` and verify normal rate-limit backoff.
+- Disable the network or return a transient failure after a successful refresh.
+  Verify the last successful three-window snapshot remains visible as stale and
+  the account is not deleted. Restore connectivity and verify fresh data returns.
+- Reauthenticate and delete OpenCode Go accounts. Verify deletion removes only
+  YapCap's managed directory, updates selection, and never touches OpenCode.
+
+### 21.5 Copy isolation, paths, and security
+
+- Save a Kimi, Minimax, Codex, Copilot, or OpenCode Go credential, then change or
+  delete OpenCode `auth.json`. Refresh the saved YapCap account and verify usage
+  still comes from YapCap storage. Delete the YapCap account and verify the
+  OpenCode file is byte-for-byte unchanged.
+- Repeat with native and Flatpak builds. Native discovery uses the host default
+  path; Flatpak discovery uses the mounted host home even when sandbox `HOME`
+  points into `~/.var/app/`. Verify no OpenCode executable is needed in either
+  build.
+- Inspect logs, COSMIC config, and managed account metadata. Verify they contain
+  no API keys, OAuth access/refresh tokens, auth-file contents, bearer headers,
+  pasted codes, or secret paths. Verify API keys exist only in private YapCap
+  account storage with owner-only permissions.
+- Attempt to replace a managed account directory or key file with a symlink to an
+  external path. Verify the operation is rejected and the external file remains
+  unchanged. Verify no OpenCode path is persisted as an account root.
+- Restrict an existing managed account directory or credential file incorrectly,
+  then refresh or save the account. On Unix, verify the directory is repaired to
+  `0700` and each managed credential file to `0600` before its contents are written.
+
+### 21.6 Zen limitation
+
+- Verify product/help text does not show a Zen balance, confuse local usage
+  percentages with remaining credits, recommend console/cookie/private-RPC
+  scraping, or cite an unsupported balance endpoint. It must state that Zen
+  balance support is deferred until upstream provides a supported public API.

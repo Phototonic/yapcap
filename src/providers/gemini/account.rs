@@ -4,8 +4,6 @@ use crate::account_selection::select_account_after_login;
 use crate::config::{Config, ManagedGeminiAccountConfig, managed_gemini_account_dir};
 use crate::model::ProviderId;
 use chrono::Utc;
-use std::fs;
-use std::path::Path;
 
 pub fn normalized_email(email: &str) -> String {
     email.trim().to_ascii_lowercase()
@@ -14,13 +12,6 @@ pub fn normalized_email(email: &str) -> String {
 pub fn new_account_id() -> String {
     let millis = Utc::now().timestamp_millis();
     format!("gemini-{millis}-{}", std::process::id())
-}
-
-pub fn create_private_dir(path: &Path) -> Result<(), String> {
-    fs::create_dir_all(path)
-        .map_err(|error| format!("failed to create {}: {error}", path.display()))?;
-    set_private_dir_permissions(path)?;
-    Ok(())
 }
 
 pub(crate) fn find_matching_account<'a>(
@@ -145,18 +136,6 @@ fn merge_account_metadata(
     if source.last_authenticated_at > target.last_authenticated_at {
         target.last_authenticated_at = source.last_authenticated_at;
     }
-}
-
-#[cfg(unix)]
-fn set_private_dir_permissions(path: &Path) -> Result<(), String> {
-    use std::os::unix::fs::PermissionsExt;
-    fs::set_permissions(path, fs::Permissions::from_mode(0o700))
-        .map_err(|error| format!("failed to secure {}: {error}", path.display()))
-}
-
-#[cfg(not(unix))]
-fn set_private_dir_permissions(_path: &Path) -> Result<(), String> {
-    Ok(())
 }
 
 #[cfg(test)]

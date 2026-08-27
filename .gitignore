@@ -1,6 +1,7 @@
 .cargo/
 .codex
 .omo/
+.opencode/
 .slim/
 .flatpak-builder/
 .scratch/

@@ -1,10 +1,10 @@
 use super::{
-    AccountSelectionStatus, AppModel, Config, CosmicConfigEntry, Id, Message, PanelIconStyle,
-    PopupRoute, ProviderId, ProviderRefreshResult, ResetTimeFormat, SettingsRoute, Size, Task,
-    UpdateStatus, UsageAmountFormat, app_popup, applet_button_size, cosmic_config, demo_env,
-    destroy_popup, format_retry_delay, popup_size_limits_with_max_width, popup_size_tuple,
-    popup_view, refresh_provider_account_statuses_task, registry, resize_popup, runtime,
-    select_provider, update_retry_delay, update_retry_task,
+    AccountSelectionStatus, AppModel, Config, CosmicConfigEntry, Id, Message, PagerDirection,
+    PanelIconStyle, PopupRoute, ProviderId, ProviderRefreshResult, ResetTimeFormat, SettingsRoute,
+    Size, Task, UpdateStatus, UsageAmountFormat, app_popup, applet_button_size, cosmic_config,
+    demo_env, destroy_popup, format_retry_delay, popup_size_limits_with_max_width,
+    popup_size_tuple, popup_view, refresh_provider_account_statuses_task, registry, resize_popup,
+    runtime, select_provider, update_retry_delay, update_retry_task,
 };
 use crate::account_selection::provider_show_all_account_selection;
 use crate::config::APP_ID;
@@ -175,9 +175,31 @@ impl AppModel {
         self.core.applet.suggested_bounds = Some(Size::new(w, h));
     }
 
+    pub(super) fn page_provider_account(&mut self, direction: PagerDirection) -> Task<Message> {
+        let count = self
+            .state
+            .display_selected_accounts(self.selected_provider)
+            .len();
+        if count > 1 {
+            self.detail_account_page = match direction {
+                PagerDirection::Previous => {
+                    popup_view::account_page_previous(self.detail_account_page, count)
+                }
+                PagerDirection::Next => {
+                    popup_view::account_page_next(self.detail_account_page, count)
+                }
+            };
+            if let Some(resize) = self.resize_popup_to_provider(self.selected_provider) {
+                return resize;
+            }
+        }
+        Task::none()
+    }
+
     pub(super) fn select_provider_tab(&mut self, provider: ProviderId) -> Task<Message> {
         let previous = self.selected_provider;
         self.selected_provider = provider;
+        self.detail_account_page = 0;
         tracing::info!(
             process_id = %self.process_info.id,
             previous_provider = previous.label(),
@@ -275,7 +297,7 @@ impl AppModel {
         }
 
         let popup_size = self.popup_size_for_route(&self.popup_route.clone());
-        let max_width = popup_view::popup_max_width(&self.state);
+        let max_width = popup_view::POPUP_COLUMN_WIDTH;
         self.popup_size = Some(popup_size);
         tracing::info!(
             process_id = %self.process_info.id,
@@ -620,6 +642,9 @@ pub(super) fn popup_route_label(route: PopupRoute) -> &'static str {
         PopupRoute::Settings(SettingsRoute::Provider(ProviderId::Copilot)) => "settings_copilot",
         PopupRoute::Settings(SettingsRoute::Provider(ProviderId::Minimax)) => "settings_minimax",
         PopupRoute::Settings(SettingsRoute::Provider(ProviderId::Kimi)) => "settings_kimi",
+        PopupRoute::Settings(SettingsRoute::Provider(ProviderId::OpenCodeGo)) => {
+            "settings_opencode_go"
+        }
     }
 }
 

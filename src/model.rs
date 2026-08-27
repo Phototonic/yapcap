@@ -16,10 +16,11 @@ pub enum ProviderId {
     Copilot,
     Minimax,
     Kimi,
+    OpenCodeGo,
 }
 
 impl ProviderId {
-    pub const ALL: [Self; 7] = [
+    pub const ALL: [Self; 8] = [
         Self::Codex,
         Self::Claude,
         Self::Cursor,
@@ -27,6 +28,7 @@ impl ProviderId {
         Self::Copilot,
         Self::Minimax,
         Self::Kimi,
+        Self::OpenCodeGo,
     ];
 
     #[must_use]
@@ -39,6 +41,7 @@ impl ProviderId {
             Self::Copilot => "Copilot",
             Self::Minimax => "Minimax",
             Self::Kimi => "Kimi",
+            Self::OpenCodeGo => "OpenCode Go",
         }
     }
 }

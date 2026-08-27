@@ -3,12 +3,13 @@
 mod account;
 mod login;
 mod oauth;
+mod opencode_import;
 mod refresh;
 #[cfg(test)]
 mod tests;
 
 use crate::account_storage::{
-    ProviderAccountMetadata, ProviderAccountStorage, ProviderAccountTokens,
+    AccountStorageError, ProviderAccountMetadata, ProviderAccountStorage, ProviderAccountTokens,
 };
 use crate::auth::{CodexAuth, user_id_from_token};
 use crate::error::{CodexError, Result};
@@ -24,6 +25,7 @@ pub use account::{apply_login_account, discover_accounts, sync_managed_accounts}
 #[cfg(test)]
 pub use login::CodexLoginSuccess;
 pub use login::{CodexLoginEvent, CodexLoginState, CodexLoginStatus, prepare};
+pub use opencode_import::{is_available as opencode_import_available, prepare_opencode_import};
 
 use crate::config::ManagedCodexAccountConfig;
 
@@ -78,10 +80,10 @@ async fn fetch_at(
     let storage = ProviderAccountStorage::new(root);
     let metadata = storage
         .load_metadata(account_id)
-        .map_err(|error| CodexError::AccountStorage(error.to_string()))?;
+        .map_err(map_account_storage_error)?;
     let mut tokens = storage
         .load_tokens(account_id)
-        .map_err(|error| CodexError::AccountStorage(error.to_string()))?;
+        .map_err(map_account_storage_error)?;
 
     if tokens.expires_at <= Utc::now() + REFRESH_BEFORE_EXPIRY {
         tokens = refresh_tokens(client, &storage, account_id, &tokens, token_endpoint).await?;
@@ -110,6 +112,14 @@ async fn fetch_at(
             }
             Err(error)
         }
+    }
+}
+
+fn map_account_storage_error(error: AccountStorageError) -> CodexError {
+    if error.is_missing() {
+        CodexError::CredentialsMissing
+    } else {
+        CodexError::AccountStorage(error.to_string())
     }
 }
 
@@ -146,7 +156,7 @@ pub(crate) async fn fetch_oauth(
     fetch_oauth_at(client, auth, ENDPOINT).await
 }
 
-async fn fetch_oauth_at(
+pub(super) async fn fetch_oauth_at(
     client: &reqwest::Client,
     auth: &CodexAuth,
     endpoint: &str,
@@ -174,24 +184,15 @@ async fn fetch_oauth_at(
     }
     let status = response.status();
     if !status.is_success() {
-        let snippet = response
-            .text()
-            .await
-            .ok()
-            .and_then(|body| {
-                let trimmed = body.trim();
-                (!trimmed.is_empty()).then(|| trimmed.chars().take(512).collect::<String>())
-            })
-            .map(|body| format!(" (body: {body})"));
         return Err(CodexError::UsageHttp {
             status: status.as_u16(),
-            details: snippet.unwrap_or_default(),
         });
     }
     let body = response.text().await.map_err(CodexError::UsageRequest)?;
-    let payload: CodexUsageResponse = serde_json::from_str(&body).map_err(|e| {
-        tracing::warn!(body = %body.chars().take(512).collect::<String>(), error = %e, "failed to decode codex usage response");
-        CodexError::DecodeUsageJson(e)
+    let body_len = body.len();
+    let payload: CodexUsageResponse = serde_json::from_str(&body).map_err(|error| {
+        tracing::warn!(body_len, error = %error, "failed to decode codex usage response");
+        CodexError::DecodeUsageJson(error)
     })?;
     normalize_oauth(payload)
 }

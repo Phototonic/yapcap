@@ -46,6 +46,7 @@ use crate::providers::kimi::{
     login::{KimiLoginEvent, KimiLoginState},
 };
 use crate::providers::minimax::{self, MinimaxLoginEvent, MinimaxLoginState, MinimaxLoginStatus};
+use crate::providers::opencode_go::login::{OpenCodeGoLoginEvent, OpenCodeGoLoginState};
 use crate::providers::registry;
 use crate::refresh_owner::{
     self, ProcessInfo, RefreshOwner, RefreshOwnerAttempt, RefreshOwnerWaiter,
@@ -93,6 +94,7 @@ pub struct AppModel {
     config: Config,
     state: AppState,
     selected_provider: ProviderId,
+    detail_account_page: usize,
     popup_route: PopupRoute,
     update_status: UpdateStatus,
     launch_mode: LaunchMode,
@@ -101,6 +103,7 @@ pub struct AppModel {
     shared_control: SharedControlState,
     process_info: ProcessInfo,
     refresh_owner: Option<RefreshOwner>,
+    opencode_import_availability: OpenCodeImportAvailability,
     codex_login: Option<CodexLoginState>,
     codex_login_handle: Option<Handle>,
     claude_login: Option<ClaudeLoginState>,
@@ -115,6 +118,23 @@ pub struct AppModel {
     minimax_login_handle: Option<Handle>,
     kimi_login: Option<KimiLoginState>,
     kimi_login_handle: Option<Handle>,
+    opencode_go_login: Option<OpenCodeGoLoginState>,
+    opencode_go_login_handle: Option<Handle>,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub struct OpenCodeImportAvailability {
+    pub codex: bool,
+    pub copilot: bool,
+}
+
+impl OpenCodeImportAvailability {
+    fn discover() -> Self {
+        Self {
+            codex: codex::opencode_import_available(),
+            copilot: crate::providers::copilot::opencode_import_available(),
+        }
+    }
 }
 
 impl Drop for AppModel {
@@ -147,6 +167,12 @@ pub enum SettingsRoute {
     Provider(ProviderId),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PagerDirection {
+    Previous,
+    Next,
+}
+
 #[derive(Debug, Clone)]
 pub enum Message {
     TogglePopup,
@@ -162,6 +188,7 @@ pub enum Message {
     NavigateTo(PopupRoute),
     SetProviderEnabled(ProviderId, bool),
     ToggleAccountSelection(ProviderId, String),
+    PageProviderAccount(PagerDirection),
     DeleteAccount(ProviderId, String),
     UpdateClaudeLoginCode(String),
     SubmitClaudeLoginCode,
@@ -169,6 +196,8 @@ pub enum Message {
     ClearCopilotLoginCodeCopied(String),
     ReauthenticateAccount(ProviderId, String),
     StartLogin(ProviderId),
+    ImportFromOpenCode(ProviderId, Option<String>),
+    RestoreFromOpenCode(ProviderId, String),
     CancelLogin(ProviderId),
     LoginEvent(ProviderId, Box<login::LoginEventKind>),
     StartCursorScan,
@@ -199,6 +228,7 @@ pub(super) struct PopupBodyMeasurements {
     copilot: Option<f32>,
     minimax: Option<f32>,
     kimi: Option<f32>,
+    opencode_go: Option<f32>,
     general_settings: Option<f32>,
     codex_settings: Option<f32>,
     claude_settings: Option<f32>,
@@ -207,6 +237,7 @@ pub(super) struct PopupBodyMeasurements {
     copilot_settings: Option<f32>,
     minimax_settings: Option<f32>,
     kimi_settings: Option<f32>,
+    opencode_go_settings: Option<f32>,
 }
 
 impl PopupBodyMeasurements {
@@ -219,6 +250,7 @@ impl PopupBodyMeasurements {
             ProviderId::Copilot => self.copilot,
             ProviderId::Minimax => self.minimax,
             ProviderId::Kimi => self.kimi,
+            ProviderId::OpenCodeGo => self.opencode_go,
         }
     }
 
@@ -231,6 +263,7 @@ impl PopupBodyMeasurements {
             ProviderId::Copilot => self.copilot = Some(height),
             ProviderId::Minimax => self.minimax = Some(height),
             ProviderId::Kimi => self.kimi = Some(height),
+            ProviderId::OpenCodeGo => self.opencode_go = Some(height),
         }
     }
 
@@ -244,6 +277,9 @@ impl PopupBodyMeasurements {
             SettingsRoute::Provider(ProviderId::Copilot) => self.copilot_settings = Some(height),
             SettingsRoute::Provider(ProviderId::Minimax) => self.minimax_settings = Some(height),
             SettingsRoute::Provider(ProviderId::Kimi) => self.kimi_settings = Some(height),
+            SettingsRoute::Provider(ProviderId::OpenCodeGo) => {
+                self.opencode_go_settings = Some(height)
+            }
         }
     }
 
@@ -256,7 +292,8 @@ impl PopupBodyMeasurements {
                 .max(self.gemini_settings?)
                 .max(self.copilot_settings?)
                 .max(self.minimax_settings?)
-                .max(self.kimi_settings?),
+                .max(self.kimi_settings?)
+                .max(self.opencode_go_settings?),
         )
     }
 
@@ -341,6 +378,7 @@ impl cosmic::Application for AppModel {
             config,
             state,
             selected_provider,
+            detail_account_page: 0,
             popup_route: PopupRoute::ProviderDetail,
             update_status: UpdateStatus::Unchecked,
             launch_mode,
@@ -349,6 +387,7 @@ impl cosmic::Application for AppModel {
             shared_control,
             process_info,
             refresh_owner,
+            opencode_import_availability: OpenCodeImportAvailability::discover(),
             codex_login: None,
             codex_login_handle: None,
             claude_login: None,
@@ -363,6 +402,8 @@ impl cosmic::Application for AppModel {
             minimax_login_handle: None,
             kimi_login: None,
             kimi_login_handle: None,
+            opencode_go_login: None,
+            opencode_go_login_handle: None,
         };
         tracing::info!(
             pid = app.process_info.pid,
@@ -452,8 +493,11 @@ impl cosmic::Application for AppModel {
                 copilot: self.copilot_login.as_ref(),
                 minimax: self.minimax_login.as_ref(),
                 kimi: self.kimi_login.as_ref(),
+                opencode_go: self.opencode_go_login.as_ref(),
+                opencode_import_availability: self.opencode_import_availability,
             },
             self.selected_provider,
+            self.detail_account_page,
             &self.popup_route,
             &self.update_status,
         );
@@ -566,7 +610,18 @@ impl AppModel {
             Message::SelectProvider(provider) => {
                 return Some(self.select_provider_tab(provider));
             }
+            Message::PageProviderAccount(direction) => {
+                return Some(self.page_provider_account(direction));
+            }
             Message::NavigateTo(route) => {
+                if matches!(
+                    route,
+                    PopupRoute::Settings(SettingsRoute::Provider(
+                        ProviderId::Codex | ProviderId::Copilot
+                    ))
+                ) {
+                    self.opencode_import_availability = OpenCodeImportAvailability::discover();
+                }
                 return self.navigate_to(route);
             }
             Message::UpdateChecked { status, attempt } => {
@@ -620,6 +675,16 @@ impl AppModel {
             Message::StartLogin(provider) => {
                 return Some(session::start_login(self, provider));
             }
+            Message::ImportFromOpenCode(provider, target_account_id) => {
+                return Some(session::import_from_opencode(
+                    self,
+                    provider,
+                    target_account_id,
+                ));
+            }
+            Message::RestoreFromOpenCode(provider, account_id) => {
+                return Some(session::restore_from_opencode(self, provider, account_id));
+            }
             Message::CancelLogin(provider) => session::cancel_login(self, provider),
             Message::LoginEvent(provider, kind) => {
                 return Some(match (provider, *kind) {
@@ -640,6 +705,9 @@ impl AppModel {
                     }
                     (ProviderId::Kimi, login::LoginEventKind::Kimi(event)) => {
                         login::KimiLoginFlow::on_event(self, event)
+                    }
+                    (ProviderId::OpenCodeGo, login::LoginEventKind::OpenCodeGo(event)) => {
+                        login::OpenCodeGoLoginFlow::on_event(self, event)
                     }
                     _ => Task::none(),
                 });
@@ -864,6 +932,9 @@ impl AppModel {
                     }
                     SettingsRoute::Provider(ProviderId::Kimi) => {
                         self.popup_body_measurements.kimi_settings
+                    }
+                    SettingsRoute::Provider(ProviderId::OpenCodeGo) => {
+                        self.popup_body_measurements.opencode_go_settings
                     }
                 };
                 self.popup_body_measurements.set_settings(route, height);

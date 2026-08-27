@@ -44,7 +44,7 @@ impl LoginFlow for CopilotLoginFlow {
             output: Vec::new(),
             error: Some(error),
             code_copied: false,
-            expected_github_user_id: None,
+            importing_from_opencode: false,
         }
     }
     fn prepare(config: Config) -> Result<(Self::State, cosmic::iced::Task<Self::Event>), String> {

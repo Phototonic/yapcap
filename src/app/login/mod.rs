@@ -3,12 +3,13 @@ mod legacy;
 
 pub(crate) use flows::{
     ClaudeLoginFlow, CodexLoginFlow, CopilotLoginFlow, GeminiLoginFlow, KimiLoginFlow,
-    MinimaxLoginFlow,
+    MinimaxLoginFlow, OpenCodeGoLoginFlow,
 };
 
 use super::{
     AppModel, ClaudeLoginEvent, CodexLoginEvent, Config, CopilotLoginEvent, GeminiLoginEvent,
-    Handle, KimiLoginEvent, Message, MinimaxLoginEvent, ProviderId, Task, runtime,
+    Handle, KimiLoginEvent, Message, MinimaxLoginEvent, OpenCodeGoLoginEvent, ProviderId, Task,
+    runtime,
 };
 use crate::shared_state::RefreshRequestReason;
 
@@ -50,6 +51,19 @@ pub(super) fn start_login<F: LoginFlow>(app: &mut AppModel) -> Task<Message> {
     log_login_requested(&app.process_info.id, F::PROVIDER);
     *F::state_mut(app) = None;
     begin_login::<F>(app, F::prepare(app.config.clone()))
+}
+
+pub(super) fn start_with<F: LoginFlow>(
+    app: &mut AppModel,
+    prepare: impl FnOnce(Config) -> Result<(F::State, cosmic::iced::Task<F::Event>), String>,
+) -> Task<Message> {
+    if F::state(app).as_ref().is_some_and(F::is_running) {
+        log_login_already_running(&app.process_info.id, F::PROVIDER);
+        return Task::none();
+    }
+    log_login_requested(&app.process_info.id, F::PROVIDER);
+    *F::state_mut(app) = None;
+    begin_login::<F>(app, prepare(app.config.clone()))
 }
 
 pub(super) fn reauthenticate<F: LoginFlow>(app: &mut AppModel, account_id: &str) -> Task<Message> {
@@ -210,6 +224,7 @@ pub(crate) enum LoginEventKind {
     Copilot(CopilotLoginEvent),
     Kimi(KimiLoginEvent),
     Minimax(MinimaxLoginEvent),
+    OpenCodeGo(OpenCodeGoLoginEvent),
 }
 
 #[cfg(test)]

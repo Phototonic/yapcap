@@ -123,9 +123,9 @@ pub(super) async fn exchange_code(
         .await
         .map_err(|error| format!("failed to read Codex OAuth token response: {error}"))?;
     if !status.is_success() {
-        let snippet = body.trim().chars().take(256).collect::<String>();
         return Err(format!(
-            "Codex OAuth token exchange returned {status} (body: {snippet})"
+            "Codex OAuth token exchange returned HTTP {}",
+            status.as_u16()
         ));
     }
     parse_token_response(&body)
@@ -203,6 +203,8 @@ pub(super) fn percent_decode(value: &str) -> String {
 mod tests {
     use super::*;
     use chrono::TimeZone;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpListener;
 
     fn jwt(payload: &str) -> String {
         format!("header.{}.sig", URL_SAFE_NO_PAD.encode(payload.as_bytes()))
@@ -266,5 +268,36 @@ mod tests {
     #[test]
     fn malformed_token_response_fails() {
         assert!(parse_token_response(r#"{"access_token":"access"}"#).is_err());
+    }
+
+    #[tokio::test]
+    async fn exchange_error_does_not_expose_response_body() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).await.unwrap();
+        let endpoint = format!("http://{}/oauth/token", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = [0; 4096];
+            let _ = stream.read(&mut request).await.unwrap();
+            let body = "codex-oauth-response-sentinel";
+            let response = format!(
+                "HTTP/1.1 400 Bad Request\r\ncontent-length: {}\r\nconnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            stream.write_all(response.as_bytes()).await.unwrap();
+        });
+
+        let error = exchange_code(
+            &reqwest::Client::new(),
+            &endpoint,
+            "http://localhost:1455/auth/callback",
+            "verifier",
+            "code",
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error, "Codex OAuth token exchange returned HTTP 400");
+        assert!(!error.contains("codex-oauth-response-sentinel"));
+        server.await.unwrap();
     }
 }

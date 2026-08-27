@@ -18,6 +18,7 @@ fn start_login_is_noop_when_already_running_for_every_login_flow_provider() {
         login_url: None,
         output: Vec::new(),
         error: None,
+        importing_from_opencode: false,
     });
     let _ = start_login::<CodexLoginFlow>(&mut app);
     assert_eq!(app.codex_login.as_ref().unwrap().flow_id, "running");
@@ -55,7 +56,7 @@ fn start_login_is_noop_when_already_running_for_every_login_flow_provider() {
         output: Vec::new(),
         error: None,
         code_copied: false,
-        expected_github_user_id: None,
+        importing_from_opencode: false,
     });
     let _ = start_login::<CopilotLoginFlow>(&mut app);
     assert_eq!(app.copilot_login.as_ref().unwrap().flow_id, "running");
@@ -74,6 +75,7 @@ fn cancel_login_clears_state_for_every_login_flow_provider() {
         login_url: None,
         output: Vec::new(),
         error: None,
+        importing_from_opencode: false,
     });
     cancel_login::<CodexLoginFlow>(&mut app);
     assert!(app.codex_login.is_none());
@@ -96,7 +98,7 @@ fn cancel_login_clears_state_for_every_login_flow_provider() {
         output: Vec::new(),
         error: None,
         code_copied: false,
-        expected_github_user_id: None,
+        importing_from_opencode: false,
     });
     cancel_login::<CopilotLoginFlow>(&mut app);
     assert!(app.copilot_login.is_none());

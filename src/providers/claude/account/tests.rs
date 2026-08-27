@@ -2,6 +2,7 @@ use super::*;
 use crate::config::paths;
 use crate::test_support;
 use chrono::Utc;
+use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 fn temp_dir(name: &str) -> PathBuf {

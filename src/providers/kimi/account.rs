@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::config::{Config, ManagedKimiAccountConfig, managed_kimi_account_dir};
-use std::fs;
-use std::path::{Path, PathBuf};
+use crate::account_storage::validated_account_dir;
+use crate::config::{Config, ManagedKimiAccountConfig, paths};
+use std::path::PathBuf;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KimiAccount {
@@ -15,10 +15,14 @@ pub fn discover_accounts(config: &Config) -> Vec<KimiAccount> {
     config
         .kimi_managed_accounts
         .iter()
-        .map(|managed| KimiAccount {
-            id: managed.id.clone(),
-            label: managed.label.clone(),
-            config_dir: managed_kimi_account_dir(&managed.id),
+        .filter_map(|managed| {
+            validated_account_dir(&paths().kimi_accounts_dir, &managed.id)
+                .ok()
+                .map(|config_dir| KimiAccount {
+                    id: managed.id.clone(),
+                    label: managed.label.clone(),
+                    config_dir,
+                })
         })
         .collect()
 }
@@ -29,33 +33,6 @@ pub fn apply_login_account(config: &mut Config, account: ManagedKimiAccountConfi
         .kimi_managed_accounts
         .retain(|existing| existing.id != account_id);
     config.kimi_managed_accounts.push(account);
-}
-
-pub fn remove_managed_config_dir(config_dir: &Path) {
-    let root = managed_kimi_account_dir("");
-    let Some(root) = root.parent() else {
-        return;
-    };
-    let Ok(root) = root.canonicalize() else {
-        return;
-    };
-    let Ok(metadata) = fs::symlink_metadata(config_dir) else {
-        return;
-    };
-    if metadata.file_type().is_symlink() {
-        tracing::warn!(path = %config_dir.display(), "refusing to delete symlinked Kimi account config dir");
-        return;
-    }
-    let Ok(config_dir) = config_dir.canonicalize() else {
-        return;
-    };
-    if !config_dir.starts_with(&root) {
-        tracing::warn!(path = %config_dir.display(), root = %root.display(), "refusing to delete Kimi account outside managed root");
-        return;
-    }
-    if let Err(error) = fs::remove_dir_all(&config_dir) {
-        tracing::warn!(path = %config_dir.display(), error = %error, "failed to delete Kimi account config dir");
-    }
 }
 
 #[cfg(test)]
