@@ -32,67 +32,67 @@
   <screenshots>
     <screenshot type="default">
       <caption>YapCap panel applet with multi-account Codex quota details</caption>
-      <image>https://github.com/TopiCsarno/yapcap/raw/main/resources/screenshots/screenshot-hero.png?v=20260903</image>
+      <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-hero.png</image>
     </screenshot>
     <screenshot>
       <caption>Codex usage, reset times, and credit balance</caption>
-      <image>https://github.com/TopiCsarno/yapcap/raw/main/resources/screenshots/screenshot-zoom-codex.png?v=20260903</image>
+      <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-codex.png</image>
     </screenshot>
     <screenshot>
       <caption>Claude Code usage with extra usage tracking</caption>
-      <image>https://github.com/TopiCsarno/yapcap/raw/main/resources/screenshots/screenshot-zoom-claude.png?v=20260903</image>
+      <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-claude.png</image>
     </screenshot>
     <screenshot>
       <caption>Cursor usage across Total, Auto + Composer, and API quotas</caption>
-      <image>https://github.com/TopiCsarno/yapcap/raw/main/resources/screenshots/screenshot-zoom-cursor.png?v=20260903</image>
+      <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-cursor.png</image>
     </screenshot>
     <screenshot>
       <caption>Antigravity usage with grouped Gemini and Claude/GPT model quotas</caption>
-      <image>https://github.com/TopiCsarno/yapcap/raw/main/resources/screenshots/screenshot-zoom-antigravity.png?v=20260903</image>
+      <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-antigravity.png</image>
     </screenshot>
     <screenshot>
       <caption>Gemini usage across Pro, Flash, and Lite quota bars</caption>
-      <image>https://github.com/TopiCsarno/yapcap/raw/main/resources/screenshots/screenshot-zoom-gemini.png?v=20260903</image>
+      <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-gemini.png</image>
     </screenshot>
     <screenshot>
       <caption>GitHub Copilot usage for chat and completions</caption>
-      <image>https://github.com/TopiCsarno/yapcap/raw/main/resources/screenshots/screenshot-zoom-copilot.png?v=20260903</image>
+      <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-copilot.png</image>
     </screenshot>
     <screenshot>
       <caption>Minimax API key usage tracking</caption>
-      <image>https://github.com/TopiCsarno/yapcap/raw/main/resources/screenshots/screenshot-zoom-minimax.png?v=20260903</image>
+      <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-minimax.png</image>
     </screenshot>
     <screenshot>
       <caption>Kimi for Coding weekly and rate-limit usage</caption>
-      <image>https://github.com/TopiCsarno/yapcap/raw/main/resources/screenshots/screenshot-zoom-kimi.png?v=20260903</image>
+      <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-kimi.png</image>
     </screenshot>
     <screenshot>
       <caption>OpenCode Go usage across 5-hour, weekly, and monthly quotas</caption>
-      <image>https://github.com/TopiCsarno/yapcap/raw/main/resources/screenshots/screenshot-zoom-opencode-go.png?v=20260903</image>
+      <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-opencode-go.png</image>
     </screenshot>
     <screenshot>
       <caption>YapCap general settings</caption>
-      <image>https://github.com/TopiCsarno/yapcap/raw/main/resources/screenshots/screenshot-settings.png?v=20260903</image>
+      <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-settings.png</image>
     </screenshot>
     <screenshot>
       <caption>YapCap provider account settings</caption>
-      <image>https://github.com/TopiCsarno/yapcap/raw/main/resources/screenshots/screenshot-accounts.png?v=20260903</image>
+      <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-accounts.png</image>
     </screenshot>
     <screenshot>
       <caption>Dark theme with orange accent</caption>
-      <image>https://github.com/TopiCsarno/yapcap/raw/main/resources/screenshots/screenshot-theme-dark-orange.png?v=20260903</image>
+      <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-theme-dark-orange.png</image>
     </screenshot>
     <screenshot>
       <caption>Dark theme with blue accent</caption>
-      <image>https://github.com/TopiCsarno/yapcap/raw/main/resources/screenshots/screenshot-theme-dark-blue.png?v=20260903</image>
+      <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-theme-dark-blue.png</image>
     </screenshot>
     <screenshot>
       <caption>Light theme with blue accent</caption>
-      <image>https://github.com/TopiCsarno/yapcap/raw/main/resources/screenshots/screenshot-theme-light-blue.png?v=20260903</image>
+      <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-theme-light-blue.png</image>
     </screenshot>
     <screenshot>
       <caption>Light theme with red accent</caption>
-      <image>https://github.com/TopiCsarno/yapcap/raw/main/resources/screenshots/screenshot-theme-light-red.png?v=20260903</image>
+      <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-theme-light-red.png</image>
     </screenshot>
   </screenshots>
   <icon type="remote" width="64" height="64" scale="1">
@@ -135,15 +135,15 @@
     <keyword>Applet</keyword>
   </keywords>
   <releases>
-    <release type="stable" version="0.6.0" date="2026-07-16">
+    <release type="stable" version="0.6.0" date="2026-09-03">
       <description>
         <p>Adds Google Antigravity as a provider with Google OAuth login and grouped usage windows.</p>
         <p>Adds Kimi for Coding with API-key accounts, weekly and rate-limit usage windows, and optional one-time OpenCode key prefill.</p>
         <p>Adds automatic provider detection at startup with live re-detection, tri-state provider enablement, and a popup empty-state that suggests detected providers.</p>
-        <p>Improves the popup with adaptive provider tab rows and streamlined login flow.</p>
+        <p>Improves the popup with adaptive provider navigation, dedicated provider management, and streamlined login flows.</p>
       </description>
     </release>
-    <release type="stable" version="0.5.2" date="2026-06-19">
+    <release type="stable" version="0.5.2" date="2026-07-13">
       <description>
         <p>Fixes automatic refresh scheduling and in-progress state synchronization across multiple panel instances.</p>
         <p>Improves multi-process lifecycle, refresh ownership, and support diagnostics.</p>
@@ -155,12 +155,12 @@
         <p>Adds shared runtime state for multi-process panel sync, owner-only refresh execution, refresh request coordination, selected-provider sync, and expanded diagnostics.</p>
       </description>
     </release>
-    <release type="stable" version="0.5.0" date="2026-05-18">
+    <release type="stable" version="0.5.0" date="2026-05-19">
       <description>
         <p>Adds GitHub Copilot as a fifth provider with browser device-flow login, Free and paid usage parsing, multi-account support, re-auth handling, and mixed one-bar/two-bar panel rendering.</p>
       </description>
     </release>
-    <release type="stable" version="0.4.0" date="2026-05-04" />
+    <release type="stable" version="0.4.0" date="2026-05-12" />
   </releases>
   <content_rating type="oars-1.1" />
 </component>

@@ -13,12 +13,12 @@
 ## Repository map
 
 - `.github/` contains CI and release workflows.
-- `docs/` contains the product specification and QA notes.
+- `docs/` contains the product specification and local development guidance.
 - `fixtures/` contains provider API responses and probe scripts used during development.
 - `i18n/` contains Fluent translations embedded into the binary.
 - `packaging/` contains distribution manifests and vendored Cargo source metadata.
 - `resources/` contains desktop metadata, provider icons, screenshots, and UI prototypes.
-- `scripts/` contains development and issue-management utilities.
+- `scripts/` contains screenshot and development utilities.
 - `src/` contains the Rust application, shared runtime, UI, storage, and provider integrations.
 
 Each maintained subdirectory has a local `AGENTS.md` with its file map. Read the most specific applicable file before editing there.
@@ -27,6 +27,6 @@ Issues are tracked as local markdown files under `issues/`.
 
 This is a single-context repo. `docs/spec.md` is the current product/domain spec; ADRs may be added under `docs/adr/`.
 
-For RTK usage check out `docs/RTK.md`
+Local RTK usage guidance may be available in the intentionally untracked `docs/RTK.md`.
 
 Graphify-specific workflow guidance is in `docs/graphify.md`; read it only when the user invokes `/graphify`.

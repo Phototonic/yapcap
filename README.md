@@ -184,7 +184,7 @@ Each provider supports multiple accounts. Manage them from the popup under **Set
 - **Switch account** — tap any account row to make it active; the panel and popup update immediately.
 - **Remove account** — deletes only YapCap's copy of the credentials. Provider accounts and host app configs are never touched.
 
-Codex, Claude, Cursor, Antigravity, and Gemini keep at most one account per provider identity. Copilot keeps at most one account per GitHub numeric user id and displays the current GitHub username. Minimax, Kimi, and OpenCode Go use user-provided labels, so duplicate labels are allowed.
+Codex, Claude, Cursor, Antigravity, and Gemini keep at most one account per provider identity. Copilot keeps at most one account per GitHub numeric user id and displays the current GitHub username. Minimax, Kimi, and OpenCode Go use unique user-provided labels and reject duplicate API keys.
 
 ## Panel styles
 

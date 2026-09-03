@@ -8,7 +8,7 @@ read_when:
 
 # YapCap — COSMIC Panel Applet Architecture
 
-**Status:** As-built v0.6.0 · **Last updated:** 2026-08-31
+**Status:** As-built v0.6.0 · **Last updated:** 2026-09-03
 
 ## Document Metadata
 
@@ -962,8 +962,7 @@ favor of the Antigravity product family. Repeated refreshes can additionally
 produce a genuine transient HTTP 429, so the current last-error display may
 temporarily show `Rate limited by Gemini` even though the stable underlying
 failure is the missing license. YapCap does not yet parse the structured 403
-body into a license-specific action; that follow-up is tracked in
-`docs/todo.md`.
+body into a license-specific action; that remains future work.
 
 OAuth client credential hardcoding rationale: the gemini-cli OAuth client is a
 public installed-app client. Its id and secret are embedded in every
@@ -1313,6 +1312,7 @@ gemini_enablement = "disabled"
 copilot_enablement = "auto"
 minimax_enablement = "auto"
 kimi_enablement = "auto"
+opencode_go_enablement = "auto"
 selected_codex_account_ids = []
 codex_managed_accounts = []
 selected_claude_account_ids = []
@@ -1329,6 +1329,8 @@ selected_minimax_account_ids = []
 minimax_managed_accounts = []
 selected_kimi_account_ids = []
 kimi_managed_accounts = []
+selected_opencode_go_account_ids = []
+opencode_go_managed_accounts = []
 log_level = "info"
 ```
 
@@ -1376,6 +1378,10 @@ log_level = "info"
   account directory is derived from the id and current runtime paths so native
   and Flatpak installs do not persist each other's absolute state directories.
   There is at most one managed Copilot account per GitHub numeric user id.
+- Minimax, Kimi, and OpenCode Go each retain list-shaped selected-account ids
+  with the same single-active-account semantics. Their managed-account entries
+  store non-secret labels and timestamps; API keys remain in private provider
+  account directories. New accounts reject duplicate labels and API keys.
 - Account add/remove, login that adds a managed account, active-account
   selection, and COSMIC `watch_config` updates all re-run the same merge from
   config into in-memory `AppState`, so managed account rows and UI account lists
@@ -1508,7 +1514,7 @@ struct ProviderAccountRuntimeState {
 
 - `refresh_provider_account` on Ok: clears account `error`, sets `health = Ok`, `auth_state = Ready`, updates `last_success_at`.
 - On Err: preserves the previous account `snapshot` and `last_success_at`, sets account `health = Error`, and classifies `auth_state` via `AppError::requires_user_action`.
-- Provider request failures that indicate YapCap cannot establish a network connection show `No internet connection. Showing cached data; information is not up to date.` instead of the raw provider request failure. Cached snapshots remain visible and stale.
+- Provider request failures that indicate YapCap cannot establish a network connection show `No internet connection. Information is not up to date.` instead of the raw provider request failure. Cached snapshots remain visible and stale.
 - Transient errors (`ClaudeError::RateLimited`) are logged at `warn` instead of `error`.
 
 ### 5.3 Stale/Fresh Rules
@@ -1676,7 +1682,7 @@ owns provider detail cards and `app::popup_view::settings::*` owns the settings 
   - Popup child surfaces follow the active COSMIC applet transparency state. Neutral component containers and custom neutral buttons use a 40% alpha overlay in transparent mode, including provider Account and Usage cards, while retaining their normal component fill when transparency is disabled. Accent and status overlays retain their semantic colors and interaction states.
   - Body panel (scrollable where content can grow): shows either selected provider details, global Settings, Manage providers, provider-scoped Manage accounts, or About. Manage providers lists every provider in one rounded component card with horizontal row dividers and trailing enable switches. Settings retains the Refresh interval, panel-icon, reset-time, and usage-amount controls. About centers the YapCap logo and identity, groups project/developer/license links into full-width link rows, and shows checking/error/update state; an available update uses a destructive callout that links to its release and drives the header notification dot. When no provider tabs are available, the provider route suppresses the navigation row and shows a centered YapCap/provider-logo hero with “No providers set up yet”, guidance to manage providers, and a suggested action.
 - Provider view always starts with a provider title card (icon + name). A provider detected on this machine with no YapCap account additionally shows an accent `Detected` chip and an add-account call to action that opens its Settings category. Below it, the selected account is displayed with its account header ("Account" label, email, plan badge, per-account status badge, "Updated X ago" timestamp), usage window cards, and cost/credits card. When multiple accounts are stored, the account card has a footer pager whose previous/next controls change the selected account exactly like the account-management rows. Usage windows that carry a `group` render inside a single rounded group container per consecutive group run: the container has a component-background fill, rounded corners, and a 1 px component-divider border, the group name as an 18 px header, and the group's usage sections stacked inside it (no per-window card and no dividers inside the container). Ungrouped windows keep their own individual cards. Section/card titles ("Account", window labels, "Extra usage", "Credits") render at 15 px so group headers sit above them in the type hierarchy.
-  - Provider settings categories start with an icon-and-name provider title followed by a boxed `Enable <provider>` toggle. The `Accounts` heading, account list, and account actions share the same content alignment. Account rows stay single-line with Active and other status badges inline. A provider detected on this machine with no YapCap account shows a “Detected on this machine” caption on its settings page, including when explicitly disabled. When a provider is disabled, the provider-specific settings below that toggle are dimmed and non-interactive; account status badges and account action icons use softer inactive colors in both light and dark themes.
+  - Provider settings categories start with an icon-and-name provider title followed by a boxed `Enable <provider>` toggle. The `Accounts` heading, account list, and account actions share the same content alignment. Account rows keep the Active badge inline with the account name; reauthentication status appears on a separate line so long labels and badges can wrap safely. Other status badges remain inline. A provider detected on this machine with no YapCap account shows a “Detected on this machine” caption on its settings page, including when explicitly disabled. When a provider is disabled, the provider-specific settings below that toggle are dimmed and non-interactive; account status badges and account action icons use softer inactive colors in both light and dark themes.
   - Each provider settings card lets the user select one active account. Other stored accounts remain available in Settings and can be selected with the provider detail controls.
   - Global Settings contains app-wide settings such as Autorefresh segmented interval buttons, panel icon style preview buttons, reset time format, and usage amount format. Each selectable option shows a tooltip explaining its effect on hover. If the startup update check fails, YapCap keeps retrying in the background with exponential backoff and shows the latest detailed failure plus the next retry delay in About. Error state also shows a manual "Check again" action.
   - When an update is available, a small red notification dot appears on the header About action.
@@ -1707,9 +1713,8 @@ Settings writes go through a `cosmic_config::Config` context acquired with the a
   `io.github.TopiCsarno.YapCap` app id.
 - `resources/app.metainfo.xml` includes a `<releases>` block with semver entries
   (for example `0.4.0`) so software centers and validators can show version history.
-  Remote `<screenshot>` images and `<url type="bugtracker">` point at GitHub `raw/main`
-  and Issues for store listings. Screenshot URLs carry a revision query so updated
-  assets bypass store caches. The default store screenshot is the hero image,
+  Remote `<screenshot>` images and `<url type="bugtracker">` point at an immutable
+  GitHub commit and Issues for store listings. The default store screenshot is the hero image,
   followed by Codex, Claude Code, Cursor, Antigravity, Gemini, Copilot, Minimax,
   Kimi, and OpenCode Go zoom screenshots, then settings, accounts, and theme
   screenshots.

@@ -2,7 +2,7 @@
 
 ## Overview
 
-The top section of the UI used to select between providers. It displays provider icons and their weekly usage indicators in a single horizontal row.
+The top section of the UI used to select between providers. It displays an icon-only viewport of up to six providers with previous and next controls when more providers are enabled.
 
 ## Provider information
 
@@ -54,7 +54,7 @@ When a newer version is available, the About info button displays a red notifica
 
 ## Terminology
 
-- **Provider**: An AI coding service shown in the provider selector, such as Codex, Claude, Cursor, Gemini, Copilot, Minimax, or Kimi.
+- **Provider**: An AI coding service shown in the provider selector: Codex, Claude, Cursor, Antigravity, Gemini, Copilot, Minimax, Kimi, or OpenCode Go.
 - **Account**: A signed-in identity or API key belonging to a provider.
 - **Account card**: The card containing the selected account, plan, status badges, update time, Manage accounts action, and account switcher.
 - **Account switcher**: The final row of the account card, containing previous/next arrows and accent-colored position dots.
