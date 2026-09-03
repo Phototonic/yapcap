@@ -25,7 +25,6 @@ pub struct CodexLoginState {
     pub flow_id: String,
     pub status: CodexLoginStatus,
     pub login_url: Option<String>,
-    pub output: Vec<String>,
     pub error: Option<String>,
     pub importing_from_opencode: bool,
 }
@@ -38,10 +37,9 @@ pub enum CodexLoginStatus {
 
 #[derive(Debug, Clone)]
 pub enum CodexLoginEvent {
-    Output {
+    LoginUrl {
         flow_id: String,
-        line: String,
-        login_url: Option<String>,
+        url: String,
     },
     Finished {
         flow_id: String,
@@ -60,7 +58,6 @@ pub fn prepare(config: Config) -> Result<(CodexLoginState, Task<CodexLoginEvent>
         flow_id: flow_id.clone(),
         status: CodexLoginStatus::Running,
         login_url: None,
-        output: Vec::new(),
         error: None,
         importing_from_opencode: false,
     };
@@ -180,7 +177,7 @@ async fn run_oauth_flow(
     let pkce = new_pkce();
     let state = new_state();
     let url = authorization_url(ISSUER, &redirect_uri, &pkce, &state);
-    send_output(flow_id, format!("Open {url}"), output).await;
+    send_login_url(flow_id, url.clone(), output).await;
     open_browser(&url);
 
     loop {
@@ -342,47 +339,17 @@ fn managed_account_from_stored(
     }
 }
 
-async fn send_output(
+async fn send_login_url(
     flow_id: &str,
-    line: String,
+    url: String,
     output: &mut cosmic::iced::futures::channel::mpsc::Sender<CodexLoginEvent>,
 ) {
-    let clean = strip_ansi(&line);
-    let login_url = find_url(&clean);
     let _ = output
-        .send(CodexLoginEvent::Output {
+        .send(CodexLoginEvent::LoginUrl {
             flow_id: flow_id.to_string(),
-            line: clean,
-            login_url,
+            url,
         })
         .await;
-}
-
-fn strip_ansi(s: &str) -> String {
-    let mut result = String::with_capacity(s.len());
-    let mut chars = s.chars().peekable();
-    while let Some(ch) = chars.next() {
-        if ch == '\x1b' && chars.peek() == Some(&'[') {
-            chars.next();
-            for c in chars.by_ref() {
-                if c.is_ascii_alphabetic() {
-                    break;
-                }
-            }
-        } else if ch != '\x1b' {
-            result.push(ch);
-        }
-    }
-    result
-}
-
-fn find_url(line: &str) -> Option<String> {
-    line.split_whitespace()
-        .find(|word| word.starts_with("https://") || word.starts_with("http://"))
-        .map(|word| {
-            word.trim_end_matches(['.', ',', ')', ']', '}', '"', '\''])
-                .to_string()
-        })
 }
 
 fn parse_query(query: &str) -> std::collections::HashMap<String, String> {
@@ -445,36 +412,6 @@ mod tests {
             ))),
             expires_at: Utc.with_ymd_and_hms(2026, 2, 2, 8, 0, 0).single(),
         }
-    }
-
-    #[test]
-    fn parses_url_from_line() {
-        assert_eq!(
-            find_url("Open https://example.com/device and sign in."),
-            Some("https://example.com/device".to_string())
-        );
-    }
-
-    #[test]
-    fn strips_ansi_codes() {
-        assert_eq!(
-            strip_ansi("\x1b[94mhttps://auth.openai.com/codex/device\x1b[0m"),
-            "https://auth.openai.com/codex/device"
-        );
-        assert_eq!(
-            strip_ansi("\x1b[90m(expires in 15 minutes)\x1b[0m"),
-            "(expires in 15 minutes)"
-        );
-        assert_eq!(strip_ansi("plain text"), "plain text");
-    }
-
-    #[test]
-    fn extracts_ansi_wrapped_url() {
-        let url_line = strip_ansi("\x1b[94mhttps://auth.openai.com/codex/device\x1b[0m");
-        assert_eq!(
-            find_url(&url_line).as_deref(),
-            Some("https://auth.openai.com/codex/device")
-        );
     }
 
     #[test]

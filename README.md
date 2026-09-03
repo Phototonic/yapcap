@@ -32,7 +32,7 @@ YapCap lives in your COSMIC panel and shows how much of your AI coding quota you
     - **GitHub Copilot** — Free chat/completions or paid premium interactions
     - **Kimi for Coding** — API key usage tracking with weekly and rate-limit windows
     - **OpenCode Go** — API key usage tracking with 5-hour, weekly, and monthly windows
-- 👥 **Multi-account view** — add, switch, and remove accounts per provider. Turn on **Show all accounts** to lay out each selected account side by side in the popup and show one usage-bar group per account in the panel.
+- 👥 **Multi-account support** — add, switch, and remove accounts per provider. The popup pages through stored accounts one at a time, while the panel remains fixed-width for the active account.
 - 🔎 **Automatic discovery** — detected providers appear automatically, provider availability updates live, and an empty setup points directly to Settings. Gemini remains opt-in and must be enabled manually.
 - 🔐 **In-app login** — guided browser login for Codex, Claude, Antigravity, Gemini, and Copilot; API-key forms for Minimax, Kimi, and OpenCode Go; Cursor scans the local IDE state.
 - 🔑 **OpenCode integration** — compatible keys can optionally prefill Minimax, Kimi, and OpenCode Go forms; Codex and Copilot offer explicit OAuth imports. Credentials are copied only after confirmation and are never synchronized with OpenCode.

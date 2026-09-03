@@ -40,7 +40,6 @@ impl LoginFlow for CodexLoginFlow {
             flow_id: "failed".to_string(),
             status: CodexLoginStatus::Failed,
             login_url: None,
-            output: Vec::new(),
             error: Some(error),
             importing_from_opencode: false,
         }
@@ -53,24 +52,14 @@ impl LoginFlow for CodexLoginFlow {
     }
     fn on_event(app: &mut AppModel, event: Self::Event) -> Task<Message> {
         match event {
-            CodexLoginEvent::Output {
-                flow_id,
-                line,
-                login_url,
-            } => {
+            CodexLoginEvent::LoginUrl { flow_id, url } => {
                 let Some(login) = app.codex_login.as_mut() else {
                     return Task::none();
                 };
                 if login.flow_id != flow_id {
                     return Task::none();
                 }
-                if let Some(url) = login_url {
-                    login.login_url = Some(url);
-                }
-                login.output.push(line);
-                if login.output.len() > 8 {
-                    login.output.remove(0);
-                }
+                login.login_url = Some(url);
                 Task::none()
             }
             CodexLoginEvent::Finished { flow_id, result } => {

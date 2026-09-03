@@ -41,7 +41,6 @@ impl LoginFlow for ClaudeLoginFlow {
             status: ClaudeLoginStatus::Failed,
             login_url: None,
             code_input: String::new(),
-            output: Vec::new(),
             error: Some(error),
             redirect_uri: String::new(),
             code_verifier: String::new(),

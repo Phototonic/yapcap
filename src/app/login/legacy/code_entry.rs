@@ -25,10 +25,6 @@ impl AppModel {
             "login code submitted"
         );
         login.error = None;
-        login.output.push("Completing Claude sign-in".to_string());
-        if login.output.len() > 8 {
-            login.output.remove(0);
-        }
         let task = claude::submit_code(login, self.config.clone());
         let task = task.map(|event| cosmic::Action::App(ClaudeLoginFlow::wrap_event(event)));
         let (task, handle) = task.abortable();

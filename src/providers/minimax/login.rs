@@ -84,16 +84,10 @@ impl MinimaxLoginState {
 
 #[derive(Debug, Clone)]
 pub enum MinimaxLoginEvent {
-    #[allow(dead_code)]
-    Started,
     ApiKeyChanged(String),
     ApiKeyVisibilityToggled,
     LabelChanged(String),
     Saved,
-    #[allow(dead_code)]
-    Cancelled,
-    #[allow(dead_code)]
-    Failed(String),
 }
 
 pub fn prepare() -> MinimaxLoginState {

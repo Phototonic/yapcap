@@ -1,10 +1,10 @@
 use super::provider_assets::app_icon_handle;
 use super::{
-    APPLET_ACCOUNT_GAP, APPLET_BAR_WIDTH_HEIGHT_MULTIPLIER, APPLET_ICON_GAP,
-    APPLET_PERCENT_ACCOUNT_GAP, APPLET_PERCENT_CELL_HORIZONTAL_PAD, APPLET_PERCENT_GLYPH_WIDTH,
-    Alignment, AppModel, AppState, Config, CosmicButton, CosmicConfigEntry, Element, Length,
-    Limits, Message, PanelIconStyle, ProviderId, Size, UsageAmountFormat, progress_bar,
-    provider_icon_handle, provider_icon_variant, row, usage_display, widget,
+    APPLET_BAR_WIDTH_HEIGHT_MULTIPLIER, APPLET_ICON_GAP, APPLET_PERCENT_CELL_HORIZONTAL_PAD,
+    APPLET_PERCENT_GLYPH_WIDTH, Alignment, AppModel, AppState, Config, CosmicButton,
+    CosmicConfigEntry, Element, Length, Limits, Message, PanelIconStyle, ProviderId, Size,
+    UsageAmountFormat, progress_bar, provider_icon_handle, provider_icon_variant, row,
+    usage_display, widget,
 };
 use crate::model::AppletWindows;
 
@@ -62,13 +62,7 @@ pub(crate) fn applet_settings() -> cosmic::app::Settings {
     let (width, height) = if no_enabled_provider_has_selected_accounts {
         applet_fallback_button_size(&preview_core)
     } else {
-        let n_accounts = ProviderId::ALL
-            .iter()
-            .filter(|&&p| crate::provider_enablement::provider_enabled(&config, &detection, p))
-            .map(|&p| usize::from(!config.selected_account_ids(p).is_empty()).max(1))
-            .max()
-            .unwrap_or(1);
-        applet_button_size(&preview_core, config.panel_icon_style, n_accounts)
+        applet_button_size(&preview_core, config.panel_icon_style)
     };
 
     cosmic::app::Settings::default()
@@ -92,50 +86,33 @@ pub(super) fn applet_indicator<'a>(
     style: PanelIconStyle,
     usage_amount_format: UsageAmountFormat,
     core: &cosmic::Core,
-    n_accounts: usize,
 ) -> Element<'a, Message> {
     let (suggested_w, suggested_h) = core.applet.suggested_size(false);
     let compact_px = suggested_w.min(suggested_h);
     let logo_size_px = compact_px.saturating_sub(8).max(11);
     let logo_size = f32::from(logo_size_px);
     let bar_width = applet_bar_width(suggested_w, suggested_h);
-    let account_percents =
-        selected_provider_all_bar_layouts(state, selected_provider, usage_amount_format);
-
-    let bars_row = {
-        let mut r = row![].align_y(Alignment::Center);
-        for i in 0..n_accounts {
-            if i > 0 {
-                r = r.push(
-                    cosmic::iced::widget::Space::new().width(Length::Fixed(APPLET_ACCOUNT_GAP)),
-                );
-            }
-            let layout = account_percents
-                .get(i)
-                .copied()
-                .unwrap_or_else(AppletBarLayout::empty_two_bar);
-            r = r.push(applet_bar_column(layout, bar_width));
-        }
-        r
-    };
+    let layout = selected_provider_bar_layout(state, selected_provider, usage_amount_format);
+    let bars = applet_bar_column(layout, bar_width);
+    let percent = account_percent(layout);
 
     match style {
         PanelIconStyle::LogoAndBars => row![
             provider_logo(selected_provider, logo_size_px, logo_size),
-            bars_row,
+            bars,
         ]
         .spacing(6)
         .align_y(Alignment::Center)
         .into(),
-        PanelIconStyle::BarsOnly => bars_row.into(),
+        PanelIconStyle::BarsOnly => bars,
         PanelIconStyle::LogoAndPercent => row![
             provider_logo(selected_provider, logo_size_px, logo_size),
-            account_percents_row(&account_percents),
+            percent,
         ]
         .spacing(6)
         .align_y(Alignment::Center)
         .into(),
-        PanelIconStyle::PercentOnly => account_percents_row(&account_percents),
+        PanelIconStyle::PercentOnly => percent,
     }
 }
 
@@ -187,13 +164,11 @@ pub(super) fn panel_button_size(
     core: &cosmic::Core,
     state: &AppState,
     style: PanelIconStyle,
-    selected_provider: ProviderId,
 ) -> (f32, f32) {
     if panel_fallback_active(state) {
         applet_fallback_button_size(core)
     } else {
-        let n_accounts = state.display_selected_account_count(selected_provider);
-        applet_button_size(core, style, n_accounts)
+        applet_button_size(core, style)
     }
 }
 
@@ -215,25 +190,19 @@ pub(super) fn applet_button<'a>(
     .class(CosmicButton::AppletIcon)
 }
 
-pub(super) fn applet_button_size(
-    core: &cosmic::Core,
-    style: PanelIconStyle,
-    n_accounts: usize,
-) -> (f32, f32) {
+pub(super) fn applet_button_size(core: &cosmic::Core, style: PanelIconStyle) -> (f32, f32) {
     let (suggested_w, suggested_h) = core.applet.suggested_size(false);
     let (horizontal_padding, vertical_padding) = applet_paddings(core);
     let compact_px = suggested_w.min(suggested_h);
     let logo_width = f32::from(compact_px.saturating_sub(8).max(11));
     let bar_width = applet_bar_width(suggested_w, suggested_h);
-    let n = f32::from(u8::try_from(n_accounts.max(1)).unwrap_or(u8::MAX));
-    let bars_total = n * bar_width + (n - 1.0) * APPLET_ACCOUNT_GAP;
     let content_width = match style {
-        PanelIconStyle::LogoAndBars => logo_width + APPLET_ICON_GAP + bars_total,
-        PanelIconStyle::BarsOnly => bars_total,
+        PanelIconStyle::LogoAndBars => logo_width + APPLET_ICON_GAP + bar_width,
+        PanelIconStyle::BarsOnly => bar_width,
         PanelIconStyle::LogoAndPercent => {
-            logo_width + APPLET_ICON_GAP + percent_columns_content_width(n_accounts)
+            logo_width + APPLET_ICON_GAP + applet_percent_cell_width()
         }
-        PanelIconStyle::PercentOnly => percent_columns_content_width(n_accounts),
+        PanelIconStyle::PercentOnly => applet_percent_cell_width(),
     };
     let width = content_width + f32::from(2 * horizontal_padding);
     let height = f32::from(suggested_h + 2 * vertical_padding);
@@ -248,13 +217,6 @@ fn applet_paddings(core: &cosmic::Core) -> (u16, u16) {
     } else {
         (minor_padding, major_padding)
     }
-}
-
-fn percent_columns_content_width(n_accounts: usize) -> f32 {
-    let n = n_accounts.max(1);
-    let n_width = f32::from(u8::try_from(n).unwrap_or(u8::MAX));
-    let gap_count = f32::from(u8::try_from(n.saturating_sub(1)).unwrap_or(u8::MAX));
-    n_width * applet_percent_cell_width() + gap_count * APPLET_PERCENT_ACCOUNT_GAP
 }
 
 pub(super) fn applet_bar_width(suggested_w: u16, suggested_h: u16) -> f32 {
@@ -300,50 +262,32 @@ fn applet_bar_column(layout: AppletBarLayout, bar_width: f32) -> Element<'static
         .into()
 }
 
-fn account_percents_row(account_percents: &[AppletBarLayout]) -> Element<'static, Message> {
-    let mut r = row![].align_y(Alignment::Center);
-    for (i, layout) in account_percents.iter().enumerate() {
-        if i > 0 {
-            r = r.push(
-                cosmic::iced::widget::Space::new().width(Length::Fixed(APPLET_PERCENT_ACCOUNT_GAP)),
-            );
-        }
-        let w = applet_percent_cell_width();
-        let cell = widget::container(widget::text(applet_percent_text(layout.primary)).size(13))
-            .width(Length::Fixed(w))
-            .align_x(applet_percent_cell_alignment());
-        r = r.push(cell);
-    }
-    r.into()
+fn account_percent(layout: AppletBarLayout) -> Element<'static, Message> {
+    widget::container(widget::text(applet_percent_text(layout.primary)).size(13))
+        .width(Length::Fixed(applet_percent_cell_width()))
+        .align_x(applet_percent_cell_alignment())
+        .into()
 }
 
-pub(super) fn selected_provider_all_bar_layouts(
+pub(super) fn selected_provider_bar_layout(
     state: &AppState,
     selected_provider: ProviderId,
     usage_amount_format: UsageAmountFormat,
-) -> Vec<AppletBarLayout> {
+) -> AppletBarLayout {
     let now = chrono::Utc::now();
-    let accounts = state.display_selected_accounts(selected_provider);
-    if accounts.is_empty() {
-        let snapshot = state
-            .provider(selected_provider)
-            .and_then(|p| p.legacy_display_snapshot.as_ref());
-        return vec![applet_bar_layout(
-            snapshot.and_then(|s| s.applet_windows()),
-            now,
-            usage_amount_format,
-        )];
-    }
-    accounts
-        .iter()
-        .map(|account| {
-            applet_bar_layout(
-                account.snapshot.as_ref().and_then(|s| s.applet_windows()),
-                now,
-                usage_amount_format,
-            )
-        })
-        .collect()
+    let snapshot = state
+        .active_account(selected_provider)
+        .and_then(|account| account.snapshot.as_ref())
+        .or_else(|| {
+            state
+                .provider(selected_provider)
+                .and_then(|provider| provider.legacy_display_snapshot.as_ref())
+        });
+    applet_bar_layout(
+        snapshot.and_then(|snapshot| snapshot.applet_windows()),
+        now,
+        usage_amount_format,
+    )
 }
 
 pub(super) fn applet_bar_layout(

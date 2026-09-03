@@ -16,7 +16,6 @@ fn start_login_is_noop_when_already_running_for_every_login_flow_provider() {
         flow_id: "running".to_string(),
         status: CodexLoginStatus::Running,
         login_url: None,
-        output: Vec::new(),
         error: None,
         importing_from_opencode: false,
     });
@@ -28,7 +27,6 @@ fn start_login_is_noop_when_already_running_for_every_login_flow_provider() {
         status: ClaudeLoginStatus::Running,
         login_url: None,
         code_input: String::new(),
-        output: Vec::new(),
         error: None,
         redirect_uri: String::new(),
         code_verifier: String::new(),
@@ -42,7 +40,6 @@ fn start_login_is_noop_when_already_running_for_every_login_flow_provider() {
         flow_id: "running".to_string(),
         status: GeminiLoginStatus::Running,
         login_url: None,
-        output: Vec::new(),
         error: None,
     });
     let _ = start_login::<GeminiLoginFlow>(&mut app);
@@ -53,7 +50,6 @@ fn start_login_is_noop_when_already_running_for_every_login_flow_provider() {
         status: CopilotLoginStatus::Running,
         user_code: None,
         verification_uri: None,
-        output: Vec::new(),
         error: None,
         code_copied: false,
         importing_from_opencode: false,
@@ -73,7 +69,6 @@ fn cancel_login_clears_state_for_every_login_flow_provider() {
         flow_id: "flow".to_string(),
         status: CodexLoginStatus::Running,
         login_url: None,
-        output: Vec::new(),
         error: None,
         importing_from_opencode: false,
     });
@@ -84,7 +79,6 @@ fn cancel_login_clears_state_for_every_login_flow_provider() {
         flow_id: "flow".to_string(),
         status: GeminiLoginStatus::Running,
         login_url: None,
-        output: Vec::new(),
         error: None,
     });
     cancel_login::<GeminiLoginFlow>(&mut app);
@@ -95,7 +89,6 @@ fn cancel_login_clears_state_for_every_login_flow_provider() {
         status: CopilotLoginStatus::Running,
         user_code: None,
         verification_uri: None,
-        output: Vec::new(),
         error: None,
         code_copied: false,
         importing_from_opencode: false,
@@ -107,7 +100,6 @@ fn cancel_login_clears_state_for_every_login_flow_provider() {
     cancel_login::<MinimaxLoginFlow>(&mut app);
     assert!(app.minimax_login.is_none());
 
-    // Cancelling with no active login is a safe no-op, not a panic.
     cancel_login::<ClaudeLoginFlow>(&mut app);
     assert!(app.claude_login.is_none());
 }

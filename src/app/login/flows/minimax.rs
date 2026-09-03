@@ -1,8 +1,8 @@
-use super::super::{LoginEventKind, LoginFlow, cancel_login};
+use super::super::{LoginEventKind, LoginFlow, apply_login_success};
+use crate::account_selection::select_account_after_login;
 use crate::app::{
-    AccountSelectionStatus, AppModel, Config, Handle, Message, MinimaxLoginEvent,
-    MinimaxLoginState, MinimaxLoginStatus, ProviderAccountRuntimeState, ProviderId, Task, minimax,
-    refresh_provider_task_for_process,
+    AppModel, Config, Handle, Message, MinimaxLoginEvent, MinimaxLoginState, MinimaxLoginStatus,
+    ProviderId, Task, minimax,
 };
 
 pub(crate) struct MinimaxLoginFlow;
@@ -63,7 +63,6 @@ impl LoginFlow for MinimaxLoginFlow {
     }
     fn on_event(app: &mut AppModel, event: Self::Event) -> Task<Message> {
         match event {
-            MinimaxLoginEvent::Started => Task::none(),
             MinimaxLoginEvent::ApiKeyChanged(api_key) => {
                 if let Some(login) = app.minimax_login.as_mut() {
                     login.update_api_key(api_key);
@@ -88,37 +87,26 @@ impl LoginFlow for MinimaxLoginFlow {
                 };
                 match login.save(&mut app.config) {
                     Ok(managed_account) => {
-                        app.minimax_login_handle = None;
+                        let flow_id = login.account_id.clone();
                         let account_id = managed_account.id.clone();
-                        let account_label = managed_account.label.clone();
-                        app.write_config(|new_config| {
-                            minimax::account::apply_login_account(new_config, managed_account);
-                        });
-                        let mut account = ProviderAccountRuntimeState::empty(
+                        let selected_account_id = account_id.clone();
+                        let task = apply_login_success(
+                            app,
                             ProviderId::Minimax,
-                            account_id.clone(),
-                            account_label,
+                            &flow_id,
+                            account_id,
+                            move |config| {
+                                minimax::account::apply_login_account(config, managed_account);
+                                select_account_after_login(
+                                    config,
+                                    ProviderId::Minimax,
+                                    selected_account_id,
+                                );
+                            },
                         );
-                        account.auth_state = crate::model::AuthState::Ready;
-                        account.error = None;
-                        app.state.upsert_account(account);
-                        if let Some(provider) = app.state.provider_mut(ProviderId::Minimax) {
-                            provider.account_status = AccountSelectionStatus::Ready;
-                            provider.error = None;
-                            if !provider.selected_account_ids.contains(&account_id) {
-                                provider.selected_account_ids.push(account_id.clone());
-                            }
-                        }
-                        app.persist_runtime_if_owner("minimax_account_saved");
+                        app.minimax_login_handle = None;
                         app.minimax_login = None;
-                        let process = app.refresh_task_process();
-                        refresh_provider_task_for_process(
-                            &app.config,
-                            &mut app.state,
-                            ProviderId::Minimax,
-                            Some(process),
-                            false,
-                        )
+                        task
                     }
                     Err(error) => {
                         if let Some(login) = app.minimax_login.as_mut() {
@@ -128,17 +116,6 @@ impl LoginFlow for MinimaxLoginFlow {
                         Task::none()
                     }
                 }
-            }
-            MinimaxLoginEvent::Cancelled => {
-                cancel_login::<MinimaxLoginFlow>(app);
-                Task::none()
-            }
-            MinimaxLoginEvent::Failed(error) => {
-                if let Some(login) = app.minimax_login.as_mut() {
-                    login.error = Some(error);
-                    login.status = MinimaxLoginStatus::Failed;
-                }
-                Task::none()
             }
         }
     }

@@ -111,8 +111,7 @@ impl LoginFlow for KimiLoginFlow {
                             },
                         );
                         app.kimi_login_handle = None;
-                        let login = app.kimi_login.as_mut().unwrap();
-                        login.status = KimiLoginStatus::Saved;
+                        app.kimi_login = None;
                         task
                     }
                     Err(error) => {

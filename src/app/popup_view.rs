@@ -9,8 +9,6 @@ use self::badges::{
     badge_neutral, badge_neutral_soft, badge_success, badge_success_soft, badge_warning,
     badge_warning_soft, badge_with_tooltip, disabled_account_label_text, plan_badge,
 };
-#[cfg(test)]
-use self::detail::active_snapshot;
 use self::detail::{empty_state_view, selected_provider_view};
 use self::settings::{
     about_view, general_settings_view, manage_providers_view, provider_settings_view,
@@ -45,8 +43,6 @@ pub(crate) const PROVIDER_VIEWPORT_SIZE: usize = 6;
 const PROVIDER_CARD_SPACING: f32 = 8.0;
 const PROVIDER_GROUP_PADDING: f32 = 24.0;
 const PROVIDER_GROUP_SPACING: f32 = 12.0;
-const PROVIDER_PICKER_TILE_HEIGHT: f32 = 104.0;
-const PROVIDER_PICKER_COMPACT_TILE_HEIGHT: f32 = 48.0;
 const HEADER_ICON_BUTTON_SIZE: f32 = 28.0;
 const UPDATE_NOTIFICATION_DOT_COLOR: Color = Color::from_rgb(1.0, 0.31, 0.37);
 const UPDATE_NOTIFICATION_DOT_SIZE: f32 = 12.0;
@@ -54,7 +50,6 @@ const ACCENT_SOFT_FILL_ALPHA: f32 = 0.14;
 
 #[derive(Clone, Copy)]
 pub struct ProviderLoginStates<'a> {
-    pub provider_picker_open: bool,
     pub codex: Option<&'a CodexLoginState>,
     pub claude: Option<&'a ClaudeLoginState>,
     pub cursor_scan: &'a CursorScanState,
@@ -84,41 +79,32 @@ pub fn popup_content<'a>(
 ) -> Element<'a, Message> {
     let empty_state = popup_empty_state_active(state);
 
-    let picker_open =
-        logins.provider_picker_open && matches!(route, PopupRoute::ProviderDetail) && !empty_state;
     let header = popup_header(route, empty_state, update_status);
 
     let nav_row: Option<Element<'_, Message>> = match route {
         PopupRoute::ProviderDetail if empty_state => None,
-        PopupRoute::ProviderDetail if !picker_open => {
-            (enabled_provider_count(state) > 1).then(|| {
-                provider_tab_rows(
-                    state,
-                    selection.provider,
-                    selection.provider_viewport_offset,
-                )
-            })
-        }
-        PopupRoute::ProviderDetail => None,
+        PopupRoute::ProviderDetail => (enabled_provider_count(state) > 1).then(|| {
+            provider_tab_rows(
+                state,
+                selection.provider,
+                selection.provider_viewport_offset,
+            )
+        }),
         PopupRoute::Settings
         | PopupRoute::ManageProviders
         | PopupRoute::ManageAccounts(_)
         | PopupRoute::About => None,
     };
 
-    let body = if picker_open {
-        provider_picker_view(state, detection)
-    } else {
-        popup_body_view(
-            state,
-            config,
-            detection,
-            logins,
-            selection,
-            route,
-            update_status,
-        )
-    };
+    let body = popup_body_view(
+        state,
+        config,
+        detection,
+        logins,
+        selection,
+        route,
+        update_status,
+    );
 
     let body = popup_body_container(route, body);
     let body_panel: Element<'_, Message> = container(panel(body)).width(Length::Fill).into();
@@ -383,104 +369,6 @@ fn back_button_style(theme: &cosmic::Theme) -> widget::button::Style {
     style.icon_color = Some(Color::WHITE);
     style.border_radius = cosmic.corner_radii.radius_s.into();
     style
-}
-
-fn provider_picker_providers(state: &AppState, detection: &DetectionSnapshot) -> Vec<ProviderId> {
-    let mut providers = ProviderId::ALL.to_vec();
-    providers.sort_by_key(|provider| !detected_without_accounts(state, detection, *provider));
-    providers
-}
-
-fn provider_picker_view(
-    state: &AppState,
-    detection: &DetectionSnapshot,
-) -> Element<'static, Message> {
-    let providers = provider_picker_providers(state, detection);
-    let detected_count = providers
-        .iter()
-        .take_while(|provider| detected_without_accounts(state, detection, **provider))
-        .count();
-    let (detected, remaining) = providers.split_at(detected_count);
-    let mut content = column![].spacing(5).width(Length::Fill);
-
-    if !detected.is_empty() {
-        content = content
-            .push(widget::text(fl!("provider-picker-detected-section")).size(12))
-            .push(provider_picker_tile_rows(detected, true));
-    }
-
-    if !remaining.is_empty() {
-        content = content
-            .push(widget::text(fl!("provider-picker-all-section")).size(12))
-            .push(provider_picker_tile_rows(remaining, false));
-    }
-
-    container(content).padding(4).into()
-}
-
-fn provider_picker_tile_rows(
-    providers: &[ProviderId],
-    detected: bool,
-) -> Element<'static, Message> {
-    let mut rows = column![].spacing(8);
-    for pair in providers.chunks(2) {
-        let mut row = row![].spacing(8);
-        for provider in pair {
-            row = row.push(provider_picker_tile(*provider, detected));
-        }
-        if pair.len() == 1 {
-            row = row.push(cosmic::iced::widget::Space::new().width(Length::FillPortion(1)));
-        }
-        rows = rows.push(row);
-    }
-    rows.into()
-}
-
-fn provider_picker_tile(provider: ProviderId, detected: bool) -> Element<'static, Message> {
-    let content: Element<'static, Message> = if detected {
-        column![
-            provider_picker_icon(provider),
-            widget::text(provider.label()).size(14),
-            widget::text(fl!("provider-picker-connect-account")).size(12),
-        ]
-        .spacing(8)
-        .width(Length::Fill)
-        .into()
-    } else {
-        row![
-            provider_picker_icon(provider),
-            widget::text(provider.label()).size(14),
-        ]
-        .spacing(8)
-        .align_y(Alignment::Center)
-        .into()
-    };
-    let height = if detected {
-        PROVIDER_PICKER_TILE_HEIGHT
-    } else {
-        PROVIDER_PICKER_COMPACT_TILE_HEIGHT
-    };
-    let padding = if detected { [12, 12] } else { [4, 12] };
-    let content = container(content).padding(padding);
-    let content = if detected {
-        content
-    } else {
-        content.height(Length::Fill).align_y(Alignment::Center)
-    };
-    widget::button::custom(content)
-        .class(provider_tab_class(false))
-        .width(Length::FillPortion(1))
-        .height(Length::Fixed(height))
-        .on_press(Message::OpenProviderPickerProvider(provider))
-        .into()
-}
-
-fn provider_picker_icon(provider: ProviderId) -> Element<'static, Message> {
-    widget::icon::icon(provider_icon_handle(provider, provider_icon_variant()))
-        .size(22)
-        .width(Length::Fixed(22.0))
-        .height(Length::Fixed(22.0))
-        .into()
 }
 
 fn card<'a>(content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
@@ -849,7 +737,7 @@ fn provider_viewport_max_offset(provider_count: usize) -> usize {
 }
 
 pub(crate) fn provider_viewport_navigation_visible(provider_count: usize) -> bool {
-    provider_count >= PROVIDER_VIEWPORT_SIZE
+    provider_viewport_max_offset(provider_count) > 0
 }
 
 fn provider_viewport_portions(provider_count: usize) -> (u16, u16) {
@@ -1067,36 +955,6 @@ fn selected_state(
 }
 
 #[cfg(test)]
-fn tab_percents(
-    state: &AppState,
-    provider: &ProviderRuntimeState,
-    usage_amount_format: UsageAmountFormat,
-) -> Vec<f32> {
-    let now = chrono::Utc::now();
-    let accounts = state.display_selected_accounts(provider.provider);
-    if accounts.is_empty() {
-        let pct = active_snapshot(state, provider)
-            .and_then(|s| s.headline_window())
-            .map_or(0.0, |w| {
-                usage_display::displayed_amount_percent(w, now, usage_amount_format)
-            });
-        return vec![pct];
-    }
-    accounts
-        .into_iter()
-        .map(|account| {
-            account
-                .snapshot
-                .as_ref()
-                .and_then(|s| s.headline_window())
-                .map_or(0.0, |w| {
-                    usage_display::displayed_amount_percent(w, now, usage_amount_format)
-                })
-        })
-        .collect()
-}
-
-#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -1110,46 +968,6 @@ mod tests {
                 12
             );
         }
-    }
-
-    #[test]
-    fn provider_tab_percents_respect_usage_amount_format() {
-        let mut state = AppState::empty();
-        let account_id = "codex-test";
-        state
-            .provider_mut(ProviderId::Codex)
-            .unwrap()
-            .selected_account_ids = vec![account_id.to_string()];
-        let mut account =
-            ProviderAccountRuntimeState::empty(ProviderId::Codex, account_id, "test@example.com");
-        account.snapshot = Some(crate::model::UsageSnapshot {
-            provider: ProviderId::Codex,
-            source: "test".to_string(),
-            updated_at: chrono::Utc::now(),
-            headline: crate::model::UsageHeadline(0),
-            windows: vec![UsageWindow {
-                label: "Session".to_string(),
-                used_percent: 25.0,
-                reset_at: None,
-                window_seconds: None,
-                reset_description: None,
-                group: None,
-            }],
-            provider_cost: None,
-            extra_usage: None,
-            identity: crate::model::ProviderIdentity::default(),
-        });
-        state.upsert_account(account);
-        let provider = state.provider(ProviderId::Codex).unwrap();
-
-        assert_eq!(
-            tab_percents(&state, provider, UsageAmountFormat::Used),
-            vec![25.0]
-        );
-        assert_eq!(
-            tab_percents(&state, provider, UsageAmountFormat::Left),
-            vec![75.0]
-        );
     }
 
     #[test]
@@ -1191,28 +1009,5 @@ mod tests {
             &detection,
             ProviderId::Codex
         ));
-    }
-
-    #[test]
-    fn provider_picker_lists_detected_unconfigured_providers_first() {
-        let home = tempfile::tempdir().expect("create temporary home");
-        std::fs::create_dir(home.path().join(".codex")).expect("create Codex marker");
-        let detection = crate::detection::detect(home.path());
-        let state = AppState::empty();
-
-        assert_eq!(
-            provider_picker_providers(&state, &detection),
-            vec![
-                ProviderId::Codex,
-                ProviderId::Claude,
-                ProviderId::Cursor,
-                ProviderId::Antigravity,
-                ProviderId::Gemini,
-                ProviderId::Copilot,
-                ProviderId::Minimax,
-                ProviderId::Kimi,
-                ProviderId::OpenCodeGo,
-            ]
-        );
     }
 }

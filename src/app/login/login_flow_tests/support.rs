@@ -20,7 +20,6 @@ pub(super) fn test_app() -> AppModel {
         detail_account_page: 0,
         provider_viewport_offset: 0,
         popup_route: crate::app::PopupRoute::ProviderDetail,
-        provider_picker_open: false,
         update_status: crate::updates::UpdateStatus::Unchecked,
         launch_mode: crate::app::LaunchMode::Standalone,
         shared_control: Default::default(),

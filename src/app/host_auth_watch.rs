@@ -82,8 +82,13 @@ impl WatchTargets {
         let gemini_dir = home.join(".gemini");
         let gemini_accounts = gemini_dir.join("google_accounts.json");
         let gemini_settings = gemini_dir.join("settings.json");
-        let opencode_dir = home.join(".local/share/opencode");
-        let opencode_auth = opencode_dir.join("auth.json");
+        let default_opencode_dir = home.join(".local/share/opencode");
+        let opencode_auth = crate::providers::opencode_auth::auth_path()
+            .unwrap_or_else(|| default_opencode_dir.join("auth.json"));
+        let opencode_dir = opencode_auth
+            .parent()
+            .map(std::path::Path::to_path_buf)
+            .unwrap_or(default_opencode_dir);
         Self {
             home: home.to_path_buf(),
             config_dir,
@@ -118,10 +123,11 @@ fn install_watches(watcher: &mut RecommendedWatcher, targets: &WatchTargets) -> 
         installed |= install_watch(watcher, &targets.gemini_dir);
     }
 
+    if targets.opencode_dir.is_dir() {
+        installed |= install_watch(watcher, &targets.opencode_dir);
+    }
     if targets.opencode_auth.exists() {
         installed |= install_watch(watcher, &targets.opencode_auth);
-    } else if targets.opencode_dir.is_dir() {
-        installed |= install_watch(watcher, &targets.opencode_dir);
     }
 
     installed |= install_watch(watcher, &targets.home);

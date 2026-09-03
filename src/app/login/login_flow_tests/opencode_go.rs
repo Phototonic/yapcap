@@ -1,13 +1,32 @@
 use super::support::{isolated_xdg, test_app};
-use crate::app::login::{LoginFlow, OpenCodeGoLoginFlow, reauthenticate};
+use crate::app::login::{LoginFlow, OpenCodeGoLoginFlow, reauthenticate, start_login};
 use crate::config::{Config, ManagedOpenCodeGoAccountConfig};
 use crate::model::ProviderId;
-use crate::providers::opencode_go::login::{
-    OpenCodeGoLoginEvent, OpenCodeGoLoginState, OpenCodeGoLoginStatus,
-};
+use crate::providers::opencode_go::login::{OpenCodeGoLoginEvent, OpenCodeGoLoginState};
 use crate::providers::opencode_go::storage::{load_api_key, write_api_key};
 use crate::shared_state::RefreshRequestReason;
 use chrono::{Duration, Utc};
+use std::fs;
+
+#[test]
+fn opencode_go_login_prefills_api_key_from_opencode_auth_file() {
+    let (mut env, root) = isolated_xdg("opencode-go-opencode-prefill");
+    fs::create_dir_all(&root).unwrap();
+    let auth_path = root.join("auth.json");
+    fs::write(
+        &auth_path,
+        r#"{"opencode-go":{"type":"api","key":"fake-opencode-go-key"}}"#,
+    )
+    .unwrap();
+    env.set("YAPCAP_OPENCODE_AUTH_PATH", &auth_path);
+    let mut app = test_app();
+
+    let _ = start_login::<OpenCodeGoLoginFlow>(&mut app);
+
+    let login = app.opencode_go_login.as_ref().unwrap();
+    assert_eq!(login.api_key, "fake-opencode-go-key");
+    assert!(login.api_key_from_opencode);
+}
 
 #[test]
 fn opencode_go_saved_login_persists_selection_and_reconciles_runtime() {
@@ -21,6 +40,7 @@ fn opencode_go_saved_login_persists_selection_and_reconciles_runtime() {
     let task = OpenCodeGoLoginFlow::on_event(&mut app, OpenCodeGoLoginEvent::Saved);
     assert_eq!(task.units(), 0);
     assert_eq!(app.config.selected_opencode_go_account_ids, ["go-new"]);
+    assert!(app.opencode_go_login.is_none());
     assert!(
         app.state
             .accounts_for(ProviderId::OpenCodeGo)
@@ -42,7 +62,7 @@ fn opencode_go_saved_login_persists_selection_and_reconciles_runtime() {
 
 #[test]
 fn opencode_go_saved_login_selects_new_account() {
-    let (_env, _root) = isolated_xdg("opencode-go-show-all-under-cap");
+    let (_env, _root) = isolated_xdg("opencode-go-exclusive-replacement");
     let mut app = test_app();
     app.config.opencode_go_managed_accounts = vec![opencode_go_account("go-existing", "Existing")];
     app.config.selected_opencode_go_account_ids = vec!["go-existing".to_string()];
@@ -53,6 +73,7 @@ fn opencode_go_saved_login_selects_new_account() {
     );
     let _ = OpenCodeGoLoginFlow::on_event(&mut app, OpenCodeGoLoginEvent::Saved);
     assert_eq!(app.config.selected_opencode_go_account_ids, ["go-new"]);
+    assert!(app.opencode_go_login.is_none());
     assert!(
         app.config
             .opencode_go_managed_accounts
@@ -62,8 +83,8 @@ fn opencode_go_saved_login_selects_new_account() {
 }
 
 #[test]
-fn opencode_go_saved_login_replaces_existing_selection() {
-    let (_env, _root) = isolated_xdg("opencode-go-show-all-at-cap");
+fn opencode_go_saved_login_replaces_multiple_existing_selections() {
+    let (_env, _root) = isolated_xdg("opencode-go-exclusive-multiple");
     let mut app = test_app();
     app.config.opencode_go_managed_accounts = (1..=4)
         .map(|index| opencode_go_account(&format!("go-{index}"), &format!("Account {index}")))
@@ -77,6 +98,7 @@ fn opencode_go_saved_login_replaces_existing_selection() {
     );
     let _ = OpenCodeGoLoginFlow::on_event(&mut app, OpenCodeGoLoginEvent::Saved);
     assert_eq!(app.config.selected_opencode_go_account_ids, ["go-new"]);
+    assert!(app.opencode_go_login.is_none());
     assert!(
         app.config
             .opencode_go_managed_accounts
@@ -129,10 +151,7 @@ fn opencode_go_reauth_preserves_target_identity_and_replaces_key_in_place() {
             .is_some_and(|time| time > updated_at)
     );
     assert_eq!(load_api_key("go-existing").unwrap(), "new-key");
-    assert_eq!(
-        app.opencode_go_login.as_ref().unwrap().status,
-        OpenCodeGoLoginStatus::Saved
-    );
+    assert!(app.opencode_go_login.is_none());
 }
 
 fn opencode_go_account(id: &str, label: &str) -> ManagedOpenCodeGoAccountConfig {

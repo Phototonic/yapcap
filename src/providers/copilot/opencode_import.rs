@@ -39,7 +39,6 @@ pub fn prepare_opencode_import(
         status: CopilotLoginStatus::Running,
         user_code: None,
         verification_uri: None,
-        output: Vec::new(),
         error: None,
         code_copied: false,
         importing_from_opencode: true,

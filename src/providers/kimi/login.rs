@@ -27,7 +27,6 @@ struct KimiReauthTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum KimiLoginStatus {
     Editing,
-    Saved,
     Failed,
 }
 

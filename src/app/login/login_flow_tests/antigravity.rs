@@ -9,7 +9,6 @@ fn running_state(flow_id: &str) -> AntigravityLoginState {
         flow_id: flow_id.to_string(),
         status: AntigravityLoginStatus::Running,
         login_url: None,
-        output: Vec::new(),
         error: None,
     }
 }

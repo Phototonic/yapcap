@@ -27,7 +27,6 @@ struct OpenCodeGoReauthTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OpenCodeGoLoginStatus {
     Editing,
-    Saved,
     Failed,
 }
 

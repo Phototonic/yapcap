@@ -932,7 +932,6 @@ mod tests {
                 "codex_enabled": true,
                 "claude_enabled": true,
                 "cursor_enabled": true,
-                "show_all_accounts": [],
                 "selected_codex_account_ids": [],
                 "codex_managed_accounts": [],
                 "selected_claude_account_ids": [],

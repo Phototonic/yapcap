@@ -37,6 +37,9 @@ impl Config {
             "antigravity_enablement" => {
                 self.antigravity_enablement = update.antigravity_enablement;
             }
+            "opencode_go_enablement" => {
+                self.opencode_go_enablement = update.opencode_go_enablement;
+            }
             "log_level" => self.log_level.clone_from(&update.log_level),
             _ => return false,
         }
@@ -94,6 +97,13 @@ impl Config {
             "antigravity_managed_accounts" => {
                 self.antigravity_managed_accounts = update.antigravity_managed_accounts.clone();
             }
+            "selected_opencode_go_account_ids" => {
+                self.selected_opencode_go_account_ids =
+                    update.selected_opencode_go_account_ids.clone();
+            }
+            "opencode_go_managed_accounts" => {
+                self.opencode_go_managed_accounts = update.opencode_go_managed_accounts.clone();
+            }
             _ => {}
         }
     }
@@ -102,7 +112,10 @@ impl Config {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{ManagedKimiAccountConfig, ManagedMinimaxAccountConfig};
+    use crate::config::{
+        ManagedKimiAccountConfig, ManagedMinimaxAccountConfig, ManagedOpenCodeGoAccountConfig,
+        ProviderEnablement,
+    };
     use chrono::Utc;
 
     #[test]
@@ -169,6 +182,40 @@ mod tests {
             config.codex_enablement,
             crate::config::ProviderEnablement::Auto
         );
+    }
+
+    #[test]
+    fn applies_opencode_go_watcher_keys_without_replacing_unrelated_configuration() {
+        let mut config = Config::default();
+        let now = Utc::now();
+        let update = Config {
+            codex_enablement: ProviderEnablement::Disabled,
+            opencode_go_enablement: ProviderEnablement::Enabled,
+            selected_opencode_go_account_ids: vec!["go-1".to_string()],
+            opencode_go_managed_accounts: vec![ManagedOpenCodeGoAccountConfig {
+                id: "go-1".to_string(),
+                label: "OpenCode Go".to_string(),
+                api_key_source: "stored".to_string(),
+                created_at: now,
+                updated_at: now,
+                last_authenticated_at: None,
+            }],
+            ..Config::default()
+        };
+
+        config.apply_watcher_update(
+            update,
+            &[
+                "opencode_go_enablement",
+                "selected_opencode_go_account_ids",
+                "opencode_go_managed_accounts",
+            ],
+        );
+
+        assert_eq!(config.opencode_go_enablement, ProviderEnablement::Enabled);
+        assert_eq!(config.selected_opencode_go_account_ids, ["go-1"]);
+        assert_eq!(config.opencode_go_managed_accounts[0].id, "go-1");
+        assert_eq!(config.codex_enablement, ProviderEnablement::Auto);
     }
 
     #[test]

@@ -31,7 +31,6 @@ pub fn prepare_opencode_import(
         flow_id: flow_id.clone(),
         status: CodexLoginStatus::Running,
         login_url: None,
-        output: Vec::new(),
         error: None,
         importing_from_opencode: true,
     };

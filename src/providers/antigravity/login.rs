@@ -33,7 +33,6 @@ pub struct AntigravityLoginState {
     pub flow_id: String,
     pub status: AntigravityLoginStatus,
     pub login_url: Option<String>,
-    pub output: Vec<String>,
     pub error: Option<String>,
 }
 
@@ -45,10 +44,9 @@ pub enum AntigravityLoginStatus {
 
 #[derive(Debug, Clone)]
 pub enum AntigravityLoginEvent {
-    Output {
+    LoginUrl {
         flow_id: String,
-        line: String,
-        login_url: Option<String>,
+        url: String,
     },
     Finished {
         flow_id: String,
@@ -107,7 +105,6 @@ fn prepare_with_options(
         flow_id: flow_id.clone(),
         status: AntigravityLoginStatus::Running,
         login_url: None,
-        output: Vec::new(),
         error: None,
     };
     let stream = cosmic::iced::stream::channel(100, move |mut output| async move {
@@ -217,7 +214,7 @@ async fn run_oauth_flow(
     let state = new_state();
     let url =
         authorization_url_with_hint(&oauth_config(), &redirect_uri, &pkce, &state, login_hint);
-    send_output(flow_id, format!("Open {url}"), Some(url.clone()), output).await;
+    send_login_url(flow_id, url.clone(), output).await;
     open_browser(&url);
 
     loop {
@@ -374,17 +371,15 @@ fn managed_account_from_stored(
     }
 }
 
-async fn send_output(
+async fn send_login_url(
     flow_id: &str,
-    line: String,
-    login_url: Option<String>,
+    url: String,
     output: &mut cosmic::iced::futures::channel::mpsc::Sender<AntigravityLoginEvent>,
 ) {
     let _ = output
-        .send(AntigravityLoginEvent::Output {
+        .send(AntigravityLoginEvent::LoginUrl {
             flow_id: flow_id.to_string(),
-            line,
-            login_url,
+            url,
         })
         .await;
 }

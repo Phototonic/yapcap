@@ -86,21 +86,6 @@ mod tests {
     }
 
     #[test]
-    fn apply_login_selects_new_account_when_show_all_is_off() {
-        let mut config = Config {
-            copilot_managed_accounts: vec![sample("copilot-1", 1, "alice")],
-            selected_copilot_account_ids: vec!["copilot-1".to_string()],
-            ..Config::default()
-        };
-        apply_login_account(&mut config, sample("copilot-2", 2, "bob"));
-        assert_eq!(config.copilot_managed_accounts.len(), 2);
-        assert_eq!(
-            config.selected_copilot_account_ids,
-            vec!["copilot-2".to_string()]
-        );
-    }
-
-    #[test]
     fn apply_login_selects_new_account() {
         let mut config = Config {
             copilot_managed_accounts: vec![sample("copilot-1", 1, "alice")],

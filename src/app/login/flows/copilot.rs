@@ -41,7 +41,6 @@ impl LoginFlow for CopilotLoginFlow {
             status: CopilotLoginStatus::Failed,
             user_code: None,
             verification_uri: None,
-            output: Vec::new(),
             error: Some(error),
             code_copied: false,
             importing_from_opencode: false,
@@ -85,19 +84,6 @@ impl LoginFlow for CopilotLoginFlow {
                     user_code_available = true,
                     "login device code received"
                 );
-                Task::none()
-            }
-            CopilotLoginEvent::Output { flow_id, line } => {
-                let Some(login) = app.copilot_login.as_mut() else {
-                    return Task::none();
-                };
-                if login.flow_id != flow_id {
-                    return Task::none();
-                }
-                login.output.push(line);
-                if login.output.len() > 8 {
-                    login.output.remove(0);
-                }
                 Task::none()
             }
             CopilotLoginEvent::Finished { flow_id, result } => {

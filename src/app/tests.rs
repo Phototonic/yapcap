@@ -1,7 +1,8 @@
 use super::applet::{
     AppletBarLayout, applet_bar_layout, applet_bar_width, applet_button_size,
     applet_fallback_button_size, applet_percent_cell_alignment, applet_percent_cell_width,
-    applet_percent_text, panel_fallback_active, select_provider, selected_provider_all_bar_layouts,
+    applet_percent_text, panel_button_size, panel_fallback_active, select_provider,
+    selected_provider_bar_layout,
 };
 use super::popup_view::{
     account_page_next, account_page_previous, clamp_account_page, pager_account_label,
@@ -9,9 +10,9 @@ use super::popup_view::{
 };
 use super::refresh::should_refresh_account_statuses;
 use super::{
-    APPLET_ACCOUNT_GAP, APPLET_ICON_GAP, APPLET_PERCENT_ACCOUNT_GAP, AppModel, AppState, Config,
-    LaunchMode, Message, PanelIconStyle, PopupRoute, ProviderId, UsageAmountFormat,
-    automatic_refresh_poll_interval, format_retry_delay, popup_size_limits, update_retry_delay,
+    APPLET_ICON_GAP, AppModel, AppState, Config, LaunchMode, Message, PanelIconStyle, PopupRoute,
+    ProviderId, UsageAmountFormat, automatic_refresh_poll_interval, format_retry_delay,
+    popup_size_limits, update_retry_delay,
 };
 use crate::account_storage::{NewProviderAccount, ProviderAccountStorage, ProviderAccountTokens};
 use crate::config::{
@@ -715,13 +716,11 @@ fn applet_button_size_uses_panel_icon_style() {
     let logo_width = f32::from(compact_px.saturating_sub(8).max(11));
     let bar_width = applet_bar_width(suggested_w, suggested_h);
     let padding_width = f32::from(2 * horizontal_padding);
-    let (logo_bars_width, height) = applet_button_size(&core, PanelIconStyle::LogoAndBars, 1);
-    let (bars_only_width, bars_only_height) =
-        applet_button_size(&core, PanelIconStyle::BarsOnly, 1);
-    let (percent_width, percent_height) =
-        applet_button_size(&core, PanelIconStyle::LogoAndPercent, 1);
+    let (logo_bars_width, height) = applet_button_size(&core, PanelIconStyle::LogoAndBars);
+    let (bars_only_width, bars_only_height) = applet_button_size(&core, PanelIconStyle::BarsOnly);
+    let (percent_width, percent_height) = applet_button_size(&core, PanelIconStyle::LogoAndPercent);
     let (percent_only_width, percent_only_height) =
-        applet_button_size(&core, PanelIconStyle::PercentOnly, 1);
+        applet_button_size(&core, PanelIconStyle::PercentOnly);
 
     assert_eq!(bars_only_width, bar_width + padding_width);
     let cell_100 = applet_percent_cell_width();
@@ -740,75 +739,32 @@ fn applet_button_size_uses_panel_icon_style() {
 }
 
 #[test]
-fn applet_button_size_ignores_percent_primaries_for_bar_styles() {
+fn panel_button_size_stays_fixed_with_multiple_stored_accounts() {
     let core = cosmic::Core::default();
-    let (a, _) = applet_button_size(&core, PanelIconStyle::BarsOnly, 2);
-    let (b, _) = applet_button_size(&core, PanelIconStyle::BarsOnly, 2);
-    assert_eq!(a, b);
-    let (c, _) = applet_button_size(&core, PanelIconStyle::LogoAndBars, 2);
-    let (d, _) = applet_button_size(&core, PanelIconStyle::LogoAndBars, 2);
-    assert_eq!(c, d);
-}
+    let mut one_account = AppState::empty();
+    one_account.upsert_account(ProviderAccountRuntimeState::empty(
+        ProviderId::Codex,
+        "codex-1",
+        "Codex 1",
+    ));
+    let mut two_accounts = one_account.clone();
+    two_accounts.upsert_account(ProviderAccountRuntimeState::empty(
+        ProviderId::Codex,
+        "codex-2",
+        "Codex 2",
+    ));
 
-#[test]
-fn applet_button_size_scales_with_account_count() {
-    let core = cosmic::Core::default();
-    let (w1, _) = applet_button_size(&core, PanelIconStyle::BarsOnly, 1);
-    let (w2, _) = applet_button_size(&core, PanelIconStyle::BarsOnly, 2);
-    let (w3, _) = applet_button_size(&core, PanelIconStyle::BarsOnly, 3);
-    let (suggested_w, suggested_h) = core.applet.suggested_size(false);
-    let bar_width = applet_bar_width(suggested_w, suggested_h);
-    assert_eq!(w2 - w1, bar_width + APPLET_ACCOUNT_GAP);
-    assert_eq!(w3 - w2, bar_width + APPLET_ACCOUNT_GAP);
-    let (lw2, _) = applet_button_size(&core, PanelIconStyle::LogoAndBars, 2);
-    let (lw1, _) = applet_button_size(&core, PanelIconStyle::LogoAndBars, 1);
-    assert_eq!(lw2 - lw1, bar_width + APPLET_ACCOUNT_GAP);
-}
-
-#[test]
-fn applet_button_size_percent_uses_fixed_slot_width() {
-    let core = cosmic::Core::default();
-    let cell = applet_percent_cell_width();
-    let (w1, _) = applet_button_size(&core, PanelIconStyle::PercentOnly, 1);
-    let (w2, _) = applet_button_size(&core, PanelIconStyle::PercentOnly, 2);
-    let (w3, _) = applet_button_size(&core, PanelIconStyle::PercentOnly, 3);
-    assert_eq!(w2 - w1, cell + APPLET_PERCENT_ACCOUNT_GAP);
-    assert_eq!(w3 - w2, cell + APPLET_PERCENT_ACCOUNT_GAP);
-}
-
-#[test]
-fn applet_button_size_logo_and_percent_uses_fixed_slot_width() {
-    let core = cosmic::Core::default();
-    let (percent_only, _) = applet_button_size(&core, PanelIconStyle::PercentOnly, 2);
-    let (logo_percent, _) = applet_button_size(&core, PanelIconStyle::LogoAndPercent, 2);
-    let (suggested_w, suggested_h) = core.applet.suggested_size(false);
-    let logo_width = f32::from(suggested_w.min(suggested_h).saturating_sub(8).max(11));
-
-    assert_eq!(logo_percent - percent_only, logo_width + APPLET_ICON_GAP);
-}
-
-#[test]
-fn applet_button_size_percent_styles_ignore_current_percent_digits() {
-    let core = cosmic::Core::default();
-    let short_state = state_with_selected_account_percents(&[0.0, 8.5]);
-    let wide_state = state_with_selected_account_percents(&[86.5, 100.0]);
-    let short_n =
-        selected_provider_all_bar_layouts(&short_state, ProviderId::Codex, UsageAmountFormat::Used)
-            .len();
-    let wide_n =
-        selected_provider_all_bar_layouts(&wide_state, ProviderId::Codex, UsageAmountFormat::Used)
-            .len();
-
-    assert_eq!(short_n, 1);
-    assert_eq!(wide_n, 1);
-    assert_eq!(
-        applet_button_size(&core, PanelIconStyle::PercentOnly, short_n),
-        applet_button_size(&core, PanelIconStyle::PercentOnly, wide_n)
-    );
-    assert_eq!(
-        applet_button_size(&core, PanelIconStyle::LogoAndPercent, short_n),
-        applet_button_size(&core, PanelIconStyle::LogoAndPercent, wide_n)
-    );
+    for style in [
+        PanelIconStyle::LogoAndBars,
+        PanelIconStyle::BarsOnly,
+        PanelIconStyle::LogoAndPercent,
+        PanelIconStyle::PercentOnly,
+    ] {
+        assert_eq!(
+            panel_button_size(&core, &one_account, style),
+            panel_button_size(&core, &two_accounts, style)
+        );
+    }
 }
 
 #[test]
@@ -872,20 +828,9 @@ fn applet_fallback_button_size_is_icon_only() {
         f32::from(icon_px) + f32::from(2 * horizontal_padding)
     );
     assert_eq!(height, f32::from(suggested_h + 2 * vertical_padding));
-    let (bars_width, bars_height) = applet_button_size(&core, PanelIconStyle::LogoAndBars, 1);
+    let (bars_width, bars_height) = applet_button_size(&core, PanelIconStyle::LogoAndBars);
     assert!(width < bars_width);
     assert_eq!(height, bars_height);
-}
-
-#[test]
-fn applet_percent_groups_are_capped_to_four_selected_accounts() {
-    let state = state_with_selected_account_percents(&[1.0, 2.0, 3.0, 4.0, 5.0]);
-
-    let percents =
-        selected_provider_all_bar_layouts(&state, ProviderId::Codex, UsageAmountFormat::Used);
-
-    assert_eq!(percents.len(), 1);
-    assert_eq!(percents.last().map(|layout| layout.primary), Some(1.0));
 }
 
 #[test]
@@ -986,9 +931,10 @@ fn provider_viewport_shifts_one_icon_and_stops_at_the_end() {
 }
 
 #[test]
-fn provider_viewport_navigation_requires_six_enabled_providers() {
+fn provider_viewport_navigation_requires_scrollable_content() {
     assert!(!provider_viewport_navigation_visible(5));
-    assert!(provider_viewport_navigation_visible(6));
+    assert!(!provider_viewport_navigation_visible(6));
+    assert!(provider_viewport_navigation_visible(7));
 }
 
 #[test]
@@ -1017,7 +963,7 @@ fn applet_percent_text_uses_one_decimal_through_100_percent() {
 }
 
 #[test]
-fn selected_provider_all_percents_uses_first_panel_window() {
+fn selected_provider_bar_layout_uses_first_panel_window() {
     let mut state = AppState::empty();
     let mut account = ProviderAccountRuntimeState::empty(ProviderId::Codex, "codex-1", "Codex");
     account.snapshot = Some(UsageSnapshot {
@@ -1055,22 +1001,13 @@ fn selected_provider_all_percents_uses_first_panel_window() {
     state.upsert_account(account);
 
     let percents_used =
-        selected_provider_all_bar_layouts(&state, ProviderId::Codex, UsageAmountFormat::Used);
-    assert_eq!(
-        percents_used.first().map(|layout| layout.primary),
-        Some(86.5)
-    );
-    assert_eq!(
-        percents_used.first().and_then(|layout| layout.secondary),
-        Some(42.0)
-    );
+        selected_provider_bar_layout(&state, ProviderId::Codex, UsageAmountFormat::Used);
+    assert_eq!(percents_used.primary, 86.5);
+    assert_eq!(percents_used.secondary, Some(42.0));
 
     let percents_left =
-        selected_provider_all_bar_layouts(&state, ProviderId::Codex, UsageAmountFormat::Left);
-    assert_eq!(
-        percents_left.first().map(|layout| layout.primary),
-        Some(13.5)
-    );
+        selected_provider_bar_layout(&state, ProviderId::Codex, UsageAmountFormat::Left);
+    assert_eq!(percents_left.primary, 13.5);
 }
 
 #[test]
@@ -1103,30 +1040,15 @@ fn applet_bar_layout_preserves_single_bar_shape() {
 }
 
 #[test]
-fn selected_provider_all_bar_layouts_keeps_mixed_copilot_account_shapes() {
-    let mut state = AppState::empty();
-    state
-        .provider_mut(ProviderId::Copilot)
-        .unwrap()
-        .selected_account_ids = vec!["casey-free".to_string(), "morgan-pro".to_string()];
+fn selected_provider_bar_layout_uses_only_the_active_account() {
+    let state = state_with_account_percents(&[30.0, 90.0]);
 
-    let mut free =
-        ProviderAccountRuntimeState::empty(ProviderId::Copilot, "casey-free", "casey-free");
-    free.snapshot = Some(snapshot_with_percents(ProviderId::Copilot, &[30.0, 80.0]));
-    state.upsert_account(free);
+    let layout = selected_provider_bar_layout(&state, ProviderId::Codex, UsageAmountFormat::Used);
 
-    let mut paid =
-        ProviderAccountRuntimeState::empty(ProviderId::Copilot, "morgan-pro", "morgan-pro");
-    paid.snapshot = Some(snapshot_with_percents(ProviderId::Copilot, &[100.0]));
-    state.upsert_account(paid);
-
-    let layouts =
-        selected_provider_all_bar_layouts(&state, ProviderId::Copilot, UsageAmountFormat::Used);
-
-    assert_eq!(layouts, vec![AppletBarLayout::two_bar(30.0, 80.0)]);
+    assert_eq!(layout.primary, 30.0);
 }
 
-fn state_with_selected_account_percents(percents: &[f32]) -> AppState {
+fn state_with_account_percents(percents: &[f32]) -> AppState {
     let mut state = AppState::empty();
     let selected_account_ids = percents
         .iter()
@@ -1177,7 +1099,6 @@ pub(super) fn test_app(refresh_owner: Option<RefreshOwner>) -> AppModel {
         detail_account_page: 0,
         provider_viewport_offset: 0,
         popup_route: PopupRoute::ProviderDetail,
-        provider_picker_open: false,
         update_status: UpdateStatus::Unchecked,
         launch_mode: LaunchMode::Standalone,
         shared_control: SharedControlState::default(),
@@ -1562,29 +1483,5 @@ fn refresh_owner(name: &str) -> RefreshOwner {
     match crate::refresh_owner::try_acquire(lock_path).unwrap() {
         RefreshOwnerAttempt::Owner(owner) => owner,
         RefreshOwnerAttempt::NonOwner(_) => panic!("test lock should be available"),
-    }
-}
-
-fn snapshot_with_percents(provider: ProviderId, percents: &[f32]) -> UsageSnapshot {
-    UsageSnapshot {
-        provider,
-        source: "test".to_string(),
-        updated_at: Utc::now(),
-        headline: UsageHeadline(0),
-        windows: percents
-            .iter()
-            .enumerate()
-            .map(|(i, percent)| UsageWindow {
-                label: format!("Window {i}"),
-                used_percent: *percent,
-                reset_at: None,
-                window_seconds: None,
-                reset_description: None,
-                group: None,
-            })
-            .collect(),
-        provider_cost: None,
-        extra_usage: None,
-        identity: ProviderIdentity::default(),
     }
 }

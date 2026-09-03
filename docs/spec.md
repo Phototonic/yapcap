@@ -186,6 +186,7 @@ sequenceDiagram
   config before redraw. Shared control updates are retained locally for later
   owner-driven refresh handling.
 - The panel opens on the persisted `selected_provider` from config. Selecting a provider tab writes that provider back to config so all applet processes switch to the same provider and the next launch opens on the same provider; if the saved provider is disabled, startup falls back to the first enabled provider. When the selected enabled provider has missing or stale selected-account runtime data, the selecting process writes a provider-selected shared refresh request for the refresh owner.
+- The provider overview shows previous/next arrows only when more than six providers are enabled and the provider tabs can scroll.
 - Provider enablement is resolved from a per-provider `Auto` / `Enabled` /
   `Disabled` setting. `Auto` enables only providers detected on the machine or
   with a YapCap account; explicit settings override that result. New configs
@@ -319,9 +320,8 @@ Codex account model:
   `SelectionRequired` or `LoginRequired`.
 - Account display labels are derived from stored account email; stored config
   labels are not used for display when metadata is available.
-- Add-account flows select the new Codex account immediately in single-account
-  mode. In show-all mode they preserve existing selections and append the new
-  account when appropriate.
+- Add-account flows select the new Codex account immediately, replacing the
+  current selection. Other managed accounts remain available for later paging.
 - Host Codex CLI session hint: YapCap read-only reads `~/.codex/auth.json` to set
   `system_active_account_id` (JWT ChatGPT account id vs stored `provider_account_id`) for the
   **Active** badge. An inotify-backed subscription (via the `notify` crate on Linux)
@@ -429,9 +429,9 @@ Claude account model:
   code-focused guidance.
 - Duplicate login by normalized email updates the existing account’s tokens and
   metadata instead of adding a second account.
-- Add-account and single-account selection behavior match other providers:
-  new accounts are selected immediately in single-account mode; show-all mode
-  preserves existing selections when possible.
+- Add-account selection matches other providers: the new account is selected
+  immediately and replaces the current selection. Other managed accounts remain
+  available for later paging.
 - Account labels follow the account email when available.
 - After a successful usage fetch, `UsageSnapshot.identity.email` uses the usage
   JSON `email` field when present; otherwise stored account metadata’s email
@@ -1019,11 +1019,10 @@ Kimi for Coding uses API-key authentication and YapCap-managed accounts.
   imported from OpenCode. This is a one-time add or reauthentication prefill;
   usage fetch and periodic refresh never read or synchronize OpenCode. Saving
   copies the entered or prefilled key into YapCap's private account storage.
-  A new account uses normal selection behavior: selection is exclusive unless
-  show-all is enabled, in which case the account is added up to
-  `MAX_MULTI_ACCOUNT_SELECTION`. Runtime state is reconciled from the saved
-  configuration and a shared `AccountAction` refresh request is made. An empty
-  key fails without creating an account.
+  A new account uses exclusive selection behavior and replaces the current
+  selection. Runtime state is reconciled from the saved configuration and a
+  shared `AccountAction` refresh request is made. An empty key fails without
+  creating an account.
 - Reauthentication targets one existing account, preserves its id, label, and
   creation time, and overwrites its stored key plus authentication metadata.
   An edited label is not applied during reauthentication.
@@ -1280,7 +1279,6 @@ gemini_enablement = "disabled"
 copilot_enablement = "auto"
 minimax_enablement = "auto"
 kimi_enablement = "auto"
-show_all_accounts = []
 selected_codex_account_ids = []
 codex_managed_accounts = []
 selected_claude_account_ids = []
@@ -1302,7 +1300,7 @@ log_level = "info"
 
 - `reset_time_format` ∈ `relative | absolute`. `relative` shows reset durations such as `Resets in 2d 2h`; `absolute` shows local reset labels such as `Resets tomorrow at 8:25 AM` or `Resets Wednesday at 12:00 PM`.
 - `usage_amount_format` ∈ `used | left`. `used` shows labels and usage bars as consumed quota; `left` flips them to remaining quota.
-- `panel_icon_style` ∈ `logo_and_bars | bars_only | logo_and_percent | percent_only`. The default shows the selected provider logo and two compact usage bars, `bars_only` hides the logo, `logo_and_percent` shows the selected provider logo with the first applet usage window as a one-decimal percentage, and `percent_only` shows only that percentage. For **`logo_and_percent`** / **`percent_only`** only (not bar styles), each selected account gets one fixed percentage column wide enough for `100.0%`: `APPLET_PERCENT_CELL_HORIZONTAL_PAD + applet_percent_text(100.0).chars().len() × APPLET_PERCENT_GLYPH_WIDTH`. Shorter labels such as `0.0%` and `86.5%` are left-aligned inside that slot, so percent-style applet width depends on account count, style, logo presence, fixed gaps, and padding, not current usage digits. Columns use `APPLET_PERCENT_ACCOUNT_GAP`. In settings, the percent-only preview shows a sample percentage with a tooltip explaining that it shows the first usage percentage in the panel.
+- `panel_icon_style` ∈ `logo_and_bars | bars_only | logo_and_percent | percent_only`. The default shows the selected provider logo and two compact usage bars, `bars_only` hides the logo, `logo_and_percent` shows the selected provider logo with the first applet usage window as a one-decimal percentage, and `percent_only` shows only that percentage. Percent styles reserve one fixed slot wide enough for `100.0%`: `APPLET_PERCENT_CELL_HORIZONTAL_PAD + applet_percent_text(100.0).chars().len() × APPLET_PERCENT_GLYPH_WIDTH`. Shorter labels such as `0.0%` and `86.5%` are left-aligned inside that slot, so the panel width is independent of current usage digits and stored account count. In settings, the percent-only preview shows a sample percentage with a tooltip explaining that it shows the first usage percentage in the panel.
 - `provider_visibility_mode` is retained for serialized compatibility and defaults
   to `user_managed`. The legacy `auto_init_pending` value still deserializes but
   no longer force-enables providers; effective visibility comes from each
@@ -1323,16 +1321,17 @@ log_level = "info"
   config directory path, optional identity metadata, subscription type, and
   timestamps.
   There is at most one managed account per normalized email.
-- `selected_cursor_account_ids` is a preference list, not proof that credentials exist.
-  Each entry stores `cursor-managed:<storage-id>` (opaque folder name, not the email)
-  and resolves to `Ready` only when that account's session cookie can be read
-  and the Cursor API responds successfully. Multiple ids cause concurrent refresh
-  and a multi-column popup view.
+- `selected_cursor_account_ids` retains its list-shaped serialized form for
+  compatibility, but YapCap uses only its first valid entry. Each entry stores
+  `cursor-managed:<storage-id>` (opaque folder name, not the email) and resolves
+  to `Ready` only when that account's session cookie can be read and the Cursor
+  API responds successfully.
 - `cursor_managed_accounts` stores non-secret metadata only: opaque `id`,
   canonical email, label, managed account root path, optional identity metadata,
   plan, and timestamps. There is at most one managed account per normalized email.
-- `selected_gemini_account_ids` and `selected_copilot_account_ids` follow the
-  same preference-list semantics as the other selected account fields.
+- `selected_gemini_account_ids` and `selected_copilot_account_ids` retain their
+  list-shaped serialized form for compatibility and use only the first valid
+  entry as the active account.
 - `gemini_managed_accounts` stores non-secret metadata only: id, label,
   YapCap-owned account directory path, normalized email, Google subject, hosted
   domain, last tier/project metadata, and timestamps.
@@ -1491,7 +1490,8 @@ struct ProviderAccountRuntimeState {
 | snapshot present, any other condition | Stale |
 | no snapshot | Loading |
 
-In single-account view the badge appears in the account header. In multi-account view each column shows its own badge independently, and the shared provider title row carries no badge.
+ The badge appears in the selected account header. Stored but unselected accounts
+ do not render in the provider detail view.
 
 `ProviderRuntimeState::status_line` applies the same rule at the provider level (using the first selected account) and appends `(stale)` when appropriate. This prevents "Live · Updated 21 hours ago" on cold-start from the cache.
 
@@ -1542,8 +1542,8 @@ can correlate observed state changes across applet processes. Runtime write logs
 include a stable reason label such as `account_status_refresh`,
 `automatic_refresh_started`, `shared_refresh_started`,
 `provider_refresh_finished`, `provider_setting_changed`,
-`show_all_accounts_changed`, `host_cli_auth_changed`, `external_config_update`,
-`account_selection_changed`, or `account_deleted`.
+`host_cli_auth_changed`, `external_config_update`, `account_selection_changed`,
+or `account_deleted`.
 Live shared-runtime reconciliation preserves provider refresh flags so every
 display observes the owner's in-progress refresh state. Startup reconciliation
 clears those flags because a persisted in-progress operation cannot survive the
@@ -1620,8 +1620,8 @@ Dated YapCap log files are pruned on startup. The app keeps the current day plus
 - Local `cargo run` launches through `cosmic::app::run` with `LaunchMode::Standalone`; `applet_settings()` gives the standalone preview the same calculated button dimensions without using the applet autosize wrapper.
 - Both launch modes share the same button sizing helpers. The usage bar width is at least `suggested_height * APPLET_BAR_WIDTH_HEIGHT_MULTIPLIER`.
 - The bars use `UsageSnapshot::applet_windows()` and `usage_display::displayed_amount_percent`; in `left` mode, fully-elapsed windows render as 100% left after the reset. A snapshot with one applet window renders one bar vertically centered in the same total height as the two-bar layout. Paid Copilot accounts use this single-bar variant for `premium_interactions`.
-- When multiple accounts are selected for a provider, the panel icon expands horizontally: one bar group per account, separated by a fixed gap. Each account renders its own one-bar or two-bar shape, so mixed Copilot Free + paid selections show two bars beside one vertically centered bar without homogenizing the bar count. All groups render at the same fixed container width (`bar_width`); the fill inside each bar reflects actual usage for that account. An account whose snapshot has not yet loaded shows 0% fill.
-- In `logo_and_percent` and `percent_only` styles with multiple accounts, each account gets a left-aligned label in a fixed-width column sized for `100.0%`; columns are separated by `APPLET_PERCENT_ACCOUNT_GAP`.
+- The panel renders the selected account's one-bar or two-bar usage shape in a
+  fixed-width button. Stored but unselected accounts do not expand the panel.
 - Clicking toggles the popup.
 - Provider icons have a Default (dark panel) and Reversed (light panel) SVG variant. `app::provider_assets::provider_icon_variant()` calls `cosmic::theme::is_dark()` at render time to select the correct variant. Codex and Cursor use themed monochrome pairs; Claude and Gemini use a single brand-colored SVG (`claude-color.svg`, `gemini-color.svg`) for both variants.
 - YAPCAP subscribes to the active COSMIC theme config and theme mode config so accent and light/dark changes trigger an immediate redraw while the process is running. Native and Flatpak builds both rely on the COSMIC settings daemon config watcher for those live updates.
@@ -1639,12 +1639,13 @@ owns provider detail cards and `app::popup_view::settings::*` owns the settings 
 - Providers render in a single fixed order (`ProviderId::ALL`) everywhere they are listed: Codex, Claude, Cursor, Antigravity, Gemini, Copilot, Minimax, Kimi.
   - Provider and settings tabs and selected account rows use a soft accent fill and accent border. Global settings segmented option groups are softly merged neutral component surfaces; their selected option has a slightly deeper neutral fill plus accent-colored text and a checkmark. Settings section wrappers around titles and bodies stay visually neutral (layout only).
   - Body panel (scrollable where content can grow): shows either selected provider details, global Settings, Manage providers, provider-scoped Manage accounts, or About. Manage providers lists every provider in one rounded component card with horizontal row dividers and trailing enable switches. Settings retains the Refresh interval, panel-icon, reset-time, and usage-amount controls. About centers the YapCap logo and identity, groups project/developer/license links into full-width link rows, and shows checking/error/update state; an available update uses a destructive callout that links to its release and drives the header notification dot. When no provider tabs are available, the provider route suppresses the navigation row and shows a centered YapCap/provider-logo hero with “No providers set up yet”, guidance to manage providers, and a suggested action.
-- Provider view always starts with a provider title card (icon + name). A provider detected on this machine with no YapCap account additionally shows an accent `Detected` chip and an add-account call to action that opens its Settings category. Below it, the selected account is displayed with its account header ("Account" label, email, plan badge, per-account status badge, "Updated X ago" timestamp), usage window cards, and cost/credits card. Multiple accounts use the account card's footer pager, whose previous/next controls change the selected account exactly like the account-management rows. Usage windows that carry a `group` render inside a single rounded group container per consecutive group run: the container has a component-background fill, rounded corners, and a 1 px component-divider border, the group name as an 18 px header, and the group's usage sections stacked inside it (no per-window card and no dividers inside the container). Ungrouped windows keep their own individual cards. Section/card titles ("Account", window labels, "Extra usage", "Credits") render at 15 px so group headers sit above them in the type hierarchy.
+- Provider view always starts with a provider title card (icon + name). A provider detected on this machine with no YapCap account additionally shows an accent `Detected` chip and an add-account call to action that opens its Settings category. Below it, the selected account is displayed with its account header ("Account" label, email, plan badge, per-account status badge, "Updated X ago" timestamp), usage window cards, and cost/credits card. When multiple accounts are stored, the account card has a footer pager whose previous/next controls change the selected account exactly like the account-management rows. Usage windows that carry a `group` render inside a single rounded group container per consecutive group run: the container has a component-background fill, rounded corners, and a 1 px component-divider border, the group name as an 18 px header, and the group's usage sections stacked inside it (no per-window card and no dividers inside the container). Ungrouped windows keep their own individual cards. Section/card titles ("Account", window labels, "Extra usage", "Credits") render at 15 px so group headers sit above them in the type hierarchy.
   - Provider settings categories start with an icon-and-name provider title followed by a boxed `Enable <provider>` toggle. The `Accounts` heading, account list, and account actions share the same content alignment. Account rows stay single-line with Active and other status badges inline. A provider detected on this machine with no YapCap account shows a “Detected on this machine” caption on its settings page, including when explicitly disabled. When a provider is disabled, the provider-specific settings below that toggle are dimmed and non-interactive; account status badges and account action icons use softer inactive colors in both light and dark themes.
   - Each provider settings card lets the user select one active account. Other stored accounts remain available in Settings and can be selected with the provider detail controls.
   - Global Settings contains app-wide settings such as Autorefresh segmented interval buttons, panel icon style preview buttons, reset time format, and usage amount format. Each selectable option shows a tooltip explaining its effect on hover. If the startup update check fails, YapCap keeps retrying in the background with exponential backoff and shows the latest detailed failure plus the next retry delay in About. Error state also shows a manual "Check again" action.
   - When an update is available, a small red notification dot appears on the header About action.
-  - Debug builds can force the About update-available state with `YAPCAP_DEBUG_UPDATE_AVAILABLE`. Values `1`, `true`, `yes`, and empty string use `v9.9.9`; any other value is treated as the release version. Debug builds can also simulate offline HTTP with `YAPCAP_DEBUG_OFFLINE`; values `0`, `false`, `no`, and `off` disable it, while any other present value enables it. `YAPCAP_DEMO` (debug only; inert in release) seeds a screenshot-oriented synthetic config plus `AppState`: all eight providers are enabled with `provider_visibility_mode = user_managed`; **Codex** gets two managed demo accounts, an active Pro account (`pro@example.com`) and a Free account (`free@example.com`), with synthetic Session and Weekly usage windows and show-all enabled; **Claude** gets two managed demo accounts: a Pro account (`pro@example.com`) with Session, Weekly, and Fable usage windows plus synthetic **extra usage** enabled at an **EUR 20.00** monthly limit and partial spend, and a Max account (`max@example.com`) with Session, Weekly, and per-model scoped weekly windows (Sonnet, Opus, Cowork, Fable); **Cursor** gets one managed demo account; **Gemini** gets one Pro-tier managed demo account with Pro/Flash/Lite usage windows and a "Pro" plan badge; **Minimax** gets one managed demo account with token usage tracking; **Copilot** gets two selected managed demo accounts with show-all enabled: `casey-free` on the Free plan with chat and completions windows, and `morgan-pro` as a token-based Pro+ credits account with one **Credits** window, a dollar cost card (`$28.00 / $70.00`), and `+42 over plan`; **Antigravity** gets two selected managed demo accounts with show-all enabled: `pro@example.com` on the Pro tier with grouped Gemini Models / Claude and GPT models windows (Five Hour then Weekly per group), and `free@example.com` on the Free tier with a Weekly Limit window; **Kimi** gets one API-key demo account with Weekly and Rate Limit windows. Every synthetic provider usage window includes pace timing so demo behavior matches production. Display settings otherwise follow defaults (panel icon style, reset time format, usage format, autorefresh interval); the default startup `Task` batch is skipped; provider refresh becomes a no-op; shared-runtime writes are skipped; and demo data is re-applied after config reconciliation.
+ - Debug builds can force the About update-available state with `YAPCAP_DEBUG_UPDATE_AVAILABLE`. Values `1`, `true`, `yes`, and empty string use `v9.9.9`; any other value is treated as the release version. Debug builds can also simulate offline HTTP with `YAPCAP_DEBUG_OFFLINE`; values `0`, `false`, `no`, and `off` disable it, while any other present value enables it.
+ - `YAPCAP_DEMO` (debug only; inert in release) seeds a screenshot-oriented synthetic config plus `AppState`: all eight providers are enabled with `provider_visibility_mode = user_managed`; **Codex** gets two managed demo accounts, with the Pro account selected; **Claude** gets two managed demo accounts, with the Pro account selected and synthetic **extra usage**; **Cursor** gets one managed demo account; **Gemini** gets one Pro-tier managed demo account; **Minimax** gets one managed demo account; **Copilot** gets two managed demo accounts, with the Free account selected and the Pro+ account carrying a **Credits** window, dollar cost card (`$28.00 / $70.00`), and `+42 over plan`; **Antigravity** gets two managed demo accounts, with the Pro account selected; and **Kimi** and **OpenCode Go** each get one API-key demo account. Multiple managed demo accounts remain available through the account pager, but only one account is selected per provider. Every synthetic provider usage window includes pace timing so demo behavior matches production. Display settings otherwise follow defaults (panel icon style, reset time format, usage format, autorefresh interval); the default startup `Task` batch is skipped; provider refresh becomes a no-op; shared-runtime writes are skipped; and demo data is re-applied after config reconciliation.
   - `YAPCAP_DEMO` and `YAPCAP_DEBUG_UPDATE_AVAILABLE` are independent debug toggles and can be combined; `just run-demo-update` launches the synthetic demo with the forced update state.
   - Provider account cards list currently valid account sources as separate selector rows with a selected outline/checkmark, a row press to make an account active, and account action icons. Long account labels are truncated in-row and reveal the full label on hover. With no accounts, the provider settings page shows a tighter centered `No accounts` card with `Add account`; providers with a currently available OpenCode import also show `Import from OpenCode` in that card. With accounts present, account-creation controls are grouped in a separate bordered container; each action is a full-width row with a trailing arrow matching the provider-detail Manage accounts action. Providers with an OpenCode import path show that action as a second stacked row. Codex add-account login opens the browser from the Settings flow and stores the result in YapCap-owned account storage. Codex account rows show the same login-required warning badge and row highlight as other providers when `auth_state = ActionRequired` (for example after refresh token failure). Claude add-account opens the native OAuth browser flow from Settings, shows the same browser account/private-window hint as Copilot, and asks the user to paste the returned authentication code; malformed pasted input is rejected with plain-language guidance to paste the authentication code (no internal format jargon). Claude account rows use email-derived labels and show login-required, error, or stale badges when account state needs attention. Claude accounts with `auth_state = ActionRequired` show a per-account re-authenticate action (refresh icon) in Settings alongside the delete action; clicking it starts a targeted OAuth flow that must complete with the same email — a different email is rejected with an error and the existing account is left unchanged; success immediately triggers a usage refresh. Generic Claude add-account keeps duplicate-by-email upsert behavior. Cursor add-account scans Cursor IDE's local SQLite state database and imports the currently logged-in Cursor account tokens into YapCap-owned storage. Cursor accounts that need user action show a `Re-auth needed` badge plus a per-account refresh action in Settings, and the provider status text tells the user to log into that account in Cursor and rescan. Cursor `Active` reflects the account currently used by Cursor IDE and can appear alongside `Re-auth needed` when YapCap's copied session needs a fresh scan. Antigravity and Gemini add-account open Google OAuth browser flows and store only YapCap-owned account storage. Copilot add-account starts GitHub device flow, shows the shared browser account/private-window hint near the Settings control, displays the user code and `Open Browser` fallback while polling, and stores accounts by GitHub numeric user id. Minimax and Kimi use API-key forms; Kimi may prefill once from OpenCode. Copilot and Antigravity account rows never show an Active badge. Codex, Claude, Cursor, Antigravity, Gemini, Copilot, Minimax, and Kimi account removal deletes only YapCap-owned account homes/config dirs/profile roots. Cursor accounts are always managed and displayed with the email address as the account label. Copilot accounts are displayed with the GitHub login label. If no accounts remain for a provider, the provider detail shows an empty state pointing the user to Settings.
 - Footer: Back on secondary routes.

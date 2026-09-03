@@ -40,7 +40,6 @@ impl LoginFlow for GeminiLoginFlow {
             flow_id: "failed".to_string(),
             status: GeminiLoginStatus::Failed,
             login_url: None,
-            output: Vec::new(),
             error: Some(error),
         }
     }
@@ -58,24 +57,14 @@ impl LoginFlow for GeminiLoginFlow {
     }
     fn on_event(app: &mut AppModel, event: Self::Event) -> Task<Message> {
         match event {
-            GeminiLoginEvent::Output {
-                flow_id,
-                line,
-                login_url,
-            } => {
+            GeminiLoginEvent::LoginUrl { flow_id, url } => {
                 let Some(login) = app.gemini_login.as_mut() else {
                     return Task::none();
                 };
                 if login.flow_id != flow_id {
                     return Task::none();
                 }
-                if let Some(url) = login_url {
-                    login.login_url = Some(url);
-                }
-                login.output.push(line);
-                if login.output.len() > 8 {
-                    login.output.remove(0);
-                }
+                login.login_url = Some(url);
                 Task::none()
             }
             GeminiLoginEvent::Finished { flow_id, result } => {

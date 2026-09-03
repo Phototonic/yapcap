@@ -117,8 +117,7 @@ impl LoginFlow for OpenCodeGoLoginFlow {
                             },
                         );
                         app.opencode_go_login_handle = None;
-                        let login = app.opencode_go_login.as_mut().unwrap();
-                        login.status = OpenCodeGoLoginStatus::Saved;
+                        app.opencode_go_login = None;
                         task
                     }
                     Err(error) => {

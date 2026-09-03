@@ -3,30 +3,25 @@ use crate::app::login::{CodexLoginFlow, LoginFlow};
 use crate::providers::codex::{CodexLoginEvent, CodexLoginState, CodexLoginStatus};
 
 #[test]
-fn codex_on_event_output_buffers_lines_and_captures_login_url() {
+fn codex_on_event_captures_login_url() {
     let mut app = test_app();
     app.codex_login = Some(CodexLoginState {
         flow_id: "flow".to_string(),
         status: CodexLoginStatus::Running,
         login_url: None,
-        output: (0..8).map(|i| format!("line-{i}")).collect(),
         error: None,
         importing_from_opencode: false,
     });
 
     let _ = CodexLoginFlow::on_event(
         &mut app,
-        CodexLoginEvent::Output {
+        CodexLoginEvent::LoginUrl {
             flow_id: "flow".to_string(),
-            line: "line-8".to_string(),
-            login_url: Some("https://example.com/device".to_string()),
+            url: "https://example.com/device".to_string(),
         },
     );
 
     let login = app.codex_login.as_ref().unwrap();
-    assert_eq!(login.output.len(), 8);
-    assert_eq!(login.output.last().unwrap(), "line-8");
-    assert_eq!(login.output.first().unwrap(), "line-1");
     assert_eq!(
         login.login_url.as_deref(),
         Some("https://example.com/device")
@@ -40,7 +35,6 @@ fn codex_on_event_finished_err_marks_login_failed() {
         flow_id: "flow".to_string(),
         status: CodexLoginStatus::Running,
         login_url: None,
-        output: Vec::new(),
         error: None,
         importing_from_opencode: false,
     });
@@ -66,7 +60,6 @@ fn codex_on_event_finished_ok_applies_account_and_succeeds() {
         flow_id: "flow".to_string(),
         status: CodexLoginStatus::Running,
         login_url: None,
-        output: Vec::new(),
         error: None,
         importing_from_opencode: false,
     });

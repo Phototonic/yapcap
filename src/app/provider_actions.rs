@@ -133,12 +133,7 @@ impl AppModel {
     }
 
     pub(super) fn sync_panel_suggested_bounds(&mut self) {
-        let (w, h) = panel_button_size(
-            &self.core,
-            &self.state,
-            self.config.panel_icon_style,
-            self.selected_provider,
-        );
+        let (w, h) = panel_button_size(&self.core, &self.state, self.config.panel_icon_style);
         self.core.applet.suggested_bounds = Some(Size::new(w, h));
     }
 

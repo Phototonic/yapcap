@@ -460,24 +460,18 @@ In Settings → General, cycle through all four panel icon styles and verify the
 - An unknown SKU with no recognizable entitlement range falls back to **Plan**.
 - Reset time follows `quota_reset_date_utc` (falling back to `quota_reset_date`).
 
-### 11.6 Mixed bar counts
-
-- Select a Free account and a paid account side by side.
-- Panel shows a two-bar Free group beside a one-bar paid group.
-- The one-bar paid group remains vertically centered; the Free group keeps two bars.
-
-### 11.7 Overage rendering
+### 11.6 Overage rendering
 
 - Run with `YAPCAP_DEMO=1`.
 - Verify the `morgan-pro` Copilot account shows `+42 over plan` under the Credits bar.
 
-### 11.8 `YAPCAP_DEMO`
+### 11.7 `YAPCAP_DEMO`
 
 - Run with `YAPCAP_DEMO=1`.
 - Verify all eight provider tabs appear with demo accounts (Codex seeds two).
 - Verify the Codex accounts are `pro@example.com` on Pro and `free@example.com`
   on Free, with the Pro account marked **Active**.
-- Verify two Antigravity demo accounts with `Show all accounts` on:
+- Verify two Antigravity demo accounts are present:
   `pro@example.com` on the Pro tier with grouped **Gemini Models** and **Claude and
   GPT models** cards (Five Hour then Weekly within each group), and
   `free@example.com` on the Free tier with weekly-only bars.
@@ -486,9 +480,10 @@ In Settings → General, cycle through all four panel icon styles and verify the
   and no cost card.
 - Verify `morgan-pro` shows a Credits window, a dollar cost card, a **Pro+** badge,
   and `+42 over plan`.
-- Verify both accounts are selected and Copilot `Show all accounts` is on.
+- Verify the Free Copilot account is active and the Pro+ account remains available
+  through the account pager.
 
-### 11.9 Re-auth flow
+### 11.8 Re-auth flow
 
 - Revoke the YapCap GitHub App token at `github.com/settings/applications`.
 - Trigger refresh and verify account badges flip to `Re-auth needed`.
@@ -496,19 +491,19 @@ In Settings → General, cycle through all four panel icon styles and verify the
 - Re-auth with the same GitHub account and verify the account refreshes successfully.
 - Re-auth with a different GitHub account and verify YapCap rejects it with a different-account error without replacing the stored account.
 
-### 11.10 Transient errors
+### 11.9 Transient errors
 
 - Disable network during refresh.
 - Verify stale snapshot remains visible with the "No internet connection" message.
 - Reconnect and click **Refresh now**; fresh data should restore.
 
-### 11.11 Account removal
+### 11.10 Account removal
 
 - Remove a Copilot account from Settings.
 - Verify only the matching `copilot-<github-user-id>/` directory is deleted.
 - Verify no host GitHub config is touched.
 
-### 11.12 Native + Flatpak parity
+### 11.11 Native + Flatpak parity
 
 - Repeat add, refresh, re-auth, and remove in Native and Flatpak builds.
 - Under Flatpak, verify device flow opens the browser via the OpenURI portal.
@@ -549,8 +544,8 @@ In Settings → General, cycle through all four panel icon styles and verify the
 
 - Add a second Minimax account. Duplicate labels are allowed and create distinct
   account ids.
-- Verify single-account and **Show all accounts** selection follows the shared
-  four-account cap.
+- Save a new Minimax account and verify it becomes the only selected account;
+  the previous account remains available through the account pager.
 - Start YapCap with a non-empty `MINIMAX_API_KEY` and an account whose
   `api_key_source` is `env:MINIMAX_API_KEY`; verify that row receives the Active
   badge. Without both conditions, no Minimax row is marked Active from the
@@ -598,11 +593,10 @@ In Settings → General, cycle through all four panel icon styles and verify the
 
 - Add a second Kimi account with a different label. Verify both accounts appear
   in Settings and the popup.
-- With **Show all accounts** off, saving a Kimi account selects only that
-  account. With it on, verify a new account is added while fewer than four are
-  selected.
-- Select four accounts, add another, and verify the fifth account is stored
-  but remains unselected until an existing selection is changed.
+- Save the new Kimi account and verify it becomes the only selected account;
+  the existing account remains stored and available through the account pager.
+- Use the pager to switch accounts and verify only the displayed account is
+  selected at a time.
 
 ### 13.4 Reauthentication
 
@@ -624,15 +618,18 @@ In Settings → General, cycle through all four panel icon styles and verify the
 
 ---
 
-## 14. Multi-account
+## 14. Account Paging
 
 - Add a second account for any provider.
-- `Show all accounts` toggle appears only when the provider has more than one account.
-- `Show all accounts` off — single active account column in popup.
-- `Show all accounts` on — one column per selected account side by side. Popup width expands by 420 px per additional column.
-- Panel bars expand horizontally: one two-bar group per selected account.
-- Unloaded accounts show 0% fill in panel until their snapshot arrives.
-- Switching the active account in single-account mode triggers a refresh for only that provider, not a global refresh.
+- Verify the popup renders one account card at a time and shows the pager when
+  multiple accounts are stored.
+- Use the previous and next pager controls to switch accounts without changing
+  the popup's width.
+- Verify the panel renders only the active account's bars or percentage and its
+  width does not change when another account is stored.
+- An account without a loaded snapshot shows 0% fill until its snapshot arrives.
+- Switching the active account triggers a refresh for only that provider, not a
+  global refresh.
 
 ---
 

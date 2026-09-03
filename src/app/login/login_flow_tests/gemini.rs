@@ -10,7 +10,6 @@ fn gemini_on_event_finished_ok_applies_account_and_succeeds() {
         flow_id: "flow".to_string(),
         status: GeminiLoginStatus::Running,
         login_url: None,
-        output: Vec::new(),
         error: None,
     });
 

@@ -638,7 +638,6 @@ pub(super) fn kimi_login_controls(
 fn kimi_login_status(login: &KimiLoginState) -> String {
     match login.status {
         KimiLoginStatus::Editing => fl!("kimi-login-editing"),
-        KimiLoginStatus::Saved => fl!("kimi-login-saved"),
         KimiLoginStatus::Failed => login
             .error
             .clone()
@@ -730,7 +729,6 @@ pub(super) fn opencode_go_login_controls(
 fn opencode_go_login_status(login: &OpenCodeGoLoginState) -> String {
     match login.status {
         OpenCodeGoLoginStatus::Editing => fl!("opencode-go-login-editing"),
-        OpenCodeGoLoginStatus::Saved => fl!("opencode-go-login-saved"),
         OpenCodeGoLoginStatus::Failed => login
             .error
             .clone()

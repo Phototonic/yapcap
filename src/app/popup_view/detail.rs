@@ -39,9 +39,7 @@ pub(super) fn selected_provider_view<'a>(
         column![
             summary,
             section_title(fl!("usage-label")),
-            usage_card(account_column_body_items(
-                None, provider, state, config, detection
-            )),
+            usage_card(account_body_items(None, provider, state, config, detection)),
         ]
         .spacing(PROVIDER_CARD_SPACING)
         .width(Length::Fill)
@@ -53,7 +51,7 @@ pub(super) fn selected_provider_view<'a>(
         let pager = (total > 1).then_some((active, total));
         column![
             summary,
-            account_column_view(account, provider, state, config, detection, pager,),
+            account_view(account, provider, state, config, detection, pager,),
         ]
         .spacing(PROVIDER_CARD_SPACING)
         .width(Length::Fill)
@@ -167,18 +165,7 @@ fn account_page_dot(active: bool) -> Element<'static, Message> {
     .into()
 }
 
-#[cfg(test)]
-pub(super) fn active_snapshot<'a>(
-    state: &'a AppState,
-    provider: &'a ProviderRuntimeState,
-) -> Option<&'a UsageSnapshot> {
-    state
-        .active_account(provider.provider)
-        .and_then(|account| account.snapshot.as_ref())
-        .or(provider.legacy_display_snapshot.as_ref())
-}
-
-fn account_column_body_items<'a>(
+fn account_body_items<'a>(
     account: Option<&'a ProviderAccountRuntimeState>,
     provider: &'a ProviderRuntimeState,
     state: &'a AppState,
@@ -215,7 +202,7 @@ fn account_column_body_items<'a>(
     items
 }
 
-fn account_column_header_content<'a>(
+fn account_header_content<'a>(
     account: &'a ProviderAccountRuntimeState,
     provider: &'a ProviderRuntimeState,
 ) -> Element<'a, Message> {
@@ -265,7 +252,7 @@ fn account_column_header_content<'a>(
     .into()
 }
 
-fn account_column_view<'a>(
+fn account_view<'a>(
     account: &'a ProviderAccountRuntimeState,
     provider: &'a ProviderRuntimeState,
     state: &'a AppState,
@@ -273,8 +260,8 @@ fn account_column_view<'a>(
     detection: &'a crate::detection::DetectionSnapshot,
     pager: Option<(usize, usize)>,
 ) -> Element<'a, Message> {
-    let header = account_column_header_content(account, provider);
-    let body = account_column_body_items(Some(account), provider, state, config, detection);
+    let header = account_header_content(account, provider);
+    let body = account_body_items(Some(account), provider, state, config, detection);
     let mut account_content = column![header].spacing(8).width(Length::Fill);
     if let Some((active, total)) = pager {
         account_content = account_content

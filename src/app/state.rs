@@ -54,38 +54,6 @@ impl AppState {
     }
 
     #[must_use]
-    pub fn selected_accounts(&self, provider: ProviderId) -> Vec<&ProviderAccountRuntimeState> {
-        let selected_ids = self
-            .provider(provider)
-            .map(|p| p.selected_account_ids.as_slice())
-            .unwrap_or_default();
-        selected_ids
-            .iter()
-            .filter_map(|id| {
-                self.provider_accounts
-                    .iter()
-                    .find(|a| a.provider == provider && &a.account_id == id)
-            })
-            .collect()
-    }
-
-    #[must_use]
-    pub fn display_selected_accounts(
-        &self,
-        provider: ProviderId,
-    ) -> Vec<&ProviderAccountRuntimeState> {
-        self.selected_accounts(provider)
-            .into_iter()
-            .take(1)
-            .collect()
-    }
-
-    #[must_use]
-    pub fn display_selected_account_count(&self, provider: ProviderId) -> usize {
-        self.display_selected_accounts(provider).len().max(1)
-    }
-
-    #[must_use]
     pub fn accounts_for(&self, provider: ProviderId) -> Vec<&ProviderAccountRuntimeState> {
         self.provider_accounts
             .iter()

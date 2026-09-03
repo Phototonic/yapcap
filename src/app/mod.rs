@@ -81,8 +81,6 @@ use std::time::Duration;
 const AUTOMATIC_REFRESH_POLL_INTERVAL_SECS: u64 = 10;
 const APPLET_BAR_WIDTH_HEIGHT_MULTIPLIER: u16 = 2;
 const APPLET_ICON_GAP: f32 = 6.0;
-const APPLET_ACCOUNT_GAP: f32 = 4.0;
-const APPLET_PERCENT_ACCOUNT_GAP: f32 = 4.0;
 const APPLET_PERCENT_GLYPH_WIDTH: f32 = 7.25;
 const APPLET_PERCENT_CELL_HORIZONTAL_PAD: f32 = 8.0;
 const UPDATE_RETRY_INITIAL_SECS: u64 = 15;
@@ -96,8 +94,8 @@ fn automatic_refresh_poll_interval() -> Duration {
 fn popup_size_limits() -> Limits {
     Limits::NONE
         .min_height(1.0)
-        .min_width(360.0)
-        .max_width(360.0)
+        .min_width(396.0)
+        .max_width(396.0)
         .max_height(POPUP_MAX_HEIGHT)
 }
 
@@ -112,7 +110,6 @@ pub struct AppModel {
     detail_account_page: usize,
     provider_viewport_offset: usize,
     popup_route: PopupRoute,
-    provider_picker_open: bool,
     update_status: UpdateStatus,
     launch_mode: LaunchMode,
     shared_control: SharedControlState,
@@ -181,7 +178,6 @@ pub enum Message {
     RefreshOwnershipAcquired(Result<RefreshOwner, String>),
     Tick,
     RefreshNow,
-    OpenProviderPickerProvider(ProviderId),
     ProviderRefreshed(Box<ProviderRefreshResult>),
     SelectProvider(ProviderId),
     NavigateTo(PopupRoute),
@@ -280,12 +276,8 @@ impl cosmic::Application for AppModel {
         crate::debug_env::apply(&mut state);
         demo_env::apply(&initial_config, &mut state);
         let selected_provider = select_provider(initial_config.selected_provider, &state);
-        let (applet_width, applet_height) = panel_button_size(
-            &core,
-            &state,
-            initial_config.panel_icon_style,
-            selected_provider,
-        );
+        let (applet_width, applet_height) =
+            panel_button_size(&core, &state, initial_config.panel_icon_style);
         core.applet.suggested_bounds = Some(Size::new(applet_width, applet_height));
         let mut app = AppModel {
             core,
@@ -297,7 +289,6 @@ impl cosmic::Application for AppModel {
             detail_account_page: 0,
             provider_viewport_offset: 0,
             popup_route: PopupRoute::ProviderDetail,
-            provider_picker_open: false,
             update_status: UpdateStatus::Unchecked,
             launch_mode,
             shared_control,
@@ -369,24 +360,15 @@ impl cosmic::Application for AppModel {
         let indicator = if panel_fallback_active(&self.state) {
             applet_fallback_indicator(&self.core)
         } else {
-            let n_accounts = self
-                .state
-                .display_selected_account_count(self.selected_provider);
             applet_indicator(
                 &self.state,
                 self.selected_provider,
                 self.config.panel_icon_style,
                 self.config.usage_amount_format,
                 &self.core,
-                n_accounts,
             )
         };
-        let size = panel_button_size(
-            &self.core,
-            &self.state,
-            self.config.panel_icon_style,
-            self.selected_provider,
-        );
+        let size = panel_button_size(&self.core, &self.state, self.config.panel_icon_style);
         let button: Element<'_, Message> = applet_button(&self.core, size, indicator)
             .on_press(Message::TogglePopup)
             .into();
@@ -403,7 +385,6 @@ impl cosmic::Application for AppModel {
             &self.config,
             &self.detection,
             ProviderLoginStates {
-                provider_picker_open: self.provider_picker_open,
                 codex: self.codex_login.as_ref(),
                 claude: self.claude_login.as_ref(),
                 cursor_scan: &self.cursor_scan,
@@ -503,10 +484,6 @@ impl AppModel {
             Message::RefreshNow => {
                 return Some(self.handle_refresh_now());
             }
-            Message::OpenProviderPickerProvider(provider) => {
-                self.provider_picker_open = false;
-                self.navigate_to(PopupRoute::ManageAccounts(provider));
-            }
             Message::ProviderRefreshed(refresh_result) => {
                 return Some(self.handle_provider_refreshed(*refresh_result));
             }
@@ -523,7 +500,6 @@ impl AppModel {
                 self.page_provider_viewport(direction);
             }
             Message::NavigateTo(route) => {
-                self.provider_picker_open = false;
                 self.navigate_to(route);
             }
             Message::UpdateChecked { status, attempt } => {

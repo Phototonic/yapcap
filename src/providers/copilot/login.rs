@@ -18,7 +18,6 @@ pub struct CopilotLoginState {
     pub status: CopilotLoginStatus,
     pub user_code: Option<String>,
     pub verification_uri: Option<String>,
-    pub output: Vec<String>,
     pub error: Option<String>,
     pub code_copied: bool,
     pub importing_from_opencode: bool,
@@ -36,10 +35,6 @@ pub enum CopilotLoginEvent {
         flow_id: String,
         user_code: String,
         verification_uri: String,
-    },
-    Output {
-        flow_id: String,
-        line: String,
     },
     Finished {
         flow_id: String,
@@ -90,7 +85,6 @@ fn prepare_with_options(
         status: CopilotLoginStatus::Running,
         user_code: None,
         verification_uri: None,
-        output: Vec::new(),
         error: None,
         code_copied: false,
         importing_from_opencode: false,
@@ -144,8 +138,7 @@ async fn run_login_inner(
         })
         .await;
     open_browser(&device_code.verification_uri);
-    let access_token =
-        poll_for_token(&client, endpoints.token, &device_code, output, flow_id).await?;
+    let access_token = poll_for_token(&client, endpoints.token, &device_code).await?;
     let identity = fetch_identity(&client, endpoints.identity, &access_token).await?;
     commit_validated_login(
         config,
@@ -203,8 +196,6 @@ async fn poll_for_token(
     client: &reqwest::Client,
     endpoint: &str,
     device_code: &DeviceCode,
-    output: &mut cosmic::iced::futures::channel::mpsc::Sender<CopilotLoginEvent>,
-    flow_id: &str,
 ) -> Result<String, String> {
     let mut interval = device_code.interval.max(1);
     loop {
@@ -214,12 +205,6 @@ async fn poll_for_token(
             PollOutcome::Pending => continue,
             PollOutcome::SlowDown => {
                 interval += 5;
-                let _ = output
-                    .send(CopilotLoginEvent::Output {
-                        flow_id: flow_id.to_string(),
-                        line: "GitHub asked us to slow down polling.".to_string(),
-                    })
-                    .await;
             }
             PollOutcome::Expired => {
                 return Err(

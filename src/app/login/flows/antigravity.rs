@@ -40,7 +40,6 @@ impl LoginFlow for AntigravityLoginFlow {
             flow_id: "failed".to_string(),
             status: AntigravityLoginStatus::Failed,
             login_url: None,
-            output: Vec::new(),
             error: Some(error),
         }
     }
@@ -61,24 +60,14 @@ impl LoginFlow for AntigravityLoginFlow {
     }
     fn on_event(app: &mut AppModel, event: Self::Event) -> Task<Message> {
         match event {
-            AntigravityLoginEvent::Output {
-                flow_id,
-                line,
-                login_url,
-            } => {
+            AntigravityLoginEvent::LoginUrl { flow_id, url } => {
                 let Some(login) = app.antigravity_login.as_mut() else {
                     return Task::none();
                 };
                 if login.flow_id != flow_id {
                     return Task::none();
                 }
-                if let Some(url) = login_url {
-                    login.login_url = Some(url);
-                }
-                login.output.push(line);
-                if login.output.len() > 8 {
-                    login.output.remove(0);
-                }
+                login.login_url = Some(url);
                 Task::none()
             }
             AntigravityLoginEvent::Finished { flow_id, result } => {
