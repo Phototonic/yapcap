@@ -89,20 +89,49 @@ run-empty-discovery *args:
     mkdir -p /tmp/yapcap-empty-home /tmp/yapcap-empty-config /tmp/yapcap-empty-state
     env RUST_BACKTRACE=full HOME=/tmp/yapcap-empty-home XDG_CONFIG_HOME=/tmp/yapcap-empty-config XDG_STATE_HOME=/tmp/yapcap-empty-state CARGO_HOME="${CARGO_HOME:-{{home_directory() / '.cargo'}}}" RUSTUP_HOME="${RUSTUP_HOME:-{{home_directory() / '.rustup'}}}" cargo run --release {{args}}
 
+# Adds YapCap to the COSMIC top panel
+add-to-panel:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    panel_config="${XDG_CONFIG_HOME:-$HOME/.config}/cosmic/com.system76.CosmicPanel.Panel/v1/plugins_wings"
+    system_panel_config="/usr/share/cosmic/com.system76.CosmicPanel.Panel/v1/plugins_wings"
+    if [[ ! -e "$panel_config" && -e "$system_panel_config" ]]; then
+        install -Dm0644 "$system_panel_config" "$panel_config"
+    fi
+    if [[ -f "$panel_config" ]]; then
+        if [[ "$(tr -d '[:space:]' < "$panel_config")" == "None" ]]; then
+            printf 'Some(([], ["io.github.TopiCsarno.YapCap"]))\n' > "$panel_config"
+        else
+            sed -i -z \
+                -e 's/"io\.github\.TopiCsarno\.YapCap"[[:space:]]*,\?//g' \
+                -e 's/\(Some(([^]]*],[[:space:]]*\[[[:space:]]*\)/\1"io.github.TopiCsarno.YapCap", /' \
+                "$panel_config"
+        fi
+    fi
+
+# Removes YapCap from the COSMIC top panel
+remove-from-panel:
+    #!/usr/bin/env bash
+    set -euo pipefail
+    panel_config="${XDG_CONFIG_HOME:-$HOME/.config}/cosmic/com.system76.CosmicPanel.Panel/v1/plugins_wings"
+    if [[ -f "$panel_config" ]]; then
+        sed -i -z -e 's/"io\.github\.TopiCsarno\.YapCap"[[:space:]]*,\?//g' "$panel_config"
+    fi
+
 # Installs files
-install: build-release
+install: build-release add-to-panel
     install -Dm0755 {{ cargo-target-dir / 'release' / name }} {{bin-dst}}
     install -Dm0644 resources/app.desktop {{desktop-dst}}
     install -Dm0644 resources/app.metainfo.xml {{appdata-dst}}
     install -Dm0644 resources/icon.svg {{icon-dst}}
 
 # Installs debug build as `yapcap-debug` and a separate desktop entry (YAPCAP_DEMO) for screenshots
-install-demo: build-debug
+install-demo: build-debug add-to-panel
     install -Dm0755 {{ cargo-target-dir / 'debug' / name }} {{bin-debug-dst}}
     install -Dm0644 resources/app-debug.desktop {{desktop-debug-dst}}
 
 # Removes only the debug install (`install-demo`)
-uninstall-demo:
+uninstall-demo: remove-from-panel
     rm -f {{bin-debug-dst}} {{desktop-debug-dst}}
 
 # Uninstalls installed files (and debug demo install if present)
@@ -173,7 +202,7 @@ flatpak-build-clean:
         "$manifest"
 
 # Builds the Flatpak, exports to ./repo, and installs for the current user
-flatpak-install: flatpak-build
+flatpak-install: flatpak-build add-to-panel
     #!/usr/bin/env bash
     set -euo pipefail
     branch="$(git symbolic-ref --quiet --short HEAD)"
@@ -185,9 +214,8 @@ flatpak-install: flatpak-build
         flatpak --user uninstall --noninteractive "{{ appid }}//$installed_branch" || echo "warning: could not uninstall old Flatpak branch $installed_branch" >&2
       fi
     done
-
 # Export + install only (no flatpak-builder); use after a successful build when nothing needs recompiling
-flatpak-install-only:
+flatpak-install-only: add-to-panel
     #!/usr/bin/env bash
     set -euo pipefail
     branch="$(git symbolic-ref --quiet --short HEAD)"
@@ -213,7 +241,7 @@ flatpak-run:
 
 # Uninstalls the user Flatpak app (undoes `just flatpak-install` / `flatpak-install-only`).
 # Removes Flatpak exports (including the `.desktop` entry under the user Flatpak export path). Does not remove `build-dir` / `repo`; use `flatpak-clean` for local build artifacts and app data.
-flatpak-uninstall:
+flatpak-uninstall: remove-from-panel
     #!/usr/bin/env bash
     set -euo pipefail
     if flatpak --user info '{{ appid }}' &>/dev/null; then

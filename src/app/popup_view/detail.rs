@@ -3,8 +3,9 @@ use super::{
     Message, PROVIDER_CARD_SPACING, PROVIDER_GROUP_PADDING, PROVIDER_GROUP_SPACING, PopupRoute,
     account_action_button, account_label_text, apply_alpha, badge_destructive, badge_neutral,
     badge_success, badge_warning, badge_with_tooltip, card, clamp_account_page,
-    detected_without_accounts, info_block, pager_account_label, plan_badge, provider_icon_handle,
-    provider_icon_variant, provider_summary,
+    component_card_background, component_container_style, component_divider_color,
+    component_hover_color, component_on_color, detected_without_accounts, info_block,
+    pager_account_label, plan_badge, provider_icon_handle, provider_icon_variant, provider_summary,
 };
 use crate::app::PagerDirection;
 use crate::config::{Config, UsageAmountFormat};
@@ -114,16 +115,15 @@ fn account_pager_button_class() -> cosmic::theme::Button {
 
 fn account_pager_button_style(theme: &cosmic::Theme, hovered: bool) -> widget::button::Style {
     let cosmic = theme.cosmic();
-    let surface = &cosmic.background(theme.transparent).component;
     let mut style = widget::button::Style::new();
     style.background = Some(Background::Color(if hovered {
-        surface.hover.into()
+        component_hover_color(theme)
     } else {
-        surface.divider.into()
+        component_divider_color(theme)
     }));
     style.border_radius = cosmic.corner_radii.radius_s.into();
-    style.icon_color = Some(surface.on.into());
-    style.text_color = Some(surface.on.into());
+    style.icon_color = Some(component_on_color(theme));
+    style.text_color = Some(component_on_color(theme));
     style
 }
 
@@ -138,11 +138,7 @@ fn account_page_dot(active: bool) -> Element<'static, Message> {
         let color = if active {
             cosmic.accent.base.into()
         } else {
-            cosmic
-                .background(theme.transparent)
-                .component
-                .divider
-                .into()
+            component_divider_color(theme)
         };
         let shadow = cosmic::iced::Shadow {
             color: apply_alpha(color, if active { 0.72 } else { 0.38 }),
@@ -292,22 +288,13 @@ fn section_title(label: String) -> Element<'static, Message> {
 fn account_card_divider() -> Element<'static, Message> {
     container(cosmic::iced::widget::Space::new().height(Length::Fixed(1.0)))
         .width(Length::Fill)
-        .style(|theme: &cosmic::Theme| {
-            let cosmic = theme.cosmic();
-            widget::container::Style {
-                text_color: None,
-                background: Some(Background::Color(
-                    cosmic
-                        .background(theme.transparent)
-                        .component
-                        .divider
-                        .into(),
-                )),
-                border: cosmic::iced::Border::default(),
-                shadow: cosmic::iced::Shadow::default(),
-                icon_color: None,
-                snap: true,
-            }
+        .style(|theme: &cosmic::Theme| widget::container::Style {
+            text_color: None,
+            background: Some(Background::Color(component_divider_color(theme))),
+            border: cosmic::iced::Border::default(),
+            shadow: cosmic::iced::Shadow::default(),
+            icon_color: None,
+            snap: true,
         })
         .into()
 }
@@ -326,20 +313,15 @@ fn usage_card<'a>(items: Vec<Element<'a, Message>>) -> Element<'a, Message> {
 
 fn component_card_style(theme: &cosmic::Theme) -> widget::container::Style {
     let cosmic = theme.cosmic();
-    widget::container::Style {
-        text_color: None,
-        background: Some(Background::Color(
-            cosmic.background(theme.transparent).component.base.into(),
-        )),
-        border: cosmic::iced::Border {
-            radius: cosmic.corner_radii.radius_m.into(),
-            width: 0.0,
-            color: Color::TRANSPARENT,
-        },
-        shadow: cosmic::iced::Shadow::default(),
-        icon_color: None,
-        snap: false,
-    }
+    let mut style = component_container_style(theme);
+    style.background = Some(component_card_background(theme));
+    style.border.radius = cosmic.corner_radii.radius_m.into();
+    style.border.width = 0.0;
+    style.border.color = Color::TRANSPARENT;
+    style.text_color = None;
+    style.icon_color = None;
+    style.snap = false;
+    style
 }
 
 pub(super) fn empty_state_view<'a>() -> Element<'a, Message> {

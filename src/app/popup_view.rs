@@ -43,6 +43,7 @@ const HEADER_ICON_BUTTON_SIZE: f32 = 28.0;
 const UPDATE_NOTIFICATION_DOT_COLOR: Color = Color::from_rgb(1.0, 0.31, 0.37);
 const UPDATE_NOTIFICATION_DOT_SIZE: f32 = 12.0;
 const ACCENT_SOFT_FILL_ALPHA: f32 = 0.14;
+const COMPONENT_SURFACE_ALPHA: f32 = 0.40;
 
 #[derive(Clone, Copy)]
 pub struct ProviderLoginStates<'a> {
@@ -337,11 +338,10 @@ fn header_icon_button_style(
 ) -> widget::button::Style {
     let cosmic = theme.cosmic();
     let mut style = widget::button::Style::new();
-    let surface = &cosmic.background(theme.transparent).component;
     let icon_color = if inverted || hovered {
-        surface.on.into()
+        component_on_color(theme)
     } else {
-        apply_alpha(surface.on.into(), 0.45)
+        apply_alpha(component_on_color(theme), 0.45)
     };
     style.border_radius = cosmic.corner_radii.radius_s.into();
     style.icon_color = Some(icon_color);
@@ -369,6 +369,80 @@ fn back_button_style(theme: &cosmic::Theme) -> widget::button::Style {
 
 fn card<'a>(content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
     Element::from(container(content).width(Length::Fill).padding(8))
+}
+
+pub(super) fn component_container_style(theme: &cosmic::Theme) -> widget::container::Style {
+    let cosmic = theme.cosmic();
+    let surface = &cosmic.background(theme.transparent).component;
+    widget::container::Style {
+        text_color: Some(surface.on.into()),
+        background: component_container_background(theme),
+        border: cosmic::iced::Border {
+            radius: cosmic.corner_radii.radius_s.into(),
+            width: 1.0,
+            color: surface.divider.into(),
+        },
+        shadow: cosmic::iced::Shadow::default(),
+        icon_color: Some(surface.on.into()),
+        snap: true,
+    }
+}
+
+pub(super) fn component_container_background(theme: &cosmic::Theme) -> Option<Background> {
+    Some(Background::Color(component_surface_color(theme)))
+}
+
+pub(super) fn component_card_background(theme: &cosmic::Theme) -> Background {
+    Background::Color(component_surface_color(theme))
+}
+
+pub(super) fn component_surface_color(theme: &cosmic::Theme) -> Color {
+    let mut color: Color = theme
+        .cosmic()
+        .background(theme.transparent)
+        .component
+        .base
+        .into();
+    if theme.transparent {
+        color.a = COMPONENT_SURFACE_ALPHA;
+    }
+    color
+}
+
+pub(super) fn component_divider_color(theme: &cosmic::Theme) -> Color {
+    theme
+        .cosmic()
+        .background(theme.transparent)
+        .component
+        .divider
+        .into()
+}
+
+pub(super) fn component_hover_color(theme: &cosmic::Theme) -> Color {
+    theme
+        .cosmic()
+        .background(theme.transparent)
+        .component
+        .hover
+        .into()
+}
+
+pub(super) fn component_selected_color(theme: &cosmic::Theme) -> Color {
+    theme
+        .cosmic()
+        .background(theme.transparent)
+        .component
+        .selected
+        .into()
+}
+
+pub(super) fn component_on_color(theme: &cosmic::Theme) -> Color {
+    theme
+        .cosmic()
+        .background(theme.transparent)
+        .component
+        .on
+        .into()
 }
 
 pub(super) fn account_action_button(
@@ -457,17 +531,16 @@ fn account_action_icon(
         .align_y(cosmic::iced::alignment::Vertical::Center)
         .style(move |theme| {
             let cosmic = theme.cosmic();
-            let surface = &cosmic.background(theme.transparent).component;
             let opacity = if enabled { 1.0 } else { 0.45 };
             let color = if accent {
                 apply_alpha(cosmic.accent.base.into(), opacity)
             } else {
-                apply_alpha(surface.on.into(), opacity)
+                apply_alpha(component_on_color(theme), opacity)
             };
             let background = if accent {
                 apply_alpha(cosmic.accent.base.into(), 0.18 * opacity)
             } else {
-                apply_alpha(surface.on.into(), 0.12 * opacity)
+                apply_alpha(component_on_color(theme), 0.12 * opacity)
             };
             widget::container::Style {
                 text_color: Some(color),
@@ -500,19 +573,18 @@ fn account_action_card_style(
     hovered: bool,
 ) -> widget::button::Style {
     let cosmic = theme.cosmic();
-    let surface = &cosmic.background(theme.transparent).component;
     let opacity = if enabled { 1.0 } else { 0.45 };
     let mut style = widget::button::Style::new();
-    style.background = Some(Background::Color(if hovered {
-        surface.hover.into()
+    style.background = if hovered {
+        Some(Background::Color(component_hover_color(theme)))
     } else {
-        surface.base.into()
-    }));
+        component_container_background(theme)
+    };
     style.border_radius = cosmic.corner_radii.radius_s.into();
     style.border_width = 1.0;
-    style.border_color = apply_alpha(surface.divider.into(), opacity);
-    style.text_color = Some(apply_alpha(surface.on.into(), opacity));
-    style.icon_color = Some(apply_alpha(surface.on.into(), opacity));
+    style.border_color = apply_alpha(component_divider_color(theme), opacity);
+    style.text_color = Some(apply_alpha(component_on_color(theme), opacity));
+    style.icon_color = Some(apply_alpha(component_on_color(theme), opacity));
     style
 }
 
@@ -527,12 +599,11 @@ fn account_action_button_class() -> cosmic::theme::Button {
 
 fn account_action_button_style(theme: &cosmic::Theme, hovered: bool) -> widget::button::Style {
     let cosmic = theme.cosmic();
-    let surface = &cosmic.background(theme.transparent).component;
     let mut style = widget::button::Style::new();
-    style.background = hovered.then(|| Background::Color(surface.hover.into()));
+    style.background = hovered.then(|| Background::Color(component_hover_color(theme)));
     style.border_radius = cosmic.corner_radii.radius_s.into();
-    style.text_color = Some(surface.on.into());
-    style.icon_color = Some(surface.on.into());
+    style.text_color = Some(component_on_color(theme));
+    style.icon_color = Some(component_on_color(theme));
     style
 }
 
@@ -542,11 +613,7 @@ fn accent_selection_fill(theme: &cosmic::Theme) -> Color {
 }
 
 fn provider_tab_selection_fill(theme: &cosmic::Theme) -> Color {
-    let cosmic = theme.cosmic();
-    apply_alpha(
-        cosmic.background(theme.transparent).component.on.into(),
-        0.12,
-    )
+    apply_alpha(component_on_color(theme), 0.12)
 }
 
 fn settings_block<'a>(
@@ -569,28 +636,15 @@ fn settings_block_enabled<'a>(
     }
 
     Element::from(outer.style(|theme| {
-        let cosmic = theme.cosmic();
-        widget::container::Style {
-            text_color: Some(apply_alpha(
-                cosmic.background(theme.transparent).on.into(),
-                0.45,
-            )),
-            background: Some(Background::Color(apply_alpha(
-                cosmic.background(theme.transparent).component.base.into(),
-                0.45,
-            ))),
-            border: cosmic::iced::Border {
-                radius: cosmic.corner_radii.radius_s.into(),
-                width: 1.0,
-                color: apply_alpha(cosmic.background(theme.transparent).divider.into(), 0.45),
-            },
-            shadow: cosmic::iced::Shadow::default(),
-            icon_color: Some(apply_alpha(
-                cosmic.background(theme.transparent).on.into(),
-                0.45,
-            )),
-            snap: true,
-        }
+        let mut style = component_container_style(theme);
+        style.text_color = Some(apply_alpha(component_on_color(theme), 0.45));
+        style.background = Some(Background::Color(apply_alpha(
+            component_surface_color(theme),
+            0.45,
+        )));
+        style.border.color = apply_alpha(component_divider_color(theme), 0.45);
+        style.icon_color = Some(apply_alpha(component_on_color(theme), 0.45));
+        style
     }))
 }
 
@@ -810,13 +864,9 @@ fn provider_viewport_baseline(selected: bool) -> Element<'static, Message> {
     .style(move |theme: &cosmic::Theme| {
         let cosmic = theme.cosmic();
         let color = if selected {
-            cosmic.background(theme.transparent).component.on.into()
+            component_on_color(theme)
         } else {
-            cosmic
-                .background(theme.transparent)
-                .component
-                .divider
-                .into()
+            component_divider_color(theme)
         };
         widget::container::Style {
             text_color: None,
@@ -858,18 +908,17 @@ fn tab_button_style(
 ) -> widget::button::Style {
     let cosmic = theme.cosmic();
     let mut style = widget::button::Style::new();
-    let surface = &cosmic.background(theme.transparent).component;
 
     let background = if selected {
         if interaction.pressed {
-            Some(surface.divider.into())
+            Some(component_divider_color(theme))
         } else {
             Some(provider_tab_selection_fill(theme))
         }
     } else if interaction.pressed {
-        Some(surface.divider.into())
+        Some(component_divider_color(theme))
     } else if interaction.hovered {
-        Some(cosmic.background(theme.transparent).component.hover.into())
+        Some(component_hover_color(theme))
     } else {
         None
     };
@@ -890,8 +939,8 @@ fn tab_button_style(
         0.0
     };
     style.outline_color = cosmic.accent.base.into();
-    style.text_color = Some(apply_alpha(surface.on.into(), opacity));
-    style.icon_color = Some(apply_alpha(surface.on.into(), opacity));
+    style.text_color = Some(apply_alpha(component_on_color(theme), opacity));
+    style.icon_color = Some(apply_alpha(component_on_color(theme), opacity));
 
     style
 }
@@ -1006,5 +1055,37 @@ mod tests {
             &detection,
             ProviderId::Codex
         ));
+    }
+
+    #[test]
+    fn component_containers_follow_popup_transparency() {
+        let opaque = cosmic::Theme::dark();
+        let mut transparent = opaque.clone();
+        transparent.transparent = true;
+
+        assert!(component_container_style(&opaque).background.is_some());
+        let Some(Background::Color(background)) =
+            component_container_style(&transparent).background
+        else {
+            panic!("component container background must be a solid color")
+        };
+        assert_eq!(background.a, COMPONENT_SURFACE_ALPHA);
+    }
+
+    #[test]
+    fn component_cards_use_a_transparent_surface_layer() {
+        let mut theme = cosmic::Theme::dark();
+        theme.transparent = true;
+
+        let Background::Color(card) = component_card_background(&theme) else {
+            panic!("component card background must be a solid color")
+        };
+        let popup = theme.cosmic().background(true).base;
+
+        let composite_alpha = popup.alpha + card.a * (1.0 - popup.alpha);
+
+        assert_eq!(card.a, COMPONENT_SURFACE_ALPHA);
+        assert!(composite_alpha > popup.alpha);
+        assert!(composite_alpha < 1.0);
     }
 }

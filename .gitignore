@@ -17,6 +17,7 @@ graphify-out/
 vendor/
 vendor.tar
 make_screenshot.py
+scripts/run_issues.py
 scripts/update-store-preview.sh
 fixtures/**/__pycache__/
 debian/*

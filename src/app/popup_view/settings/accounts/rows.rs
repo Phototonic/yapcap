@@ -2,7 +2,9 @@ use super::super::super::{
     Alignment, Background, Element, Length, Message, ProviderId, accent_selection_fill,
     account_label_text, apply_alpha, badge_destructive, badge_destructive_soft, badge_neutral,
     badge_neutral_soft, badge_success, badge_success_soft, badge_warning, badge_warning_soft,
-    badge_with_tooltip, container, disabled_account_label_text, fl, row, widget,
+    badge_with_tooltip, component_container_background, component_container_style,
+    component_divider_color, component_on_color, container, disabled_account_label_text, fl, row,
+    widget,
 };
 use crate::providers::interface::{
     ProviderAccountAction, ProviderAccountFacts, ProviderAccountStatus, ProviderAccountStatusKind,
@@ -80,11 +82,21 @@ pub(super) fn account_settings_row(
             fl!("badge-active-tooltip"),
         ));
     }
-    if let Some(status) = &account.status {
-        title_row = title_row.push(status_badge(status, enabled));
-    }
-
-    let selector_content = container(title_row).padding([8, 12]).width(Length::Fill);
+    let selector_content = match &account.status {
+        Some(status) if status.reauth_eligible => {
+            cosmic::iced::widget::column![title_row, status_badge(status, enabled),]
+                .spacing(4)
+                .width(Length::Fill)
+        }
+        Some(status) => {
+            cosmic::iced::widget::column![title_row.push(status_badge(status, enabled))]
+                .width(Length::Fill)
+        }
+        None => cosmic::iced::widget::column![title_row].width(Length::Fill),
+    };
+    let selector_content = container(selector_content)
+        .padding([8, 12])
+        .width(Length::Fill);
 
     let selector = widget::button::custom(selector_content)
         .class(account_row_button_class(is_selected))
@@ -146,22 +158,7 @@ pub(super) fn account_selector_list<'a>(
 ) -> Element<'a, Message> {
     container(rows)
         .width(Length::Fill)
-        .style(|theme: &cosmic::Theme| {
-            let cosmic = theme.cosmic();
-            let surface = &cosmic.background(theme.transparent).component;
-            widget::container::Style {
-                text_color: Some(surface.on.into()),
-                background: Some(Background::Color(surface.base.into())),
-                border: cosmic::iced::Border {
-                    radius: cosmic.corner_radii.radius_s.into(),
-                    width: 1.0,
-                    color: surface.divider.into(),
-                },
-                shadow: cosmic::iced::Shadow::default(),
-                icon_color: Some(surface.on.into()),
-                snap: true,
-            }
-        })
+        .style(component_container_style)
         .into()
 }
 
@@ -254,40 +251,35 @@ fn account_row_container<'a>(
     .width(Length::Fill)
     .style(move |theme: &cosmic::Theme| {
         let cosmic = theme.cosmic();
-        let surface = &cosmic.background(theme.transparent).component;
         let warning = cosmic.warning.base;
-        widget::container::Style {
-            text_color: Some(surface.on.into()),
-            background: Some(Background::Color(if action_required {
-                apply_alpha(warning.into(), 0.08)
-            } else if selected && enabled {
-                accent_selection_fill(theme)
+        let mut style = component_container_style(theme);
+        style.text_color = Some(component_on_color(theme));
+        style.background = if action_required {
+            Some(Background::Color(apply_alpha(warning.into(), 0.08)))
+        } else if selected && enabled {
+            Some(Background::Color(accent_selection_fill(theme)))
+        } else {
+            component_container_background(theme)
+        };
+        style.border.radius = account_row_radius(cosmic.corner_radii.radius_s, first, last);
+        style.border.width = if selected { 2.0 } else { 1.0 };
+        style.border.color = if selected {
+            if enabled {
+                cosmic.accent.base.into()
             } else {
-                surface.base.into()
-            })),
-            border: cosmic::iced::Border {
-                radius: account_row_radius(cosmic.corner_radii.radius_s, first, last),
-                width: if selected { 2.0 } else { 1.0 },
-                color: if selected {
-                    if enabled {
-                        cosmic.accent.base.into()
-                    } else {
-                        apply_alpha(surface.on.into(), 0.45)
-                    }
-                } else if action_required {
-                    apply_alpha(warning.into(), 0.72)
-                } else {
-                    surface.divider.into()
-                },
-            },
-            shadow: cosmic::iced::Shadow::default(),
-            icon_color: Some(if enabled {
-                surface.on.into()
-            } else {
-                apply_alpha(surface.on.into(), 0.45)
-            }),
-            snap: true,
-        }
+                apply_alpha(component_on_color(theme), 0.45)
+            }
+        } else if action_required {
+            apply_alpha(warning.into(), 0.72)
+        } else {
+            component_divider_color(theme)
+        };
+        style.icon_color = Some(if enabled {
+            component_on_color(theme)
+        } else {
+            apply_alpha(component_on_color(theme), 0.45)
+        });
+        style
     })
     .into()
 }

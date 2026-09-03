@@ -4,8 +4,8 @@ mod general;
 
 use super::{
     Alignment, AppState, Background, Config, DetectionSnapshot, Element, Length, Message,
-    ProviderId, ProviderLoginStates, UpdateStatus, container, fl, provider_icon_handle,
-    provider_icon_variant, widget,
+    ProviderId, ProviderLoginStates, UpdateStatus, component_container_style,
+    component_divider_color, container, fl, provider_icon_handle, provider_icon_variant, widget,
 };
 
 pub(super) fn general_settings_view<'a>(config: &'a Config) -> Element<'a, Message> {
@@ -57,41 +57,19 @@ fn manage_provider_row(provider: ProviderId, enabled: bool) -> Element<'static, 
 fn manage_provider_divider() -> Element<'static, Message> {
     container(cosmic::iced::widget::Space::new().height(Length::Fixed(1.0)))
         .width(Length::Fill)
-        .style(|theme: &cosmic::Theme| {
-            let cosmic = theme.cosmic();
-            widget::container::Style {
-                text_color: None,
-                background: Some(Background::Color(
-                    cosmic
-                        .background(theme.transparent)
-                        .component
-                        .divider
-                        .into(),
-                )),
-                border: cosmic::iced::Border::default(),
-                shadow: cosmic::iced::Shadow::default(),
-                icon_color: None,
-                snap: true,
-            }
+        .style(|theme: &cosmic::Theme| widget::container::Style {
+            text_color: None,
+            background: Some(Background::Color(component_divider_color(theme))),
+            border: cosmic::iced::Border::default(),
+            shadow: cosmic::iced::Shadow::default(),
+            icon_color: None,
+            snap: true,
         })
         .into()
 }
 
 fn manage_provider_list_style(theme: &cosmic::Theme) -> widget::container::Style {
-    let cosmic = theme.cosmic();
-    let surface = &cosmic.background(theme.transparent).component;
-    widget::container::Style {
-        text_color: Some(surface.on.into()),
-        background: Some(Background::Color(surface.base.into())),
-        border: cosmic::iced::Border {
-            radius: cosmic.corner_radii.radius_s.into(),
-            width: 1.0,
-            color: surface.divider.into(),
-        },
-        shadow: cosmic::iced::Shadow::default(),
-        icon_color: Some(surface.on.into()),
-        snap: true,
-    }
+    component_container_style(theme)
 }
 
 pub(super) fn about_view(update_status: &UpdateStatus) -> Element<'static, Message> {

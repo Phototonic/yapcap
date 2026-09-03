@@ -12,8 +12,8 @@ use self::rows::{
     AccountRowPosition, account_action_container, account_selector_list, account_settings_row,
 };
 use super::super::{
-    Alignment, AppState, Background, Config, DetectionSnapshot, Element, Length, Message,
-    ProviderId, ProviderLoginStates, container, detected_without_accounts, fl,
+    Alignment, AppState, Config, DetectionSnapshot, Element, Length, Message, ProviderId,
+    ProviderLoginStates, component_container_style, container, detected_without_accounts, fl,
     provider_icon_handle, provider_icon_variant, row, settings_block_enabled, widget,
 };
 use crate::providers::cursor::CursorScanState;
@@ -29,20 +29,7 @@ fn accounts_section_title(empty: bool) -> Element<'static, Message> {
 }
 
 fn provider_enablement_style(theme: &cosmic::Theme) -> widget::container::Style {
-    let cosmic = theme.cosmic();
-    let surface = &cosmic.background(theme.transparent).component;
-    widget::container::Style {
-        text_color: Some(surface.on.into()),
-        background: Some(Background::Color(surface.base.into())),
-        border: cosmic::iced::Border {
-            radius: cosmic.corner_radii.radius_s.into(),
-            width: 1.0,
-            color: surface.divider.into(),
-        },
-        shadow: cosmic::iced::Shadow::default(),
-        icon_color: Some(surface.on.into()),
-        snap: true,
-    }
+    component_container_style(theme)
 }
 
 pub(super) fn provider_settings_view<'a>(

@@ -1,7 +1,8 @@
 use super::super::super::provider_assets::app_icon_handle;
 use super::super::{
-    Alignment, Background, Color, Element, Length, Message, UpdateStatus, apply_alpha, container,
-    fl, widget,
+    Alignment, Background, Color, Element, Length, Message, UpdateStatus, apply_alpha,
+    component_container_style, component_divider_color, component_hover_color, component_on_color,
+    component_surface_color, container, fl, widget,
 };
 
 const REPOSITORY_URL: &str = "https://github.com/TopiCsarno/yapcap";
@@ -53,20 +54,16 @@ fn version_badge(version: String) -> Element<'static, Message> {
     container(widget::text(version).size(12))
         .padding([3, 8])
         .style(|theme| {
-            let cosmic = theme.cosmic();
-            let surface = &cosmic.background(theme.transparent).component;
-            cosmic::widget::container::Style {
-                text_color: Some(surface.on.into()),
-                background: Some(Background::Color(apply_alpha(surface.base.into(), 0.82))),
-                border: cosmic::iced::Border {
-                    radius: cosmic.corner_radii.radius_s.into(),
-                    width: 0.0,
-                    color: Color::TRANSPARENT,
-                },
-                shadow: cosmic::iced::Shadow::default(),
-                icon_color: None,
-                snap: true,
-            }
+            let mut style = component_container_style(theme);
+            style.background = Some(Background::Color(apply_alpha(
+                component_surface_color(theme),
+                0.82,
+            )));
+            style.border.width = 0.0;
+            style.border.color = Color::TRANSPARENT;
+            style.icon_color = None;
+            style.text_color = Some(component_on_color(theme));
+            style
         })
         .into()
 }
@@ -181,41 +178,24 @@ fn link_button(label: String, url: &str) -> Element<'static, Message> {
 fn link_divider() -> Element<'static, Message> {
     container(cosmic::iced::widget::Space::new().height(Length::Fixed(1.0)))
         .width(Length::Fill)
-        .style(|theme: &cosmic::Theme| {
-            let cosmic = theme.cosmic();
-            cosmic::widget::container::Style {
-                text_color: None,
-                background: Some(Background::Color(
-                    cosmic
-                        .background(theme.transparent)
-                        .component
-                        .divider
-                        .into(),
-                )),
-                border: cosmic::iced::Border::default(),
-                shadow: cosmic::iced::Shadow::default(),
-                icon_color: None,
-                snap: true,
-            }
+        .style(|theme: &cosmic::Theme| cosmic::widget::container::Style {
+            text_color: None,
+            background: Some(Background::Color(component_divider_color(theme))),
+            border: cosmic::iced::Border::default(),
+            shadow: cosmic::iced::Shadow::default(),
+            icon_color: None,
+            snap: true,
         })
         .into()
 }
 
 fn link_group_style(theme: &cosmic::Theme) -> cosmic::widget::container::Style {
-    let cosmic = theme.cosmic();
-    let surface = &cosmic.background(theme.transparent).component;
-    cosmic::widget::container::Style {
-        text_color: Some(surface.on.into()),
-        background: Some(Background::Color(surface.base.into())),
-        border: cosmic::iced::Border {
-            radius: cosmic.corner_radii.radius_s.into(),
-            width: 0.0,
-            color: Color::TRANSPARENT,
-        },
-        shadow: cosmic::iced::Shadow::default(),
-        icon_color: Some(surface.on.into()),
-        snap: true,
-    }
+    let mut style = component_container_style(theme);
+    style.border.width = 0.0;
+    style.border.color = Color::TRANSPARENT;
+    style.text_color = Some(component_on_color(theme));
+    style.icon_color = Some(component_on_color(theme));
+    style
 }
 
 fn link_button_class() -> cosmic::theme::Button {
@@ -229,11 +209,10 @@ fn link_button_class() -> cosmic::theme::Button {
 
 fn link_button_style(theme: &cosmic::Theme, hovered: bool) -> cosmic::widget::button::Style {
     let cosmic = theme.cosmic();
-    let surface = &cosmic.background(theme.transparent).component;
     let mut style = cosmic::widget::button::Style::new();
-    style.background = hovered.then(|| Background::Color(surface.hover.into()));
-    style.text_color = Some(surface.on.into());
-    style.icon_color = Some(surface.on.into());
+    style.background = hovered.then(|| Background::Color(component_hover_color(theme)));
+    style.text_color = Some(component_on_color(theme));
+    style.icon_color = Some(component_on_color(theme));
     style.border_radius = cosmic.corner_radii.radius_s.into();
     style
 }

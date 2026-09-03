@@ -208,7 +208,8 @@ sequenceDiagram
     restoration when its managed credentials are missing; Copilot exposes
     OpenCode restore when available alongside matching-account
     reauthentication; Cursor exposes rescan rather than ordinary
-    reauthentication.
+    reauthentication. Reauthentication status badges are displayed on a
+    separate line below the account name and active badge.
 - Provider detection runs at startup and re-runs after debounced host-auth
   watcher events for its marker paths. A changed detection snapshot reconciles
   effective enablement without polling; stored accounts still keep a provider
@@ -1672,6 +1673,7 @@ owns provider detail cards and `app::popup_view::settings::*` owns the settings 
   - secondary routes: Settings, Manage providers, Manage accounts, and About do not show a navigation row and return to provider detail with Back.
 - Providers render in a single fixed order (`ProviderId::ALL`) everywhere they are listed: Codex, Claude, Cursor, Antigravity, Gemini, Copilot, Minimax, Kimi, OpenCode Go.
   - Provider and settings tabs and selected account rows use a soft accent fill and accent border. Global settings segmented option groups are softly merged neutral component surfaces; their selected option has a slightly deeper neutral fill plus accent-colored text and a checkmark. Settings section wrappers around titles and bodies stay visually neutral (layout only).
+  - Popup child surfaces follow the active COSMIC applet transparency state. Neutral component containers and custom neutral buttons use a 40% alpha overlay in transparent mode, including provider Account and Usage cards, while retaining their normal component fill when transparency is disabled. Accent and status overlays retain their semantic colors and interaction states.
   - Body panel (scrollable where content can grow): shows either selected provider details, global Settings, Manage providers, provider-scoped Manage accounts, or About. Manage providers lists every provider in one rounded component card with horizontal row dividers and trailing enable switches. Settings retains the Refresh interval, panel-icon, reset-time, and usage-amount controls. About centers the YapCap logo and identity, groups project/developer/license links into full-width link rows, and shows checking/error/update state; an available update uses a destructive callout that links to its release and drives the header notification dot. When no provider tabs are available, the provider route suppresses the navigation row and shows a centered YapCap/provider-logo hero with “No providers set up yet”, guidance to manage providers, and a suggested action.
 - Provider view always starts with a provider title card (icon + name). A provider detected on this machine with no YapCap account additionally shows an accent `Detected` chip and an add-account call to action that opens its Settings category. Below it, the selected account is displayed with its account header ("Account" label, email, plan badge, per-account status badge, "Updated X ago" timestamp), usage window cards, and cost/credits card. When multiple accounts are stored, the account card has a footer pager whose previous/next controls change the selected account exactly like the account-management rows. Usage windows that carry a `group` render inside a single rounded group container per consecutive group run: the container has a component-background fill, rounded corners, and a 1 px component-divider border, the group name as an 18 px header, and the group's usage sections stacked inside it (no per-window card and no dividers inside the container). Ungrouped windows keep their own individual cards. Section/card titles ("Account", window labels, "Extra usage", "Credits") render at 15 px so group headers sit above them in the type hierarchy.
   - Provider settings categories start with an icon-and-name provider title followed by a boxed `Enable <provider>` toggle. The `Accounts` heading, account list, and account actions share the same content alignment. Account rows stay single-line with Active and other status badges inline. A provider detected on this machine with no YapCap account shows a “Detected on this machine” caption on its settings page, including when explicitly disabled. When a provider is disabled, the provider-specific settings below that toggle are dimmed and non-interactive; account status badges and account action icons use softer inactive colors in both light and dark themes.
@@ -1709,7 +1711,8 @@ Settings writes go through a `cosmic_config::Config` context acquired with the a
   and Issues for store listings. Screenshot URLs carry a revision query so updated
   assets bypass store caches. The default store screenshot is the hero image,
   followed by Codex, Claude Code, Cursor, Antigravity, Gemini, Copilot, Minimax,
-  and Kimi zoom screenshots.
+  Kimi, and OpenCode Go zoom screenshots, then settings, accounts, and theme
+  screenshots.
 - Runtime permissions avoid host-wide and writable home access: network, IPC,
   Wayland, fallback X11, DRI, D-Bus access to
   `com.system76.CosmicSettingsDaemon` and its

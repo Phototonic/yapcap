@@ -1,5 +1,6 @@
 use super::super::super::{
-    Alignment, Background, Element, Length, Message, ProviderId, container, fl, row, widget,
+    Alignment, Background, Element, Length, Message, ProviderId, component_container_style,
+    component_surface_color, container, fl, row, widget,
 };
 use crate::providers::interface::ProviderAccountAddAction;
 
@@ -66,15 +67,20 @@ fn empty_account_button_style(
         &cosmic.button
     };
     let mut style = widget::button::Style::new();
-    style.background = Some(Background::Color(if !enabled {
-        component.disabled.into()
-    } else if pressed {
-        component.pressed.into()
-    } else if hovered {
-        component.hover.into()
+    let background = if !accent && theme.transparent && !pressed && !hovered {
+        Some(Background::Color(component_surface_color(theme)))
     } else {
-        component.base.into()
-    }));
+        Some(Background::Color(if !enabled {
+            component.disabled.into()
+        } else if pressed {
+            component.pressed.into()
+        } else if hovered {
+            component.hover.into()
+        } else {
+            component.base.into()
+        }))
+    };
+    style.background = background;
     style.border_radius = cosmic.corner_radii.radius_xl.into();
     style.border_width = 1.0;
     style.border_color = if enabled {
@@ -138,18 +144,5 @@ pub(super) fn empty_accounts_state(
 }
 
 fn empty_accounts_state_style(theme: &cosmic::Theme) -> widget::container::Style {
-    let cosmic = theme.cosmic();
-    let surface = &cosmic.background(theme.transparent).component;
-    widget::container::Style {
-        text_color: Some(surface.on.into()),
-        background: Some(Background::Color(surface.base.into())),
-        border: cosmic::iced::Border {
-            radius: cosmic.corner_radii.radius_s.into(),
-            width: 1.0,
-            color: surface.divider.into(),
-        },
-        shadow: cosmic::iced::Shadow::default(),
-        icon_color: Some(surface.on.into()),
-        snap: true,
-    }
+    component_container_style(theme)
 }

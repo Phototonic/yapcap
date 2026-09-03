@@ -87,7 +87,11 @@ YapCap lives in your COSMIC panel and shows how much of your AI coding quota you
 <img src="resources/screenshots/screenshot-zoom-kimi.png" alt="YapCap popup showing Kimi for Coding usage" />
 
 </td>
-<td align="center" valign="top" width="33%"></td>
+<td align="center" valign="top" width="33%">
+
+<img src="resources/screenshots/screenshot-zoom-opencode-go.png" alt="YapCap popup showing OpenCode Go usage" />
+
+</td>
 </tr>
 </table>
 

@@ -1,8 +1,9 @@
 use super::super::{
-    Alignment, Background, ButtonInteraction, Color, Element, Length, Message, PanelIconStyle,
-    ProviderId, ResetTimeFormat, UsageAmountFormat, UsageWindow, apply_alpha, container, fl,
-    progress_bar, provider_icon_handle, provider_icon_variant, row, settings_block, usage_display,
-    widget,
+    Alignment, Background, ButtonInteraction, Element, Length, Message, PanelIconStyle, ProviderId,
+    ResetTimeFormat, UsageAmountFormat, UsageWindow, apply_alpha, component_container_style,
+    component_divider_color, component_hover_color, component_on_color, component_selected_color,
+    component_surface_color, container, fl, progress_bar, provider_icon_handle,
+    provider_icon_variant, row, settings_block, usage_display, widget,
 };
 
 pub(super) fn general_settings_view<'a>(config: &'a crate::config::Config) -> Element<'a, Message> {
@@ -339,38 +340,22 @@ fn segmented_options(content: Element<'static, Message>) -> Element<'static, Mes
 fn segmented_divider(height: f32) -> Element<'static, Message> {
     container(cosmic::iced::widget::Space::new().width(Length::Fixed(1.0)))
         .height(Length::Fixed(height))
-        .style(|theme: &cosmic::Theme| {
-            let cosmic = theme.cosmic();
-            widget::container::Style {
-                text_color: None,
-                background: Some(Background::Color(apply_alpha(
-                    cosmic.background(theme.transparent).component.on.into(),
-                    0.28,
-                ))),
-                border: cosmic::iced::Border::default(),
-                shadow: cosmic::iced::Shadow::default(),
-                icon_color: None,
-                snap: true,
-            }
+        .style(|theme: &cosmic::Theme| widget::container::Style {
+            text_color: None,
+            background: Some(Background::Color(apply_alpha(
+                component_on_color(theme),
+                0.28,
+            ))),
+            border: cosmic::iced::Border::default(),
+            shadow: cosmic::iced::Shadow::default(),
+            icon_color: None,
+            snap: true,
         })
         .into()
 }
 
 fn segmented_options_style(theme: &cosmic::Theme) -> widget::container::Style {
-    let cosmic = theme.cosmic();
-    let surface = &cosmic.background(theme.transparent).component;
-    widget::container::Style {
-        text_color: Some(surface.on.into()),
-        background: Some(Background::Color(surface.base.into())),
-        border: cosmic::iced::Border {
-            radius: cosmic.corner_radii.radius_s.into(),
-            width: 1.0,
-            color: surface.divider.into(),
-        },
-        shadow: cosmic::iced::Shadow::default(),
-        icon_color: Some(surface.on.into()),
-        snap: true,
-    }
+    component_container_style(theme)
 }
 
 fn segmented_option_class(selected: bool, first: bool, last: bool) -> cosmic::theme::Button {
@@ -432,22 +417,31 @@ fn segmented_option_interaction_style(
 ) -> widget::button::Style {
     let cosmic = theme.cosmic();
     let mut style = widget::button::Style::new();
-    let surface = &cosmic.background(theme.transparent).component;
 
     let (background, foreground) = if selected {
         (
-            Color::from_rgb(0.23, 0.24, 0.27),
+            Some(component_selected_color(theme)),
             cosmic.accent_text_color().into(),
         )
     } else if interaction.pressed {
-        (surface.divider.into(), surface.on.into())
+        (
+            Some(component_divider_color(theme)),
+            component_on_color(theme),
+        )
     } else if interaction.hovered {
-        (surface.hover.into(), surface.on.into())
+        (
+            Some(component_hover_color(theme)),
+            component_on_color(theme),
+        )
     } else {
-        (Color::from_rgb(0.19, 0.20, 0.23), surface.on.into())
+        (
+            Some(component_surface_color(theme)),
+            component_on_color(theme),
+        )
     };
 
-    style.background = Some(Background::Color(apply_alpha(background, opacity)));
+    style.background =
+        background.map(|background| Background::Color(apply_alpha(background, opacity)));
     let radius = cosmic.corner_radii.radius_s;
     style.border_radius = cosmic::iced::border::Radius {
         top_left: if first { radius[0] } else { 0.0 },
@@ -456,7 +450,7 @@ fn segmented_option_interaction_style(
         bottom_left: if first { radius[3] } else { 0.0 },
     };
     style.border_width = 0.0;
-    style.border_color = apply_alpha(surface.divider.into(), opacity);
+    style.border_color = apply_alpha(component_divider_color(theme), opacity);
     style.outline_width = if interaction.focused { 1.0 } else { 0.0 };
     style.outline_color = cosmic.accent.base.into();
     style.text_color = Some(apply_alpha(foreground, opacity));
