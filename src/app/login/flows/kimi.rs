@@ -42,10 +42,7 @@ impl LoginFlow for KimiLoginFlow {
     }
 
     fn failed_state(error: String) -> Self::State {
-        let mut state = KimiLoginState::new("failed".to_string());
-        state.status = KimiLoginStatus::Failed;
-        state.error = Some(error);
-        state
+        KimiLoginState::failed(error)
     }
 
     fn prepare(config: Config) -> Result<(Self::State, cosmic::iced::Task<Self::Event>), String> {
@@ -88,11 +85,11 @@ impl LoginFlow for KimiLoginFlow {
                 Task::none()
             }
             KimiLoginEvent::Saved => {
-                let Some(login) = app.kimi_login.as_ref() else {
+                let Some(login) = app.kimi_login.as_mut() else {
                     return Task::none();
                 };
                 let flow_id = login.account_id.clone();
-                match login.save(&mut app.config) {
+                match kimi::login::save(login) {
                     Ok(managed_account) => {
                         let account_id = managed_account.id.clone();
                         let selected_account_id = account_id.clone();
@@ -114,13 +111,7 @@ impl LoginFlow for KimiLoginFlow {
                         app.kimi_login = None;
                         task
                     }
-                    Err(error) => {
-                        if let Some(login) = app.kimi_login.as_mut() {
-                            login.error = Some(error);
-                            login.status = KimiLoginStatus::Failed;
-                        }
-                        Task::none()
-                    }
+                    Err(_) => Task::none(),
                 }
             }
         }

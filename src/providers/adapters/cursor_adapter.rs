@@ -11,8 +11,9 @@ use crate::model::{
 };
 use crate::providers::cursor;
 use crate::providers::interface::{
-    BoxFuture, ProviderAccountDescriptor, ProviderAccountHandle, ProviderAdapter,
-    ProviderCapabilities,
+    BoxFuture, ProviderAccountAction, ProviderAccountAddAction, ProviderAccountDescriptor,
+    ProviderAccountHandle, ProviderAccountStatus, ProviderAccountStatusKind, ProviderAdapter,
+    ProviderCapabilities, ProviderLoginKind,
 };
 use chrono::Utc;
 use std::collections::HashMap;
@@ -25,21 +26,47 @@ impl ProviderAdapter for CursorAdapter {
         ProviderId::Cursor
     }
 
+    fn login_kind(&self) -> ProviderLoginKind {
+        ProviderLoginKind::Cursor
+    }
+
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities {
-            supports_delete: true,
-            supports_reauthentication: true,
             supports_background_status_refresh: true,
             requires_auth_prompt_on_auth_failure: true,
         }
     }
 
+    fn account_add_action(&self) -> ProviderAccountAddAction {
+        ProviderAccountAddAction::Scan
+    }
+
+    fn reauthenticate_tooltip(&self) -> String {
+        crate::fl!("cursor-account-reauth-tooltip")
+    }
+
+    fn account_status(
+        &self,
+        account: &ProviderAccountRuntimeState,
+    ) -> Option<ProviderAccountStatus> {
+        (account.auth_state == AuthState::ActionRequired).then(|| ProviderAccountStatus {
+            kind: ProviderAccountStatusKind::Neutral,
+            badge_text: crate::fl!("cursor-account-reauth-badge"),
+            tooltip_text: crate::fl!("badge-reauth-tooltip"),
+            reauth_eligible: true,
+            style_as_action_required: true,
+        })
+    }
+
     fn discover_accounts(&self, config: &Config) -> Vec<ProviderAccountDescriptor> {
-        let capabilities = self.capabilities();
         cursor::discover_accounts(config)
             .into_iter()
-            .map(|account| cursor_account_descriptor(account, capabilities))
+            .map(cursor_account_descriptor)
             .collect()
+    }
+
+    fn sync_managed_accounts(&self, config: &mut Config) -> bool {
+        cursor::sync_managed_accounts(config)
     }
 
     fn delete_account(&self, account_id: &str, config: &mut Config) -> bool {
@@ -61,9 +88,12 @@ impl ProviderAdapter for CursorAdapter {
         let accounts = self.discover_accounts(config);
         reconcile_provider_account_descriptors(self.id(), config, state, &accounts);
         if let Some(provider_state) = state.provider_mut(ProviderId::Cursor) {
-            provider_state.system_active_account_id =
-                cursor_system_active_account_id(&config.cursor_managed_accounts);
+            provider_state.system_active_account_id = self.system_active_account_id(config);
         }
+    }
+
+    fn system_active_account_id(&self, config: &Config) -> Option<String> {
+        cursor_system_active_account_id(&config.cursor_managed_accounts)
     }
 
     fn fetch_account<'a>(
@@ -71,12 +101,13 @@ impl ProviderAdapter for CursorAdapter {
         handle: &'a ProviderAccountHandle,
         client: &'a reqwest::Client,
     ) -> BoxFuture<'a, crate::error::Result<UsageSnapshot, AppError>> {
+        let provider = self.id();
         Box::pin(async move {
             match handle {
                 ProviderAccountHandle::Cursor(account) => {
                     cursor::fetch(client, account).await.map_err(AppError::from)
                 }
-                _ => unreachable!(),
+                _ => Err(AppError::InvalidAccountHandle { provider }),
             }
         })
     }
@@ -92,7 +123,6 @@ impl ProviderAdapter for CursorAdapter {
 
 fn cursor_account_descriptor(
     account: crate::config::ManagedCursorAccountConfig,
-    capabilities: ProviderCapabilities,
 ) -> ProviderAccountDescriptor {
     let account_id = cursor::managed_account_id(&account.id);
     let label = account.email.clone();
@@ -100,7 +130,7 @@ fn cursor_account_descriptor(
         provider: ProviderId::Cursor,
         account_id,
         label,
-        capabilities,
+        actions: vec![ProviderAccountAction::Delete, ProviderAccountAction::Rescan],
         handle: ProviderAccountHandle::Cursor(account),
     }
 }

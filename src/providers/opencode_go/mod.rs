@@ -31,7 +31,6 @@ struct OpenCodeGoUsage {
 
 #[derive(Debug, Deserialize)]
 struct OpenCodeGoUsageWindow {
-    status: Option<String>,
     percent: Option<f64>,
     #[serde(rename = "resetsAt")]
     resets_at: Option<String>,
@@ -148,7 +147,6 @@ fn push_window(
     let Some(window) = window else {
         return;
     };
-    let _ = window.status;
     let Some(percent) = window.percent else {
         return;
     };

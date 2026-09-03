@@ -18,19 +18,15 @@ use crate::app::{Message, PopupRoute};
 use crate::config::{Config, PanelIconStyle, ResetTimeFormat, UsageAmountFormat};
 use crate::detection::DetectionSnapshot;
 use crate::fl;
-use crate::model::{
-    AppState, ProviderAccountRuntimeState, ProviderId, ProviderRuntimeState, UsageWindow,
-};
+use crate::model::{AppState, ProviderId, ProviderRuntimeState, UsageWindow};
 use crate::providers::antigravity::{AntigravityLoginState, AntigravityLoginStatus};
 use crate::providers::claude::{ClaudeLoginState, ClaudeLoginStatus};
 use crate::providers::codex::{CodexLoginState, CodexLoginStatus};
 use crate::providers::copilot::{CopilotLoginState, CopilotLoginStatus};
 use crate::providers::cursor::CursorScanState;
 use crate::providers::gemini::{GeminiLoginState, GeminiLoginStatus};
-use crate::providers::interface::ProviderAccountActionSupport;
 use crate::providers::kimi::login::KimiLoginState;
 use crate::providers::minimax::MinimaxLoginState;
-use crate::providers::registry;
 use crate::updates::UpdateStatus;
 use crate::usage_display;
 use cosmic::Element;
@@ -957,6 +953,7 @@ fn selected_state(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::ProviderAccountRuntimeState;
 
     #[test]
     fn partial_provider_viewport_is_centered_with_equal_side_space() {

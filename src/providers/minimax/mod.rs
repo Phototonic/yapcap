@@ -12,9 +12,7 @@ use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 
 pub use account::discover_accounts;
-pub use login::{
-    MinimaxLoginEvent, MinimaxLoginState, MinimaxLoginStatus, prepare as prepare_login,
-};
+pub use login::{MinimaxLoginEvent, MinimaxLoginState, MinimaxLoginStatus};
 pub use storage::load_api_key;
 
 const MINIMAX_API_URL: &str = "https://www.minimax.io/v1/token_plan/remains";

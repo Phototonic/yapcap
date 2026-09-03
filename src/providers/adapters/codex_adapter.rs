@@ -7,8 +7,8 @@ use crate::model::{AppState, AuthState, ProviderHealth, ProviderId, UsageSnapsho
 use crate::providers::adapters::remove_managed_codex_account;
 use crate::providers::codex;
 use crate::providers::interface::{
-    BoxFuture, ProviderAccountDescriptor, ProviderAccountHandle, ProviderAdapter,
-    ProviderCapabilities,
+    BoxFuture, ProviderAccountAction, ProviderAccountDescriptor, ProviderAccountHandle,
+    ProviderAdapter, ProviderCapabilities, ProviderLoginKind,
 };
 
 pub(super) struct CodexAdapter;
@@ -18,34 +18,37 @@ impl ProviderAdapter for CodexAdapter {
         ProviderId::Codex
     }
 
+    fn login_kind(&self) -> ProviderLoginKind {
+        ProviderLoginKind::Codex
+    }
+
+    fn supports_opencode_import(&self) -> bool {
+        codex::opencode_import_available()
+    }
+
+    fn selection_required_message(&self) -> Option<String> {
+        Some(crate::fl!("codex-account-select-required"))
+    }
+
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities {
-            supports_delete: true,
-            supports_reauthentication: false,
             supports_background_status_refresh: false,
             requires_auth_prompt_on_auth_failure: false,
         }
     }
 
     fn discover_accounts(&self, config: &Config) -> Vec<ProviderAccountDescriptor> {
-        let capabilities = self.capabilities();
-        codex::discover_accounts(config)
-            .into_iter()
-            .filter_map(|account| {
-                config
-                    .codex_managed_accounts
-                    .iter()
-                    .find(|managed| managed.id == account.id)
-                    .cloned()
-                    .map(|managed| ProviderAccountDescriptor {
-                        provider: self.id(),
-                        account_id: account.id,
-                        label: account.label,
-                        capabilities,
-                        handle: ProviderAccountHandle::Codex(managed),
-                    })
-            })
-            .collect()
+        let restore_from_opencode_available = codex::opencode_import_available();
+        let discovered_accounts = codex::discover_accounts(config);
+        codex_account_descriptors(
+            config,
+            &discovered_accounts,
+            restore_from_opencode_available,
+        )
+    }
+
+    fn sync_managed_accounts(&self, config: &mut Config) -> bool {
+        codex::sync_managed_accounts(config)
     }
 
     fn delete_account(&self, account_id: &str, config: &mut Config) -> bool {
@@ -67,7 +70,11 @@ impl ProviderAdapter for CodexAdapter {
 
     fn reconcile_provider_accounts(&self, config: &Config, state: &mut AppState) {
         let discovered_accounts = codex::discover_accounts(config);
-        let accounts = self.discover_accounts(config);
+        let accounts = codex_account_descriptors(
+            config,
+            &discovered_accounts,
+            codex::opencode_import_available(),
+        );
         reconcile_provider_account_descriptors(self.id(), config, state, &accounts);
         for discovered in discovered_accounts {
             if discovered.credentials_available {
@@ -105,6 +112,7 @@ impl ProviderAdapter for CodexAdapter {
         handle: &'a ProviderAccountHandle,
         client: &'a reqwest::Client,
     ) -> BoxFuture<'a, crate::error::Result<UsageSnapshot, AppError>> {
+        let provider = self.id();
         Box::pin(async move {
             match handle {
                 ProviderAccountHandle::Codex(account) => {
@@ -112,8 +120,44 @@ impl ProviderAdapter for CodexAdapter {
                         .await
                         .map_err(AppError::from)
                 }
-                _ => unreachable!(),
+                _ => Err(AppError::InvalidAccountHandle { provider }),
             }
         })
     }
+}
+
+fn codex_account_descriptors(
+    config: &Config,
+    discovered_accounts: &[codex::CodexAccount],
+    restore_from_opencode_available: bool,
+) -> Vec<ProviderAccountDescriptor> {
+    discovered_accounts
+        .iter()
+        .filter_map(|account| {
+            config
+                .codex_managed_accounts
+                .iter()
+                .find(|managed| managed.id == account.id)
+                .cloned()
+                .map(|managed| {
+                    let mut actions = vec![
+                        ProviderAccountAction::Delete,
+                        ProviderAccountAction::Reauthenticate,
+                    ];
+                    if !account.credentials_available
+                        && account.credentials_error.is_none()
+                        && restore_from_opencode_available
+                    {
+                        actions.push(ProviderAccountAction::RestoreFromOpenCode);
+                    }
+                    ProviderAccountDescriptor {
+                        provider: ProviderId::Codex,
+                        account_id: account.id.clone(),
+                        label: account.label.clone(),
+                        actions,
+                        handle: ProviderAccountHandle::Codex(managed),
+                    }
+                })
+        })
+        .collect()
 }

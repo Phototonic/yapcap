@@ -6,8 +6,8 @@ use crate::config::{Config, paths};
 use crate::error::AppError;
 use crate::model::{AppState, ProviderId, UsageSnapshot};
 use crate::providers::interface::{
-    BoxFuture, ProviderAccountDescriptor, ProviderAccountHandle, ProviderAdapter,
-    ProviderCapabilities,
+    BoxFuture, ProviderAccountAction, ProviderAccountDescriptor, ProviderAccountHandle,
+    ProviderAdapter, ProviderCapabilities, ProviderLoginKind,
 };
 
 pub(super) struct KimiAdapter;
@@ -17,17 +17,22 @@ impl ProviderAdapter for KimiAdapter {
         ProviderId::Kimi
     }
 
+    fn login_kind(&self) -> ProviderLoginKind {
+        ProviderLoginKind::Kimi
+    }
+
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities {
-            supports_delete: true,
-            supports_reauthentication: true,
             supports_background_status_refresh: false,
             requires_auth_prompt_on_auth_failure: false,
         }
     }
 
+    fn selection_required_message(&self) -> Option<String> {
+        Some(crate::fl!("kimi-account-select-required"))
+    }
+
     fn discover_accounts(&self, config: &Config) -> Vec<ProviderAccountDescriptor> {
-        let capabilities = self.capabilities();
         crate::providers::kimi::account::discover_accounts(config)
             .into_iter()
             .filter_map(|account| {
@@ -40,11 +45,18 @@ impl ProviderAdapter for KimiAdapter {
                         provider: self.id(),
                         account_id: account.id,
                         label: account.label,
-                        capabilities,
+                        actions: vec![
+                            ProviderAccountAction::Delete,
+                            ProviderAccountAction::Reauthenticate,
+                        ],
                         handle: ProviderAccountHandle::Kimi(managed),
                     })
             })
             .collect()
+    }
+
+    fn sync_managed_accounts(&self, config: &mut Config) -> bool {
+        crate::providers::kimi::sync_managed_accounts(config)
     }
 
     fn delete_account(&self, account_id: &str, config: &mut Config) -> bool {
@@ -87,6 +99,7 @@ impl ProviderAdapter for KimiAdapter {
         handle: &'a ProviderAccountHandle,
         client: &'a reqwest::Client,
     ) -> BoxFuture<'a, crate::error::Result<UsageSnapshot, AppError>> {
+        let provider = self.id();
         Box::pin(async move {
             match handle {
                 ProviderAccountHandle::Kimi(account) => {
@@ -94,7 +107,7 @@ impl ProviderAdapter for KimiAdapter {
                         .await
                         .map_err(AppError::from)
                 }
-                _ => unreachable!(),
+                _ => Err(AppError::InvalidAccountHandle { provider }),
             }
         })
     }

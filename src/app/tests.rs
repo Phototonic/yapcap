@@ -615,6 +615,22 @@ fn owner_account_selection_runs_requested_refresh() {
 }
 
 #[test]
+fn cursor_reauthentication_starts_local_rescan() {
+    let mut app = test_app(None);
+    app.config
+        .cursor_managed_accounts
+        .push(cursor_account("cursor-1", "cursor@example.com"));
+
+    let task = app.handle_message(Message::ReauthenticateAccount(
+        ProviderId::Cursor,
+        "cursor-managed:cursor-1".to_string(),
+    ));
+
+    assert!(task.units() > 0);
+    assert!(matches!(app.cursor_scan, CursorScanState::Scanning));
+}
+
+#[test]
 fn demo_codex_account_selection_keeps_account_rows() {
     let mut env = crate::test_support::test_env();
     env.set("YAPCAP_DEMO", "1");

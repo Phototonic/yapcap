@@ -1,9 +1,7 @@
 use super::super::{LoginEventKind, LoginFlow, apply_login_success};
 use crate::account_selection::select_account_after_login;
-use crate::app::{
-    AppModel, Config, Handle, Message, MinimaxLoginEvent, MinimaxLoginState, MinimaxLoginStatus,
-    ProviderId, Task, minimax,
-};
+use crate::app::{AppModel, Config, Handle, Message, ProviderId, Task, minimax};
+use crate::providers::minimax::login::{MinimaxLoginEvent, MinimaxLoginState, MinimaxLoginStatus};
 
 pub(crate) struct MinimaxLoginFlow;
 
@@ -37,14 +35,11 @@ impl LoginFlow for MinimaxLoginFlow {
             .any(|a| a.id == account_id)
     }
     fn failed_state(error: String) -> Self::State {
-        let mut state = MinimaxLoginState::new("failed".to_string());
-        state.status = MinimaxLoginStatus::Failed;
-        state.error = Some(error);
-        state
+        MinimaxLoginState::failed(error)
     }
     fn prepare(config: Config) -> Result<(Self::State, cosmic::iced::Task<Self::Event>), String> {
         let _ = config;
-        Ok((minimax::prepare_login(), cosmic::iced::Task::none()))
+        Ok((minimax::login::prepare(), cosmic::iced::Task::none()))
     }
     fn prepare_for_reauth(
         config: Config,
@@ -82,12 +77,12 @@ impl LoginFlow for MinimaxLoginFlow {
                 Task::none()
             }
             MinimaxLoginEvent::Saved => {
-                let Some(login) = app.minimax_login.as_ref() else {
+                let Some(login) = app.minimax_login.as_mut() else {
                     return Task::none();
                 };
-                match login.save(&mut app.config) {
+                let flow_id = login.account_id.clone();
+                match minimax::login::save(login) {
                     Ok(managed_account) => {
-                        let flow_id = login.account_id.clone();
                         let account_id = managed_account.id.clone();
                         let selected_account_id = account_id.clone();
                         let task = apply_login_success(
@@ -108,13 +103,7 @@ impl LoginFlow for MinimaxLoginFlow {
                         app.minimax_login = None;
                         task
                     }
-                    Err(error) => {
-                        if let Some(login) = app.minimax_login.as_mut() {
-                            login.error = Some(error);
-                            login.status = MinimaxLoginStatus::Failed;
-                        }
-                        Task::none()
-                    }
+                    Err(_) => Task::none(),
                 }
             }
         }

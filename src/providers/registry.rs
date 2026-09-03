@@ -4,12 +4,12 @@ use crate::config::Config;
 use crate::model::{AppState, ProviderAccountRuntimeState, ProviderId, UsageSnapshot};
 use crate::providers::adapters::adapter;
 use crate::providers::interface::{
-    ProviderAccountDescriptor, ProviderAccountHandle, ProviderCapabilities,
-};
-use crate::providers::{
-    antigravity, claude, codex, copilot, cursor, gemini, kimi, minimax, opencode_go,
+    ProviderAccountAddAction, ProviderAccountDescriptor, ProviderAccountFacts,
+    ProviderCapabilities, ProviderLoginKind,
 };
 
+#[cfg(test)]
+mod account_facts_tests;
 #[cfg(test)]
 mod tests;
 
@@ -17,29 +17,61 @@ pub fn capabilities(provider: ProviderId) -> ProviderCapabilities {
     adapter(provider).capabilities()
 }
 
+pub fn login_kind(provider: ProviderId) -> ProviderLoginKind {
+    adapter(provider).login_kind()
+}
+
+pub fn supports_opencode_import(provider: ProviderId) -> bool {
+    adapter(provider).supports_opencode_import()
+}
+
+pub fn account_add_action(provider: ProviderId) -> ProviderAccountAddAction {
+    adapter(provider).account_add_action()
+}
+
+pub fn selection_required_message(provider: ProviderId) -> Option<String> {
+    adapter(provider).selection_required_message()
+}
+
 pub fn startup_sync(config: &mut Config) -> bool {
-    let codex_changed = codex::sync_managed_accounts(config);
-    let cursor_changed = cursor::sync_managed_accounts(config);
-    let claude_changed = claude::sync_managed_account_dirs(config);
-    let gemini_changed = gemini::sync_managed_accounts(config);
-    let copilot_changed = copilot::sync_managed_accounts(config);
-    let minimax_changed = minimax::sync_managed_accounts(config);
-    let kimi_changed = kimi::sync_managed_accounts(config);
-    let antigravity_changed = antigravity::sync_managed_accounts(config);
-    let opencode_go_changed = opencode_go::sync_managed_accounts(config);
-    codex_changed
-        | cursor_changed
-        | claude_changed
-        | gemini_changed
-        | copilot_changed
-        | minimax_changed
-        | kimi_changed
-        | antigravity_changed
-        | opencode_go_changed
+    let mut changed = false;
+    for provider in ProviderId::ALL {
+        changed |= adapter(provider).sync_managed_accounts(config);
+    }
+    changed
 }
 
 pub fn discover_accounts(provider: ProviderId, config: &Config) -> Vec<ProviderAccountDescriptor> {
     adapter(provider).discover_accounts(config)
+}
+
+pub fn prepare_account_facts(
+    provider: ProviderId,
+    config: &Config,
+    state: &AppState,
+) -> Vec<ProviderAccountFacts> {
+    let provider_adapter = adapter(provider);
+    let descriptors = provider_adapter.discover_accounts(config);
+    let tooltip = provider_adapter.reauthenticate_tooltip();
+    state
+        .accounts_for(provider)
+        .into_iter()
+        .map(|account| {
+            descriptors
+                .iter()
+                .find(|descriptor| descriptor.account_id == account.account_id)
+                .map_or_else(
+                    || {
+                        ProviderAccountFacts::without_descriptor(
+                            account,
+                            provider_adapter.account_status(account),
+                            tooltip.clone(),
+                        )
+                    },
+                    |descriptor| provider_adapter.account_facts(descriptor, account),
+                )
+        })
+        .collect()
 }
 
 pub fn toggle_account_selection(provider: ProviderId, config: &mut Config, account_id: &str) {
@@ -62,22 +94,13 @@ pub fn sync_selected_ids_with_discoveries(config: &mut Config, provider: Provide
     }
 }
 
-pub async fn fetch_handle(
-    handle: &ProviderAccountHandle,
+pub async fn fetch_account(
+    account: &ProviderAccountDescriptor,
     client: &reqwest::Client,
 ) -> crate::error::Result<UsageSnapshot, crate::error::AppError> {
-    let provider = match handle {
-        ProviderAccountHandle::Codex(_) => ProviderId::Codex,
-        ProviderAccountHandle::Claude(_) => ProviderId::Claude,
-        ProviderAccountHandle::Cursor(_) => ProviderId::Cursor,
-        ProviderAccountHandle::Gemini(_) => ProviderId::Gemini,
-        ProviderAccountHandle::Copilot(_) => ProviderId::Copilot,
-        ProviderAccountHandle::Minimax(_) => ProviderId::Minimax,
-        ProviderAccountHandle::Kimi(_) => ProviderId::Kimi,
-        ProviderAccountHandle::Antigravity(_) => ProviderId::Antigravity,
-        ProviderAccountHandle::OpenCodeGo(_) => ProviderId::OpenCodeGo,
-    };
-    adapter(provider).fetch_account(handle, client).await
+    adapter(account.provider)
+        .fetch_account(&account.handle, client)
+        .await
 }
 
 pub fn supports_background_status_refresh(provider: ProviderId) -> bool {

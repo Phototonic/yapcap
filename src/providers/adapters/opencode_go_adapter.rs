@@ -6,8 +6,8 @@ use crate::config::{Config, paths};
 use crate::error::AppError;
 use crate::model::{AppState, ProviderId, UsageSnapshot};
 use crate::providers::interface::{
-    BoxFuture, ProviderAccountDescriptor, ProviderAccountHandle, ProviderAdapter,
-    ProviderCapabilities,
+    BoxFuture, ProviderAccountAction, ProviderAccountDescriptor, ProviderAccountHandle,
+    ProviderAdapter, ProviderCapabilities, ProviderLoginKind,
 };
 
 pub(super) struct OpenCodeGoAdapter;
@@ -17,17 +17,18 @@ impl ProviderAdapter for OpenCodeGoAdapter {
         ProviderId::OpenCodeGo
     }
 
+    fn login_kind(&self) -> ProviderLoginKind {
+        ProviderLoginKind::OpenCodeGo
+    }
+
     fn capabilities(&self) -> ProviderCapabilities {
         ProviderCapabilities {
-            supports_delete: true,
-            supports_reauthentication: true,
             supports_background_status_refresh: false,
             requires_auth_prompt_on_auth_failure: false,
         }
     }
 
     fn discover_accounts(&self, config: &Config) -> Vec<ProviderAccountDescriptor> {
-        let capabilities = self.capabilities();
         crate::providers::opencode_go::account::discover_accounts(config)
             .into_iter()
             .filter_map(|account| {
@@ -40,11 +41,18 @@ impl ProviderAdapter for OpenCodeGoAdapter {
                         provider: self.id(),
                         account_id: account.id,
                         label: account.label,
-                        capabilities,
+                        actions: vec![
+                            ProviderAccountAction::Delete,
+                            ProviderAccountAction::Reauthenticate,
+                        ],
                         handle: ProviderAccountHandle::OpenCodeGo(managed),
                     })
             })
             .collect()
+    }
+
+    fn sync_managed_accounts(&self, config: &mut Config) -> bool {
+        crate::providers::opencode_go::sync_managed_accounts(config)
     }
 
     fn delete_account(&self, account_id: &str, config: &mut Config) -> bool {
@@ -87,6 +95,7 @@ impl ProviderAdapter for OpenCodeGoAdapter {
         handle: &'a ProviderAccountHandle,
         client: &'a reqwest::Client,
     ) -> BoxFuture<'a, crate::error::Result<UsageSnapshot, AppError>> {
+        let provider = self.id();
         Box::pin(async move {
             match handle {
                 ProviderAccountHandle::OpenCodeGo(account) => {
@@ -94,7 +103,7 @@ impl ProviderAdapter for OpenCodeGoAdapter {
                         .await
                         .map_err(AppError::from)
                 }
-                _ => unreachable!(),
+                _ => Err(AppError::InvalidAccountHandle { provider }),
             }
         })
     }

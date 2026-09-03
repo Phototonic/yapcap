@@ -3,7 +3,7 @@ name = "yapcap"
 version = "0.6.0"
 edition = "2024"
 license = "MPL-2.0"
-description = "COSMIC panel applet for Codex, Claude Code, Cursor, Antigravity, Gemini, Minimax, GitHub Copilot, and Kimi for Coding usage"
+description = "COSMIC panel applet for Codex, Claude Code, Cursor, Antigravity, Gemini, Minimax, GitHub Copilot, Kimi for Coding, and OpenCode Go usage"
 repository = "https://github.com/TopiCsarno/yapcap"
 
 [package.metadata.deb]
@@ -21,7 +21,7 @@ assets = [
 ]
 extended-description = """
 YapCap is a native COSMIC panel applet that surfaces local usage limits for \
-Codex, Claude Code, Cursor, Antigravity, Gemini, Minimax, GitHub Copilot, and Kimi for Coding from accounts added in YapCap.
+Codex, Claude Code, Cursor, Antigravity, Gemini, Minimax, GitHub Copilot, Kimi for Coding, and OpenCode Go from accounts added in YapCap.
 """
 
 [package.metadata.generate-rpm]

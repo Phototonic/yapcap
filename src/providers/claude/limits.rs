@@ -19,9 +19,6 @@ pub(super) struct ClaudeLimit {
     pub resets_at: Option<String>,
     #[serde(default)]
     pub scope: Option<ClaudeLimitScope>,
-    #[serde(default)]
-    #[allow(dead_code)]
-    pub is_active: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]

@@ -2,6 +2,7 @@ use super::support::{isolated_xdg, test_app};
 use crate::app::login::{LoginFlow, OpenCodeGoLoginFlow, reauthenticate, start_login};
 use crate::config::{Config, ManagedOpenCodeGoAccountConfig};
 use crate::model::ProviderId;
+use crate::providers::opencode_go::login::prepare_for_reauth;
 use crate::providers::opencode_go::login::{OpenCodeGoLoginEvent, OpenCodeGoLoginState};
 use crate::providers::opencode_go::storage::{load_api_key, write_api_key};
 use crate::shared_state::RefreshRequestReason;
@@ -26,6 +27,16 @@ fn opencode_go_login_prefills_api_key_from_opencode_auth_file() {
     let login = app.opencode_go_login.as_ref().unwrap();
     assert_eq!(login.api_key, "fake-opencode-go-key");
     assert!(login.api_key_from_opencode);
+}
+
+#[test]
+fn opencode_go_reauth_reports_an_opencode_go_specific_missing_account_error() {
+    let (_env, _root) = isolated_xdg("opencode-go-missing-account");
+
+    assert_eq!(
+        prepare_for_reauth(Config::default(), "missing").unwrap_err(),
+        "OpenCode Go account not found"
+    );
 }
 
 #[test]

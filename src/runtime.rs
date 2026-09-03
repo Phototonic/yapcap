@@ -200,14 +200,13 @@ pub async fn refresh_account(
         return no_provider_accounts(provider, enabled, previous.as_ref());
     };
 
+    let account = account.clone();
     let account_id = account.account_id.clone();
     let label = account.label.clone();
     let prev = previous_accounts
         .iter()
         .find(|a| a.account_id == account_id)
         .cloned();
-    let handle = account.handle.clone();
-
     refresh_provider_account(
         provider,
         enabled,
@@ -216,7 +215,7 @@ pub async fn refresh_account(
         account_id,
         label,
         async move {
-            providers::registry::fetch_handle(&handle, &client)
+            providers::registry::fetch_account(&account, &client)
                 .await
                 .map(|s| (s.source.clone(), s))
         },

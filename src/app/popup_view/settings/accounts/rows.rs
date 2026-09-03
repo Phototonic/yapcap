@@ -1,26 +1,12 @@
 use super::super::super::{
-    Alignment, Background, Config, Element, Length, Message, ProviderAccountActionSupport,
-    ProviderAccountRuntimeState, ProviderId, accent_selection_fill, account_label_text,
-    apply_alpha, badge_destructive, badge_destructive_soft, badge_neutral, badge_neutral_soft,
-    badge_success, badge_success_soft, badge_warning, badge_warning_soft, badge_with_tooltip,
-    container, disabled_account_label_text, fl, registry, row, widget,
+    Alignment, Background, Element, Length, Message, ProviderId, accent_selection_fill,
+    account_label_text, apply_alpha, badge_destructive, badge_destructive_soft, badge_neutral,
+    badge_neutral_soft, badge_success, badge_success_soft, badge_warning, badge_warning_soft,
+    badge_with_tooltip, container, disabled_account_label_text, fl, row, widget,
 };
-use crate::model::{AuthState, ProviderHealth, STALE_THRESHOLD};
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum RowBadgeKind {
-    Warning,
-    Neutral,
-    Destructive,
-}
-
-struct RowStatus {
-    kind: RowBadgeKind,
-    badge_text: String,
-    tooltip_text: String,
-    reauth_eligible: bool,
-    style_as_action_required: bool,
-}
+use crate::providers::interface::{
+    ProviderAccountAction, ProviderAccountFacts, ProviderAccountStatus, ProviderAccountStatusKind,
+};
 
 #[derive(Clone, Copy)]
 pub(super) struct AccountRowPosition {
@@ -28,134 +14,60 @@ pub(super) struct AccountRowPosition {
     pub(super) last: bool,
 }
 
-fn row_status(provider: ProviderId, account: &ProviderAccountRuntimeState) -> Option<RowStatus> {
-    match provider {
-        ProviderId::Cursor => {
-            (account.auth_state == AuthState::ActionRequired).then(|| RowStatus {
-                kind: RowBadgeKind::Neutral,
-                badge_text: fl!("cursor-account-reauth-badge"),
-                tooltip_text: fl!("badge-reauth-tooltip"),
-                reauth_eligible: true,
-                style_as_action_required: true,
-            })
-        }
-        ProviderId::Claude => claude_account_row_status(account).map(|status| match status {
-            ClaudeAccountRowStatus::ReauthRequired => RowStatus {
-                kind: RowBadgeKind::Warning,
-                badge_text: fl!("badge-login-required"),
-                tooltip_text: fl!("badge-login-required-tooltip"),
-                reauth_eligible: true,
-                style_as_action_required: true,
-            },
-            ClaudeAccountRowStatus::Error => RowStatus {
-                kind: RowBadgeKind::Destructive,
-                badge_text: fl!("badge-error"),
-                tooltip_text: fl!("badge-error-tooltip"),
-                reauth_eligible: false,
-                style_as_action_required: true,
-            },
-            ClaudeAccountRowStatus::Stale => RowStatus {
-                kind: RowBadgeKind::Warning,
-                badge_text: fl!("badge-stale"),
-                tooltip_text: fl!("badge-stale-tooltip"),
-                reauth_eligible: false,
-                style_as_action_required: false,
-            },
-        }),
-        ProviderId::Codex
-        | ProviderId::Gemini
-        | ProviderId::Copilot
-        | ProviderId::Minimax
-        | ProviderId::Kimi
-        | ProviderId::Antigravity
-        | ProviderId::OpenCodeGo => {
-            (account.auth_state == AuthState::ActionRequired).then(|| RowStatus {
-                kind: RowBadgeKind::Warning,
-                badge_text: fl!("badge-login-required"),
-                tooltip_text: fl!("badge-login-required-tooltip"),
-                reauth_eligible: true,
-                style_as_action_required: true,
-            })
-        }
-    }
-}
-
-fn status_badge(status: &RowStatus, enabled: bool) -> Element<'static, Message> {
+fn status_badge(status: &ProviderAccountStatus, enabled: bool) -> Element<'static, Message> {
     let badge = match (status.kind, enabled) {
-        (RowBadgeKind::Warning, true) => badge_warning(status.badge_text.clone()),
-        (RowBadgeKind::Warning, false) => badge_warning_soft(status.badge_text.clone()),
-        (RowBadgeKind::Neutral, true) => badge_neutral(status.badge_text.clone()),
-        (RowBadgeKind::Neutral, false) => badge_neutral_soft(status.badge_text.clone()),
-        (RowBadgeKind::Destructive, true) => badge_destructive(status.badge_text.clone()),
-        (RowBadgeKind::Destructive, false) => badge_destructive_soft(status.badge_text.clone()),
+        (ProviderAccountStatusKind::Warning, true) => badge_warning(status.badge_text.clone()),
+        (ProviderAccountStatusKind::Warning, false) => {
+            badge_warning_soft(status.badge_text.clone())
+        }
+        (ProviderAccountStatusKind::Neutral, true) => badge_neutral(status.badge_text.clone()),
+        (ProviderAccountStatusKind::Neutral, false) => {
+            badge_neutral_soft(status.badge_text.clone())
+        }
+        (ProviderAccountStatusKind::Destructive, true) => {
+            badge_destructive(status.badge_text.clone())
+        }
+        (ProviderAccountStatusKind::Destructive, false) => {
+            badge_destructive_soft(status.badge_text.clone())
+        }
     };
     badge_with_tooltip(badge, status.tooltip_text.clone())
 }
 
-fn row_label(
+pub(super) fn account_settings_row(
     provider: ProviderId,
-    account: &ProviderAccountRuntimeState,
-    config: &Config,
-) -> String {
-    if provider == ProviderId::Claude {
-        claude_account_row_label(account, config)
-    } else {
-        account.label.clone()
-    }
-}
-
-fn reauth_capability_satisfied(
-    provider: ProviderId,
-    action_support: Option<&ProviderAccountActionSupport>,
-) -> bool {
-    match provider {
-        ProviderId::Codex | ProviderId::Minimax | ProviderId::Kimi | ProviderId::OpenCodeGo => true,
-        ProviderId::Cursor => action_support.is_some_and(|support| {
-            support.can_reauthenticate && support.supports_background_status_refresh
-        }),
-        ProviderId::Claude | ProviderId::Gemini | ProviderId::Copilot | ProviderId::Antigravity => {
-            action_support.is_some_and(|support| support.can_reauthenticate)
-        }
-    }
-}
-
-fn reauth_tooltip(provider: ProviderId) -> String {
-    match provider {
-        ProviderId::Codex => fl!("codex-account-reauth-tooltip"),
-        ProviderId::Claude => fl!("claude-account-reauth-tooltip"),
-        ProviderId::Cursor => fl!("cursor-account-reauth-tooltip"),
-        ProviderId::Gemini => fl!("gemini-account-reauth-tooltip"),
-        ProviderId::Copilot => fl!("copilot-account-reauth-tooltip"),
-        ProviderId::Minimax => fl!("minimax-account-reauth-tooltip"),
-        ProviderId::Kimi => fl!("kimi-account-reauth-tooltip"),
-        ProviderId::Antigravity => fl!("antigravity-account-reauth-tooltip"),
-        ProviderId::OpenCodeGo => "Re-authenticate this OpenCode Go account".to_string(),
-    }
-}
-
-pub(super) fn account_settings_row<'a>(
-    provider: ProviderId,
-    account: &'a ProviderAccountRuntimeState,
+    account: &ProviderAccountFacts,
     selected_ids: &[&str],
     active_id: Option<&str>,
-    config: &'a Config,
     enabled: bool,
     position: AccountRowPosition,
-) -> Element<'a, Message> {
+) -> Element<'static, Message> {
     let is_selected = selected_ids.contains(&account.account_id.as_str());
     let is_active = active_id == Some(account.account_id.as_str());
-    let status = row_status(provider, account);
-    let action_support = account_action_support(config, provider, account.account_id.as_str());
-    let can_reauthenticate = enabled
-        && status.as_ref().is_some_and(|status| status.reauth_eligible)
-        && reauth_capability_satisfied(provider, action_support.as_ref());
+    let can_reauthenticate = action_available(
+        account,
+        ProviderAccountAction::Reauthenticate,
+        enabled,
+        account.status.as_ref(),
+    );
+    let can_restore_from_opencode = action_available(
+        account,
+        ProviderAccountAction::RestoreFromOpenCode,
+        enabled,
+        account.status.as_ref(),
+    );
+    let can_rescan = action_available(
+        account,
+        ProviderAccountAction::Rescan,
+        enabled,
+        account.status.as_ref(),
+    );
     let account_id = account.account_id.clone();
-    let label = row_label(provider, account, config);
 
     let account_label = if enabled {
-        account_label_text(&label, 14)
+        account_label_text(&account.label, 14)
     } else {
-        disabled_account_label_text(&label, 14)
+        disabled_account_label_text(&account.label, 14)
     };
     let mut title_row = row![account_label]
         .spacing(8)
@@ -168,7 +80,7 @@ pub(super) fn account_settings_row<'a>(
             fl!("badge-active-tooltip"),
         ));
     }
-    if let Some(status) = &status {
+    if let Some(status) = &account.status {
         title_row = title_row.push(status_badge(status, enabled));
     }
 
@@ -182,24 +94,31 @@ pub(super) fn account_settings_row<'a>(
             account_id.clone(),
         )));
 
-    let can_delete = action_support.is_some_and(|support| support.can_delete);
+    let can_delete = account.supports_action(ProviderAccountAction::Delete);
     let delete_press =
         (enabled && can_delete).then_some(Message::DeleteAccount(provider, account_id.clone()));
     let mut actions = row![account_selected_marker(is_selected, enabled)]
         .spacing(0)
         .align_y(Alignment::Center);
     if can_reauthenticate {
-        let message = if matches!(provider, ProviderId::Codex | ProviderId::Copilot)
-            && account.auth_state == AuthState::ActionRequired
-        {
-            Message::RestoreFromOpenCode(provider, account_id.clone())
-        } else {
-            Message::ReauthenticateAccount(provider, account_id.clone())
-        };
         actions = actions.push(account_action_icon_button(
             "view-refresh-symbolic",
-            reauth_tooltip(provider),
-            Some(message),
+            account.reauthenticate_tooltip.clone(),
+            Some(Message::ReauthenticateAccount(provider, account_id.clone())),
+        ));
+    }
+    if can_restore_from_opencode {
+        actions = actions.push(account_action_icon_button(
+            "document-import-symbolic",
+            fl!("restore-from-opencode"),
+            Some(Message::RestoreFromOpenCode(provider, account_id.clone())),
+        ));
+    }
+    if can_rescan {
+        actions = actions.push(account_action_icon_button(
+            "view-refresh-symbolic",
+            account.reauthenticate_tooltip.clone(),
+            Some(Message::ReauthenticateAccount(provider, account_id.clone())),
         ));
     }
     actions = actions.push(account_action_icon_button(
@@ -213,7 +132,10 @@ pub(super) fn account_settings_row<'a>(
         actions.into(),
         is_selected,
         enabled,
-        status.is_some_and(|status| status.style_as_action_required),
+        account
+            .status
+            .as_ref()
+            .is_some_and(|status| status.style_as_action_required),
         position.first,
         position.last,
     ))
@@ -250,55 +172,6 @@ pub(super) fn account_action_container<'a>(
         .padding([16, 0, 0, 0])
         .width(Length::Fill)
         .into()
-}
-
-fn claude_account_row_label(account: &ProviderAccountRuntimeState, config: &Config) -> String {
-    let id = account.account_id.as_str();
-    let managed = config
-        .claude_managed_accounts
-        .iter()
-        .find(|managed| managed.id == id);
-    let config_email = managed
-        .and_then(|managed| managed.email.as_deref())
-        .filter(|email| !email.is_empty());
-    let snapshot_email = account
-        .snapshot
-        .as_ref()
-        .and_then(|snapshot| snapshot.identity.email.as_deref())
-        .filter(|email| !email.is_empty());
-    snapshot_email
-        .or(config_email)
-        .unwrap_or(account.label.as_str())
-        .to_string()
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ClaudeAccountRowStatus {
-    ReauthRequired,
-    Error,
-    Stale,
-}
-
-fn claude_account_row_status(
-    account: &ProviderAccountRuntimeState,
-) -> Option<ClaudeAccountRowStatus> {
-    if account.auth_state == AuthState::ActionRequired {
-        return Some(ClaudeAccountRowStatus::ReauthRequired);
-    }
-    if account.health == ProviderHealth::Error {
-        if account.snapshot.is_some() {
-            return Some(ClaudeAccountRowStatus::Stale);
-        }
-        return Some(ClaudeAccountRowStatus::Error);
-    }
-    if account.snapshot.is_some()
-        && account
-            .last_success_at
-            .is_none_or(|updated| chrono::Utc::now() - updated >= STALE_THRESHOLD)
-    {
-        return Some(ClaudeAccountRowStatus::Stale);
-    }
-    None
 }
 
 fn active_badge(enabled: bool) -> Element<'static, Message> {
@@ -344,15 +217,23 @@ fn account_selected_marker(selected: bool, enabled: bool) -> Element<'static, Me
     .into()
 }
 
-fn account_action_support(
-    config: &Config,
-    provider: ProviderId,
-    account_id: &str,
-) -> Option<ProviderAccountActionSupport> {
-    registry::discover_accounts(provider, config)
-        .into_iter()
-        .find(|account| account.provider == provider && account.account_id == account_id)
-        .map(|account| account.action_support())
+fn action_available(
+    account: &ProviderAccountFacts,
+    action: ProviderAccountAction,
+    enabled: bool,
+    status: Option<&ProviderAccountStatus>,
+) -> bool {
+    if !account.supports_action(action) {
+        return false;
+    }
+    match action {
+        ProviderAccountAction::Delete => true,
+        ProviderAccountAction::RestoreFromOpenCode
+        | ProviderAccountAction::Reauthenticate
+        | ProviderAccountAction::Rescan => {
+            enabled && status.is_some_and(|status| status.reauth_eligible)
+        }
+    }
 }
 
 fn account_row_container<'a>(
@@ -516,109 +397,4 @@ fn account_row_icon_button_style(theme: &cosmic::Theme, opacity: f32) -> widget:
     style.border_radius = cosmic.corner_radii.radius_m.into();
 
     style
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::config::ManagedClaudeAccountConfig;
-    use crate::model::{AuthState, ProviderHealth};
-    use chrono::Utc;
-    use std::path::PathBuf;
-
-    fn claude_config(id: &str, email: Option<&str>) -> Config {
-        Config {
-            claude_managed_accounts: vec![ManagedClaudeAccountConfig {
-                id: id.to_string(),
-                label: "Claude account".to_string(),
-                config_dir: PathBuf::from("/tmp/claude-test"),
-                email: email.map(str::to_string),
-                organization: None,
-                subscription_type: None,
-                created_at: Utc::now(),
-                updated_at: Utc::now(),
-                last_authenticated_at: Some(Utc::now()),
-            }],
-            ..Config::default()
-        }
-    }
-
-    #[test]
-    fn claude_row_label_prefers_email_from_config() {
-        let config = claude_config("claude-1", Some("user@example.com"));
-        let account =
-            ProviderAccountRuntimeState::empty(ProviderId::Claude, "claude-1", "Claude account");
-
-        assert_eq!(
-            claude_account_row_label(&account, &config),
-            "user@example.com"
-        );
-    }
-
-    #[test]
-    fn claude_row_status_marks_action_required_before_error() {
-        let mut account =
-            ProviderAccountRuntimeState::empty(ProviderId::Claude, "claude-1", "Claude account");
-        account.health = ProviderHealth::Error;
-        account.auth_state = AuthState::ActionRequired;
-
-        assert_eq!(
-            claude_account_row_status(&account),
-            Some(ClaudeAccountRowStatus::ReauthRequired)
-        );
-    }
-
-    #[test]
-    fn codex_and_gemini_row_status_requires_action_when_auth_state_demands_it() {
-        for provider in [ProviderId::Codex, ProviderId::Gemini] {
-            let mut account = ProviderAccountRuntimeState::empty(provider, "acct-1", "Account");
-            account.auth_state = AuthState::ActionRequired;
-            assert!(
-                row_status(provider, &account).is_some(),
-                "{provider:?} should require action"
-            );
-        }
-    }
-
-    #[test]
-    fn codex_row_status_is_none_when_auth_state_is_ready() {
-        let mut account =
-            ProviderAccountRuntimeState::empty(ProviderId::Codex, "codex-1", "Codex account");
-        account.auth_state = AuthState::Ready;
-        assert!(row_status(ProviderId::Codex, &account).is_none());
-    }
-
-    #[test]
-    fn cursor_reauth_copy_does_not_use_inactive() {
-        assert_eq!(fl!("cursor-account-reauth-badge"), "Re-auth needed");
-        assert_eq!(
-            fl!("cursor-account-reauth-tooltip"),
-            "Rescan Cursor account"
-        );
-        assert!(!fl!("cursor-account-reauth-detail").contains("inactive"));
-        assert!(!fl!("cursor-accounts-reauth-summary").contains("inactive"));
-    }
-
-    #[test]
-    fn claude_row_status_marks_stale_snapshot() {
-        let mut account =
-            ProviderAccountRuntimeState::empty(ProviderId::Claude, "claude-1", "Claude account");
-        account.health = ProviderHealth::Error;
-        account.auth_state = AuthState::Ready;
-        account.snapshot = Some(crate::model::UsageSnapshot {
-            provider: ProviderId::Claude,
-            source: "test".to_string(),
-            updated_at: Utc::now(),
-            headline: crate::model::UsageHeadline(0),
-            windows: Vec::new(),
-            provider_cost: None,
-            extra_usage: None,
-            identity: crate::model::ProviderIdentity::default(),
-        });
-
-        assert_eq!(
-            claude_account_row_status(&account),
-            Some(ClaudeAccountRowStatus::Stale)
-        );
-    }
 }

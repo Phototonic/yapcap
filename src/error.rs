@@ -3,6 +3,7 @@
 use std::num::ParseFloatError;
 use std::path::PathBuf;
 
+use crate::model::ProviderId;
 use thiserror::Error;
 
 pub type Result<T, E = AppError> = std::result::Result<T, E>;
@@ -10,6 +11,8 @@ pub const OFFLINE_MESSAGE: &str = "No internet connection. Information is not up
 
 #[derive(Debug, Error)]
 pub enum AppError {
+    #[error("invalid account handle for provider {provider:?}")]
+    InvalidAccountHandle { provider: ProviderId },
     #[error(transparent)]
     Logging(#[from] LoggingError),
     #[error(transparent)]
@@ -85,6 +88,7 @@ impl AppError {
         match self {
             Self::Provider(error) => error.is_network_unavailable(),
             Self::Logging(_) => false,
+            Self::InvalidAccountHandle { .. } => false,
         }
     }
 
@@ -93,6 +97,7 @@ impl AppError {
         match self {
             Self::Provider(error) => error.requires_user_action(),
             Self::Logging(_) => false,
+            Self::InvalidAccountHandle { .. } => false,
         }
     }
 

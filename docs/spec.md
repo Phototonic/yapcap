@@ -8,7 +8,7 @@ read_when:
 
 # YapCap — COSMIC Panel Applet Architecture
 
-**Status:** As-built v0.6.0 · **Last updated:** 2026-08-25
+**Status:** As-built v0.6.0 · **Last updated:** 2026-08-31
 
 ## Document Metadata
 
@@ -18,7 +18,7 @@ read_when:
 | Target desktop | COSMIC |
 | Target language | Rust (edition 2024) |
 | Target runtime | libcosmic applet runtime |
-| Providers | Codex, Claude Code, Cursor, Gemini, Minimax, GitHub Copilot, Kimi for Coding, Antigravity, OpenCode Go |
+| Providers | Codex, Claude Code, Cursor, Antigravity, Gemini, GitHub Copilot, Minimax, Kimi for Coding, OpenCode Go |
 
 ## Document Map
 
@@ -39,7 +39,7 @@ read_when:
 
 ### 1.1 Scope and Non-Goals
 
-- YapCap is a native Linux COSMIC panel applet that shows local usage state for Codex, Claude Code, Cursor, Gemini, Minimax, GitHub Copilot, Kimi for Coding, Antigravity, and OpenCode Go.
+- YapCap is a native Linux COSMIC panel applet that shows local usage state for Codex, Claude Code, Cursor, Antigravity, Gemini, GitHub Copilot, Minimax, Kimi for Coding, and OpenCode Go.
 - Ships only on COSMIC. No GNOME, KDE, tray, or generic indicator paths exist.
 - Reads locally available credentials and caches. No user account, no cloud sync, no telemetry.
 - Out of scope: additional providers, historical charts, notifications, plugin architecture, doctor command, secret vault, alternative DEs.
@@ -119,9 +119,9 @@ Library modules (`src/`, also usable from tests):
 | Module | Purpose |
 | --- | --- |
 | `runtime` | `refresh_one(provider)`, `refresh_provider(...)`, `load_initial_state`, `persist_state`. Startup state is reconciled from shared runtime config, not from `snapshots.json`. |
-| `providers::registry` | Provider-facing interface used by runtime and UI code. It exposes provider capabilities, account discovery, account deletion, account status refresh, and usage fetch through provider adapters. |
+| `providers::registry` | Provider-facing interface used by runtime and UI code. It exposes provider capabilities, account discovery, prepared account-settings facts, account deletion, account status refresh, and usage fetch through provider adapters. |
 | `providers::adapters` | Provider adapter implementations for Codex, Claude, Cursor, Antigravity, Gemini, Minimax, Copilot, Kimi, and OpenCode Go. Each adapter maps the shared provider interface onto provider-specific account and fetch modules. |
-| `providers::interface` | Shared provider adapter trait, capability flags, account descriptors, account handles, and async future alias. |
+| `providers::interface` | Shared provider adapter trait, capability flags, account descriptors, prepared account-settings facts, account handles, and async future alias. |
 | `providers::codex` | Codex managed login, YapCap-owned account listing, OAuth usage fetch, and refresh-on-401/403 under `src/providers/codex/`. |
 | `providers::claude` | Managed native OAuth login and YapCap-owned account listing under `src/providers/claude/`, OAuth usage fetch, token refresh against Anthropic’s OAuth token endpoint (no Claude CLI), and read-only host `~/.claude.json` matching for `system_active_account_id`. |
 | `providers::cursor` | Cursor web API via YapCap-owned tokens scanned from Cursor IDE's local SQLite state. |
@@ -193,13 +193,22 @@ sequenceDiagram
   use `Auto`, while the one-shot legacy migration preserves prior boolean
   settings as explicit enablement. The settings toggle writes only explicit
   `Enabled` or `Disabled` values.
-- The popup has dedicated Manage providers and provider-scoped Manage accounts
-  routes. Provider enablement is controlled on Manage providers; Manage
-  accounts preserves account selection, deletion, re-authentication, and every
-  provider-specific login, import, restore, and scan action. Account creation is
-  presented as a common Add account action; compatible Codex and Copilot
-  credentials can also be imported from OpenCode when available, while Cursor
-  uses the same action to start its local account scan.
+ - The popup has dedicated Manage providers and provider-scoped Manage accounts
+   routes. Provider enablement is controlled on Manage providers; Manage
+   accounts preserves account selection, deletion, re-authentication, and every
+   provider-specific login, import, restore, and scan action. Account creation is
+   presented as a common Add account action; compatible Codex and Copilot
+   credentials can also be imported from OpenCode when available, while Cursor
+   uses the same action to start its local account scan.
+  - Provider adapters prepare the account facts consumed by the common account
+    settings renderer. Descriptors own row action policy. Delete is available
+    for every managed account; reauthentication, OpenCode restoration, and
+    Cursor rescanning are exposed only when declared by the provider and
+    applicable to the account state. Codex can expose both sign-in and OpenCode
+    restoration when its managed credentials are missing; Copilot exposes
+    OpenCode restore when available alongside matching-account
+    reauthentication; Cursor exposes rescan rather than ordinary
+    reauthentication.
 - Provider detection runs at startup and re-runs after debounced host-auth
   watcher events for its marker paths. A changed detection snapshot reconciles
   effective enablement without polling; stored accounts still keep a provider
@@ -235,8 +244,10 @@ sequenceDiagram
   or runtime cleanup.
 - A successful login (or Minimax or Kimi API-key save) clears the login state
   immediately: the account controls return to the normal add-account state with
-  no confirmation message or dismiss step. Failed logins keep showing the error
-  with `Add another` / `Dismiss` controls.
+  no confirmation message or dismiss step. Failed login preparation keeps showing
+  the error with `Add another` / `Dismiss` controls. A failed Kimi API-key save
+  keeps the entered key editable and shows the error so the user can retry or
+  cancel.
 - Each provider has one selected account. Clicking an account row or using the previous/next buttons in its detail view replaces that provider's selection and refreshes only that account. Stored accounts remain available for later switching.
 - Provider HTTP calls use a shared `reqwest::Client` with a 5s connect timeout and 20s total request timeout.
 - Refresh dispatch runs only when the provider is enabled and its account resolver is `Ready`.
@@ -979,9 +990,18 @@ Minimax account model:
 Managed Minimax add-account flow:
 
 - Settings exposes `Add account` under the Minimax accounts card.
-- User provides their Minimax API key and an optional account label.
-- YapCap validates the API key format and stores it in YapCap-owned account storage.
-- On success, the account is committed to storage and immediately triggers a usage refresh.
+- User provides their Minimax API key and an optional account label. Before adding
+  or reauthenticating, YapCap may prefill the key from the `minimax` API
+  credential in OpenCode's local auth store and identifies that value as
+  imported from OpenCode. Editing the key clears the imported provenance.
+- The key is masked by default and can be deliberately revealed. Empty keys and
+  storage failures keep the form editable and do not create or replace an
+  account.
+- On success, the account is committed to storage, immediately selected, and
+  triggers a usage refresh. The form closes without an intermediate success
+  state.
+- Reauthentication preserves the existing account id, label, and creation time,
+  and overwrites its stored key plus authentication metadata.
 
 Usage fetch (per refresh cycle, no caching across cycles):
 
@@ -1022,7 +1042,8 @@ Kimi for Coding uses API-key authentication and YapCap-managed accounts.
   A new account uses exclusive selection behavior and replaces the current
   selection. Runtime state is reconciled from the saved configuration and a
   shared `AccountAction` refresh request is made. An empty key fails without
-  creating an account.
+  creating an account. Validation and storage failures preserve the editable
+  form and entered key, and show a Kimi-specific save error.
 - Reauthentication targets one existing account, preserves its id, label, and
   creation time, and overwrites its stored key plus authentication metadata.
   An edited label is not applied during reauthentication.
@@ -1064,7 +1085,15 @@ OpenCode Go uses API-key authentication and YapCap-managed accounts.
 - Each managed account has a generated id and optional label. Its API key is
   stored separately at `<state-root>/yapcap/opencode-go-accounts/<id>/api_key.txt`.
 - Before add or reauthentication, YapCap may prefill the key from the
-  `opencode-go` API credential in OpenCode's local auth store.
+  `opencode-go` API credential in OpenCode's local auth store. The key is
+  masked by default, and editing a prefilled key clears its imported
+  provenance.
+- Empty keys and storage failures keep the form editable without creating or
+  replacing an account. On success, the account is committed, selected,
+  reconciled into runtime state, and refreshed through shared control; the
+  form closes without an intermediate success state.
+- Reauthentication preserves the existing account id, label, and creation
+  time while replacing its key and authentication metadata.
 - The host Active badge reads the same `opencode-go` API key and compares it
   with each YapCap account's private key. A match identifies that account; no
   key is exposed in configuration, logs, or the UI.
@@ -1416,7 +1445,7 @@ drive the status line and headline percentage.
 
 ```rust
 struct UsageSnapshot {
-    provider: ProviderId,          // Codex | Claude | Cursor | Antigravity | Gemini | Copilot | Minimax | Kimi
+    provider: ProviderId,          // Codex | Claude | Cursor | Antigravity | Gemini | Copilot | Minimax | Kimi | OpenCodeGo
     source: String,                // "OAuth" | "API Key" | "Managed Account" | ...
     updated_at: DateTime<Utc>,
     headline: UsageHeadline,       // index into windows for the panel badge
@@ -1500,7 +1529,7 @@ struct ProviderAccountRuntimeState {
 - `reset_at` is present and `≤ now` (elapsed), or
 - `used_percent ≤ 0` and the window is in its **fresh fraction** — `now - (reset_at - window_seconds) < window_seconds / 20` (the first 5 % of the window since it last reset). When `window_seconds` or `reset_at` are missing, the fresh-fraction check degrades to "used_percent ≤ 0" so providers like Claude that can omit `resets_at` after a reset still surface the label.
 
-Otherwise it formats `reset_at` per `ResetTimeFormat`. The rule is provider-agnostic and applies uniformly to every `UsageWindow` rendered in the popup (Codex Session/Weekly, Claude Session/Weekly plus per-model scoped windows such as Sonnet/Opus/Cowork/Fable, Cursor Total/Auto+Composer/API, Antigravity grouped Five Hour/Weekly, Gemini Pro/Flash/Lite, Copilot Free Chat/Completions, Copilot Paid Credits/Premium, Minimax Token, and Kimi Weekly/Rate Limit).
+Otherwise it formats `reset_at` per `ResetTimeFormat`. The rule is provider-agnostic and applies uniformly to every `UsageWindow` rendered in the popup (Codex Session/Weekly, Claude Session/Weekly plus per-model scoped windows such as Sonnet/Opus/Cowork/Fable, Cursor Total/Auto+Composer/API, Antigravity grouped Five Hour/Weekly, Gemini Pro/Flash/Lite, Copilot Free Chat/Completions, Copilot Paid Credits/Premium, Minimax Token, Kimi Weekly/Rate Limit, and OpenCode Go 5 Hour/Weekly/Monthly).
 
 ## 6. Persistence, Logging, Paths
 
@@ -1515,7 +1544,8 @@ All paths come from `config::paths()`.
 - Managed accounts and logs: under the XDG state root (typically
   `~/.local/state/yapcap/`), including `codex-accounts/`, `claude-accounts/`,
   `cursor-accounts/`, `antigravity-accounts/`, `gemini-accounts/`,
-  `copilot-accounts/`, `minimax-accounts/`, and `kimi-accounts/`
+  `copilot-accounts/`, `minimax-accounts/`, `kimi-accounts/`, and
+  `opencode-go-accounts/`
 
 **Flatpak** (`FLATPAK_ID` set): YapCap-owned cache and state **only** under the per-app tree on the host filesystem:
 
@@ -1524,7 +1554,7 @@ All paths come from `config::paths()`.
 - Managed accounts and logs: `~/.var/app/<app-id>/data/yapcap/`, including
   `codex-accounts/`, `claude-accounts/`, `cursor-accounts/`,
   `antigravity-accounts/`, `gemini-accounts/`, `copilot-accounts/`,
-  `minimax-accounts/`, and `kimi-accounts/`
+  `minimax-accounts/`, `kimi-accounts/`, and `opencode-go-accounts/`
 
 Flatpak does **not** read or write the native install’s `~/.local/state/yapcap/` or `~/.cache/yapcap/` for YapCap data. The `~` in the `.var` paths is the passwd home directory (`pw_dir`), not `dirs::home_dir()` / `$HOME`, so locations stay correct when the sandbox overrides `HOME`.
 
@@ -1636,7 +1666,7 @@ owns provider detail cards and `app::popup_view::settings::*` owns the settings 
 - Navigation row:
   - provider detail: an icon-only, six-provider viewport. With two to five enabled providers, the icons are centered horizontally within the viewport. With exactly one enabled provider the navigation row is hidden entirely. Previous/next controls shift the viewport by one additional enabled provider without wrapping or showing usage bars; their disabled end states make the viewport bounds explicit. The selected provider has a soft neutral fill and a thick foreground underline, while the full row shares a divider baseline. Selecting an icon keeps the existing persisted selection and refresh behavior.
   - secondary routes: Settings, Manage providers, Manage accounts, and About do not show a navigation row and return to provider detail with Back.
-- Providers render in a single fixed order (`ProviderId::ALL`) everywhere they are listed: Codex, Claude, Cursor, Antigravity, Gemini, Copilot, Minimax, Kimi.
+- Providers render in a single fixed order (`ProviderId::ALL`) everywhere they are listed: Codex, Claude, Cursor, Antigravity, Gemini, Copilot, Minimax, Kimi, OpenCode Go.
   - Provider and settings tabs and selected account rows use a soft accent fill and accent border. Global settings segmented option groups are softly merged neutral component surfaces; their selected option has a slightly deeper neutral fill plus accent-colored text and a checkmark. Settings section wrappers around titles and bodies stay visually neutral (layout only).
   - Body panel (scrollable where content can grow): shows either selected provider details, global Settings, Manage providers, provider-scoped Manage accounts, or About. Manage providers lists every provider in one rounded component card with horizontal row dividers and trailing enable switches. Settings retains the Refresh interval, panel-icon, reset-time, and usage-amount controls. About centers the YapCap logo and identity, groups project/developer/license links into full-width link rows, and shows checking/error/update state; an available update uses a destructive callout that links to its release and drives the header notification dot. When no provider tabs are available, the provider route suppresses the navigation row and shows a centered YapCap/provider-logo hero with “No providers set up yet”, guidance to manage providers, and a suggested action.
 - Provider view always starts with a provider title card (icon + name). A provider detected on this machine with no YapCap account additionally shows an accent `Detected` chip and an add-account call to action that opens its Settings category. Below it, the selected account is displayed with its account header ("Account" label, email, plan badge, per-account status badge, "Updated X ago" timestamp), usage window cards, and cost/credits card. When multiple accounts are stored, the account card has a footer pager whose previous/next controls change the selected account exactly like the account-management rows. Usage windows that carry a `group` render inside a single rounded group container per consecutive group run: the container has a component-background fill, rounded corners, and a 1 px component-divider border, the group name as an 18 px header, and the group's usage sections stacked inside it (no per-window card and no dividers inside the container). Ungrouped windows keep their own individual cards. Section/card titles ("Account", window labels, "Extra usage", "Credits") render at 15 px so group headers sit above them in the type hierarchy.
@@ -1645,9 +1675,9 @@ owns provider detail cards and `app::popup_view::settings::*` owns the settings 
   - Global Settings contains app-wide settings such as Autorefresh segmented interval buttons, panel icon style preview buttons, reset time format, and usage amount format. Each selectable option shows a tooltip explaining its effect on hover. If the startup update check fails, YapCap keeps retrying in the background with exponential backoff and shows the latest detailed failure plus the next retry delay in About. Error state also shows a manual "Check again" action.
   - When an update is available, a small red notification dot appears on the header About action.
  - Debug builds can force the About update-available state with `YAPCAP_DEBUG_UPDATE_AVAILABLE`. Values `1`, `true`, `yes`, and empty string use `v9.9.9`; any other value is treated as the release version. Debug builds can also simulate offline HTTP with `YAPCAP_DEBUG_OFFLINE`; values `0`, `false`, `no`, and `off` disable it, while any other present value enables it.
- - `YAPCAP_DEMO` (debug only; inert in release) seeds a screenshot-oriented synthetic config plus `AppState`: all eight providers are enabled with `provider_visibility_mode = user_managed`; **Codex** gets two managed demo accounts, with the Pro account selected; **Claude** gets two managed demo accounts, with the Pro account selected and synthetic **extra usage**; **Cursor** gets one managed demo account; **Gemini** gets one Pro-tier managed demo account; **Minimax** gets one managed demo account; **Copilot** gets two managed demo accounts, with the Free account selected and the Pro+ account carrying a **Credits** window, dollar cost card (`$28.00 / $70.00`), and `+42 over plan`; **Antigravity** gets two managed demo accounts, with the Pro account selected; and **Kimi** and **OpenCode Go** each get one API-key demo account. Multiple managed demo accounts remain available through the account pager, but only one account is selected per provider. Every synthetic provider usage window includes pace timing so demo behavior matches production. Display settings otherwise follow defaults (panel icon style, reset time format, usage format, autorefresh interval); the default startup `Task` batch is skipped; provider refresh becomes a no-op; shared-runtime writes are skipped; and demo data is re-applied after config reconciliation.
+  - `YAPCAP_DEMO` (debug only; inert in release) seeds a screenshot-oriented synthetic config plus `AppState`: all nine providers are enabled with `provider_visibility_mode = user_managed`; **Codex** gets two managed demo accounts, with the Pro account selected; **Claude** gets two managed demo accounts, with the Pro account selected and synthetic **extra usage**; **Cursor** gets one managed demo account; **Gemini** gets one Pro-tier managed demo account; **Minimax** gets one managed demo account; **Copilot** gets two managed demo accounts, with the Free account selected and the Pro+ account carrying a **Credits** window, dollar cost card (`$28.00 / $70.00`), and `+42 over plan`; **Antigravity** gets two managed demo accounts, with the Pro account selected; and **Kimi** and **OpenCode Go** each get one API-key demo account. Multiple managed demo accounts remain available through the account pager, but only one account is selected per provider. Every synthetic provider usage window includes pace timing so demo behavior matches production. Display settings otherwise follow defaults (panel icon style, reset time format, usage format, autorefresh interval); the default startup `Task` batch is skipped; provider refresh becomes a no-op; shared-runtime writes are skipped; and demo data is re-applied after config reconciliation.
   - `YAPCAP_DEMO` and `YAPCAP_DEBUG_UPDATE_AVAILABLE` are independent debug toggles and can be combined; `just run-demo-update` launches the synthetic demo with the forced update state.
-  - Provider account cards list currently valid account sources as separate selector rows with a selected outline/checkmark, a row press to make an account active, and account action icons. Long account labels are truncated in-row and reveal the full label on hover. With no accounts, the provider settings page shows a tighter centered `No accounts` card with `Add account`; providers with a currently available OpenCode import also show `Import from OpenCode` in that card. With accounts present, account-creation controls are grouped in a separate bordered container; each action is a full-width row with a trailing arrow matching the provider-detail Manage accounts action. Providers with an OpenCode import path show that action as a second stacked row. Codex add-account login opens the browser from the Settings flow and stores the result in YapCap-owned account storage. Codex account rows show the same login-required warning badge and row highlight as other providers when `auth_state = ActionRequired` (for example after refresh token failure). Claude add-account opens the native OAuth browser flow from Settings, shows the same browser account/private-window hint as Copilot, and asks the user to paste the returned authentication code; malformed pasted input is rejected with plain-language guidance to paste the authentication code (no internal format jargon). Claude account rows use email-derived labels and show login-required, error, or stale badges when account state needs attention. Claude accounts with `auth_state = ActionRequired` show a per-account re-authenticate action (refresh icon) in Settings alongside the delete action; clicking it starts a targeted OAuth flow that must complete with the same email — a different email is rejected with an error and the existing account is left unchanged; success immediately triggers a usage refresh. Generic Claude add-account keeps duplicate-by-email upsert behavior. Cursor add-account scans Cursor IDE's local SQLite state database and imports the currently logged-in Cursor account tokens into YapCap-owned storage. Cursor accounts that need user action show a `Re-auth needed` badge plus a per-account refresh action in Settings, and the provider status text tells the user to log into that account in Cursor and rescan. Cursor `Active` reflects the account currently used by Cursor IDE and can appear alongside `Re-auth needed` when YapCap's copied session needs a fresh scan. Antigravity and Gemini add-account open Google OAuth browser flows and store only YapCap-owned account storage. Copilot add-account starts GitHub device flow, shows the shared browser account/private-window hint near the Settings control, displays the user code and `Open Browser` fallback while polling, and stores accounts by GitHub numeric user id. Minimax and Kimi use API-key forms; Kimi may prefill once from OpenCode. Copilot and Antigravity account rows never show an Active badge. Codex, Claude, Cursor, Antigravity, Gemini, Copilot, Minimax, and Kimi account removal deletes only YapCap-owned account homes/config dirs/profile roots. Cursor accounts are always managed and displayed with the email address as the account label. Copilot accounts are displayed with the GitHub login label. If no accounts remain for a provider, the provider detail shows an empty state pointing the user to Settings.
+    - Provider account cards list currently valid account sources as separate selector rows with a selected outline/checkmark, a row press to make an account active, and account action icons. Long account labels are truncated in-row and reveal the full label on hover. With no accounts, the provider settings page shows a tighter centered `No accounts` card with `Add account`; providers with a currently available OpenCode import also show `Import from OpenCode` in that card. With accounts present, account-creation controls are grouped in a separate bordered container; each action is a full-width row with a trailing arrow matching the provider-detail Manage accounts action. Providers with an OpenCode import path show that action as a second stacked row. Codex add-account login opens the browser from the Settings flow and stores the result in YapCap-owned account storage. Codex account rows show the same login-required warning badge and row highlight as other providers when `auth_state = ActionRequired` (for example after refresh token failure). Claude add-account opens the native OAuth browser flow from Settings, shows the same browser account/private-window hint as Copilot, and asks the user to paste the returned authentication code; malformed pasted input is rejected with plain-language guidance to paste the authentication code (no internal format jargon). Claude account rows use email-derived labels and show login-required, error, or stale badges when account state needs attention. Claude accounts with `auth_state = ActionRequired` show a per-account re-authenticate action (refresh icon) in Settings alongside the delete action; clicking it starts a targeted OAuth flow that must complete with the same email — a different email is rejected with an error and the existing account is left unchanged; success immediately triggers a usage refresh. Generic Claude add-account keeps duplicate-by-email upsert behavior. Cursor add-account scans Cursor IDE's local SQLite state database and imports the currently logged-in Cursor account tokens into YapCap-owned storage. Cursor accounts that need user action show a `Re-auth needed` badge plus a per-account refresh action in Settings, and the provider status text tells the user to log into that account in Cursor and rescan. Cursor `Active` reflects the account currently used by Cursor IDE and can appear alongside `Re-auth needed` when YapCap's copied session needs a fresh scan. Antigravity and Gemini add-account open Google OAuth browser flows and store only YapCap-owned account storage. Copilot add-account starts GitHub device flow, shows the shared browser account/private-window hint near the Settings control, displays the user code and `Open Browser` fallback while polling, and stores accounts by GitHub numeric user id. Minimax, Kimi, and OpenCode Go use API-key forms and may prefill once from OpenCode. Copilot and Antigravity account rows never show an Active badge. Codex, Claude, Cursor, Antigravity, Gemini, Copilot, Minimax, Kimi, and OpenCode Go account removal deletes only YapCap-owned account homes/config dirs/profile roots. Cursor accounts are always managed and displayed with the email address as the account label. Copilot accounts are displayed with the GitHub login label. If no accounts remain for a provider, the provider detail shows an empty state pointing the user to Settings.
 - Footer: Back on secondary routes.
 
 The popup uses `core.applet.popup_container` and libcosmic's `Autosize` widget. `get_popup_settings` supplies no application-owned initial size and keeps the popup reactive, so layout determines the intrinsic height after each route, provider, account, or state change. YapCap keeps the shared 360-pixel width and applies a matching 1200-pixel maximum to the Autosize widget and Wayland popup positioner. Provider detail, provider management, and account management put scrolling on their potentially long body content; the header and navigation remain outside that scrollable region. The application does not calculate popup dimensions, dispatch `set_size`, subscribe to resize acknowledgements, or cache body measurements.

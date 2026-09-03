@@ -41,8 +41,6 @@ struct ClaudeUsageResponse {
     pub seven_day_sonnet: Option<ClaudeWindow>,
     pub seven_day_opus: Option<ClaudeWindow>,
     pub seven_day_cowork: Option<ClaudeWindow>,
-    #[allow(dead_code)]
-    pub seven_day_omelette: Option<ClaudeWindow>,
     pub extra_usage: Option<ClaudeExtraUsage>,
     #[serde(default)]
     pub limits: Option<Vec<ClaudeLimit>>,
@@ -564,7 +562,8 @@ mod tests {
                 "five_hour": {"utilization": 5.0, "resets_at": null},
                 "seven_day": {"utilization": 10.0, "resets_at": null},
                 "seven_day_sonnet": {"utilization": 20.0, "resets_at": null},
-                "seven_day_opus": {"utilization": 30.0, "resets_at": null}
+                "seven_day_opus": {"utilization": 30.0, "resets_at": null},
+                "seven_day_omelette": {"utilization": 40.0, "resets_at": null}
             }"#,
         )
         .unwrap();

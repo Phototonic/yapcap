@@ -50,7 +50,7 @@ use crate::providers::kimi::{
     self,
     login::{KimiLoginEvent, KimiLoginState},
 };
-use crate::providers::minimax::{self, MinimaxLoginEvent, MinimaxLoginState, MinimaxLoginStatus};
+use crate::providers::minimax::{self, MinimaxLoginEvent, MinimaxLoginState};
 use crate::providers::opencode_go::login::{OpenCodeGoLoginEvent, OpenCodeGoLoginState};
 use crate::providers::registry;
 use crate::refresh_owner::{
@@ -104,7 +104,6 @@ pub struct AppModel {
     popup: Option<Id>,
     config: Config,
     state: AppState,
-    #[cfg_attr(not(test), allow(dead_code))]
     detection: crate::detection::DetectionSnapshot,
     selected_provider: ProviderId,
     detail_account_page: usize,

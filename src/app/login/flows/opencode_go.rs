@@ -45,10 +45,7 @@ impl LoginFlow for OpenCodeGoLoginFlow {
     }
 
     fn failed_state(error: String) -> Self::State {
-        let mut state = OpenCodeGoLoginState::new("failed".to_string());
-        state.status = OpenCodeGoLoginStatus::Failed;
-        state.error = Some(error);
-        state
+        OpenCodeGoLoginState::failed(error)
     }
 
     fn prepare(config: Config) -> Result<(Self::State, cosmic::iced::Task<Self::Event>), String> {
@@ -94,11 +91,11 @@ impl LoginFlow for OpenCodeGoLoginFlow {
                 Task::none()
             }
             OpenCodeGoLoginEvent::Saved => {
-                let Some(login) = app.opencode_go_login.as_ref() else {
+                let Some(login) = app.opencode_go_login.as_mut() else {
                     return Task::none();
                 };
                 let flow_id = login.account_id.clone();
-                match login.save(&mut app.config) {
+                match opencode_go::login::save(login) {
                     Ok(managed_account) => {
                         let account_id = managed_account.id.clone();
                         let selected_account_id = account_id.clone();
@@ -120,13 +117,7 @@ impl LoginFlow for OpenCodeGoLoginFlow {
                         app.opencode_go_login = None;
                         task
                     }
-                    Err(error) => {
-                        if let Some(login) = app.opencode_go_login.as_mut() {
-                            login.error = Some(error);
-                            login.status = OpenCodeGoLoginStatus::Failed;
-                        }
-                        Task::none()
-                    }
+                    Err(_) => Task::none(),
                 }
             }
         }

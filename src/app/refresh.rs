@@ -114,12 +114,6 @@ fn reconcile_host_active_accounts(config: &Config, state: &mut AppState) {
         return;
     }
     for provider in ProviderId::ALL {
-        // Cursor resolves its active account via its own adapter reconcile (SQLite
-        // scan), not this host-session-file capability; skip it so this lightweight
-        // pass doesn't clobber that value with the capability's default `None`.
-        if provider == ProviderId::Cursor {
-            continue;
-        }
         if let Some(provider_state) = state.provider_mut(provider) {
             provider_state.system_active_account_id =
                 registry::system_active_account_id(provider, config);

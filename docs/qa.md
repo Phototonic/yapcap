@@ -468,7 +468,7 @@ In Settings → General, cycle through all four panel icon styles and verify the
 ### 11.7 `YAPCAP_DEMO`
 
 - Run with `YAPCAP_DEMO=1`.
-- Verify all eight provider tabs appear with demo accounts (Codex seeds two).
+- Verify all nine provider tabs appear with demo accounts (Codex seeds two).
 - Verify the Codex accounts are `pro@example.com` on Pro and `free@example.com`
   on Free, with the Pro account marked **Active**.
 - Verify two Antigravity demo accounts are present:

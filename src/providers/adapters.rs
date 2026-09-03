@@ -215,3 +215,31 @@ pub(super) fn kimi_system_active_account_id(
         }
     })
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_supported_provider_has_an_owning_adapter() {
+        for provider in ProviderId::ALL {
+            assert_eq!(adapter(provider).id(), provider);
+        }
+    }
+
+    #[test]
+    fn every_supported_provider_declares_login_controls() {
+        for provider in ProviderId::ALL {
+            let _ = adapter(provider).login_kind();
+        }
+    }
+
+    #[test]
+    fn every_supported_provider_exposes_startup_sync() {
+        let mut config = Config::default();
+
+        for provider in ProviderId::ALL {
+            let _ = adapter(provider).sync_managed_accounts(&mut config);
+        }
+    }
+}

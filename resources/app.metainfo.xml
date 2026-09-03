@@ -11,7 +11,7 @@
   <name>YapCap</name>
   <summary>COSMIC panel applet for AI coding usage tracking</summary>
   <description>
-    <p>YapCap is a native COSMIC panel applet that tracks your AI coding quota for Codex, Claude Code, Cursor, Antigravity, Gemini, Minimax, GitHub Copilot, and Kimi for Coding right from the panel. Add accounts once and YapCap fetches usage directly from provider APIs. No telemetry, no cloud sync, no separate service account required.</p>
+    <p>YapCap is a native COSMIC panel applet that tracks your AI coding quota for Codex, Claude Code, Cursor, Antigravity, Gemini, Minimax, GitHub Copilot, Kimi for Coding, and OpenCode Go right from the panel. Add accounts once and YapCap fetches usage directly from provider APIs. No telemetry, no cloud sync, no separate service account required.</p>
     <p>Use the popup to compare multiple accounts, see which CLI account is active, switch panel styles, and follow your COSMIC light, dark, and accent color settings.</p>
     <p>Main features:</p>
     <ul>
@@ -21,8 +21,9 @@
       <li>Antigravity usage tracking: grouped Gemini and Claude/GPT model quotas</li>
       <li>Gemini usage tracking: Pro, Flash and Lite quotas</li>
       <li>Minimax and Kimi for Coding API-key usage tracking</li>
+      <li>OpenCode Go API-key usage tracking with 5 Hour, Weekly, and Monthly windows</li>
       <li>GitHub Copilot usage tracking: Free and paid quota shapes</li>
-      <li>Optional one-time Kimi API-key prefill from OpenCode's local auth file</li>
+      <li>Optional one-time API-key prefill for Minimax, Kimi for Coding, and OpenCode Go from OpenCode's local auth file</li>
       <li>Multiple accounts per provider</li>
       <li>Active account badge</li>
       <li>COSMIC theme integration</li>
@@ -101,6 +102,7 @@
     <keyword>Copilot</keyword>
     <keyword>Kimi</keyword>
     <keyword>Minimax</keyword>
+    <keyword>OpenCode Go</keyword>
     <keyword>Panel</keyword>
     <keyword>Applet</keyword>
   </keywords>

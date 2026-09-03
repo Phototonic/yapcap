@@ -12,6 +12,7 @@ mod demo_env;
 mod detection;
 mod error;
 mod i18n;
+mod key_authentication;
 mod logging;
 mod model;
 mod provider_enablement;

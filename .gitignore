@@ -9,7 +9,6 @@ issues/
 build-dir/
 repo/
 dist/
-docs/todo.md
 *.pdb
 **/*.rs.bk
 debug/
@@ -27,3 +26,6 @@ debian/*
 !debian/install
 !debian/rules
 !debian/source
+docs/agents
+docs/RTK.md
+docs/todo.md

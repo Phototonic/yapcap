@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
 mod account;
-#[allow(dead_code)]
 pub mod buckets;
 pub mod code_assist;
 mod host_session;

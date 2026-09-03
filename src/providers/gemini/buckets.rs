@@ -9,7 +9,9 @@ pub const FAMILY_PRO: &str = "Pro";
 pub const FAMILY_FLASH: &str = "Flash";
 pub const FAMILY_LITE: &str = "Lite";
 
+#[cfg(test)]
 pub const UNIT_REQUESTS: &str = "Requests";
+#[cfg(test)]
 pub const UNIT_TOKENS: &str = "Tokens";
 
 const GEMINI_WINDOW_SECONDS: i64 = 24 * 3600;
@@ -56,6 +58,7 @@ impl TokenType {
         }
     }
 
+    #[cfg(test)]
     #[must_use]
     pub fn unit_label(&self) -> &str {
         match self {
@@ -92,6 +95,7 @@ pub struct FamilyUsageWindow {
 }
 
 impl FamilyUsageWindow {
+    #[cfg(test)]
     #[must_use]
     pub fn unit_label(&self) -> &str {
         self.token_type.unit_label()
@@ -199,6 +203,7 @@ pub fn classify_buckets(
     out
 }
 
+#[cfg(test)]
 pub fn classify_usage_windows(
     response: &RetrieveUserQuotaResponse,
     current_tier_id: &str,
@@ -229,13 +234,24 @@ mod tests {
         serde_json::from_value(outer["body_json"].clone()).expect("body_json parses")
     }
 
-    fn bucket(model: &str, remaining: f64, reset: DateTime<Utc>, token_type: &str) -> RawBucket {
+    fn bucket(model: &str, remaining: f64, reset: DateTime<Utc>) -> RawBucket {
         RawBucket {
             model_id: model.to_string(),
             remaining_fraction: remaining,
             reset_time: reset,
-            token_type: Some(token_type.to_string()),
+            token_type: None,
         }
+    }
+
+    fn bucket_with_token_type(
+        model: &str,
+        remaining: f64,
+        reset: DateTime<Utc>,
+        token_type: &str,
+    ) -> RawBucket {
+        let mut bucket = bucket(model, remaining, reset);
+        bucket.token_type = Some(token_type.to_string());
+        bucket
     }
 
     #[test]
@@ -254,9 +270,9 @@ mod tests {
         let future = now() + chrono::Duration::hours(12);
         let response = RetrieveUserQuotaResponse {
             buckets: vec![
-                bucket("gemini-3-pro-preview", 0.5, future, "REQUESTS"),
-                bucket("gemini-3-flash-preview", 0.75, future, "REQUESTS"),
-                bucket("gemini-3.1-flash-lite-preview", 0.9, future, "REQUESTS"),
+                bucket("gemini-3-pro-preview", 0.5, future),
+                bucket("gemini-3-flash-preview", 0.75, future),
+                bucket("gemini-3.1-flash-lite-preview", 0.9, future),
             ],
         };
         let out = classify_buckets(&response, "standard-tier", now());
@@ -268,7 +284,7 @@ mod tests {
     fn exhausted_flash_with_future_reset_is_visible_at_zero_remaining() {
         let future = now() + chrono::Duration::hours(8);
         let response = RetrieveUserQuotaResponse {
-            buckets: vec![bucket("gemini-2.5-flash", 0.0, future, "REQUESTS")],
+            buckets: vec![bucket("gemini-2.5-flash", 0.0, future)],
         };
         let out = classify_buckets(&response, "standard-tier", now());
         assert_eq!(out.len(), 1);
@@ -282,13 +298,8 @@ mod tests {
         let epoch = Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap();
         let response = RetrieveUserQuotaResponse {
             buckets: vec![
-                bucket("gemini-2.5-pro", 0.0, epoch, "REQUESTS"),
-                bucket(
-                    "gemini-2.5-flash",
-                    0.8,
-                    now() + chrono::Duration::hours(1),
-                    "REQUESTS",
-                ),
+                bucket("gemini-2.5-pro", 0.0, epoch),
+                bucket("gemini-2.5-flash", 0.8, now() + chrono::Duration::hours(1)),
             ],
         };
         let out = classify_buckets(&response, "free-tier", now());
@@ -300,7 +311,7 @@ mod tests {
     fn pro_at_epoch_zero_on_standard_tier_is_also_hidden() {
         let epoch = Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap();
         let response = RetrieveUserQuotaResponse {
-            buckets: vec![bucket("gemini-2.5-pro", 0.0, epoch, "REQUESTS")],
+            buckets: vec![bucket("gemini-2.5-pro", 0.0, epoch)],
         };
         let out = classify_buckets(&response, "standard-tier", now());
         assert!(out.is_empty());
@@ -311,8 +322,8 @@ mod tests {
         let future = now() + chrono::Duration::hours(4);
         let response = RetrieveUserQuotaResponse {
             buckets: vec![
-                bucket("gemini-2.5-flash", 0.9, future, "REQUESTS"),
-                bucket("gemini-3-flash-preview", 0.2, future, "REQUESTS"),
+                bucket("gemini-2.5-flash", 0.9, future),
+                bucket("gemini-3-flash-preview", 0.2, future),
             ],
         };
         let out = classify_buckets(&response, "standard-tier", now());
@@ -326,8 +337,8 @@ mod tests {
         let future = now() + chrono::Duration::hours(1);
         let response = RetrieveUserQuotaResponse {
             buckets: vec![
-                bucket("gemini-experimental-mystery", 0.5, future, "REQUESTS"),
-                bucket("gemini-2.5-flash", 0.5, future, "REQUESTS"),
+                bucket("gemini-experimental-mystery", 0.5, future),
+                bucket("gemini-2.5-flash", 0.5, future),
             ],
         };
         let out = classify_buckets(&response, "standard-tier", now());
@@ -340,8 +351,8 @@ mod tests {
         let future = now() + chrono::Duration::hours(1);
         let response = RetrieveUserQuotaResponse {
             buckets: vec![
-                bucket("gemini-2.5-flash", 0.5, future, "REQUESTS"),
-                bucket("gemini-2.5-flash-lite", 0.5, future, "TOKENS"),
+                bucket_with_token_type("gemini-2.5-flash", 0.5, future, "REQUESTS"),
+                bucket_with_token_type("gemini-2.5-flash-lite", 0.5, future, "TOKENS"),
             ],
         };
         let out = classify_buckets(&response, "standard-tier", now());
@@ -361,9 +372,9 @@ mod tests {
         let future = now() + chrono::Duration::hours(2);
         let response = RetrieveUserQuotaResponse {
             buckets: vec![
-                bucket("gemini-2.5-flash-lite", 0.9, future, "REQUESTS"),
-                bucket("gemini-2.5-pro", 0.7, future, "REQUESTS"),
-                bucket("gemini-2.5-flash", 0.8, future, "REQUESTS"),
+                bucket("gemini-2.5-flash-lite", 0.9, future),
+                bucket("gemini-2.5-pro", 0.7, future),
+                bucket("gemini-2.5-flash", 0.8, future),
             ],
         };
         let windows = classify_usage_windows(&response, "standard-tier", now());
@@ -375,7 +386,7 @@ mod tests {
     fn visible_family_window_infers_twenty_four_hour_window_seconds() {
         let future = now() + chrono::Duration::hours(6);
         let response = RetrieveUserQuotaResponse {
-            buckets: vec![bucket("gemini-2.5-flash", 0.5, future, "REQUESTS")],
+            buckets: vec![bucket("gemini-2.5-flash", 0.5, future)],
         };
         let windows = classify_usage_windows(&response, "standard-tier", now());
         assert_eq!(windows.len(), 1);
@@ -386,7 +397,7 @@ mod tests {
     fn epoch_reset_leaves_window_seconds_none() {
         let epoch = Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap();
         let response = RetrieveUserQuotaResponse {
-            buckets: vec![bucket("gemini-2.5-flash", 0.5, epoch, "REQUESTS")],
+            buckets: vec![bucket("gemini-2.5-flash", 0.5, epoch)],
         };
         let windows = classify_usage_windows(&response, "standard-tier", now());
         assert_eq!(windows.len(), 1);

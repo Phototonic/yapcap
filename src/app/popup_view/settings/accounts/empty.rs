@@ -1,19 +1,12 @@
 use super::super::super::{
     Alignment, Background, Element, Length, Message, ProviderId, container, fl, row, widget,
 };
+use crate::providers::interface::ProviderAccountAddAction;
 
-fn account_add_message(provider: ProviderId) -> Message {
-    match provider {
-        ProviderId::Cursor => Message::StartCursorScan,
-        _ => Message::StartLogin(provider),
-    }
-}
-
-pub(super) fn opencode_import_available(provider: ProviderId) -> bool {
-    match provider {
-        ProviderId::Codex => crate::providers::codex::opencode_import_available(),
-        ProviderId::Copilot => crate::providers::copilot::opencode_import_available(),
-        _ => false,
+fn account_add_message(provider: ProviderId, action: ProviderAccountAddAction) -> Message {
+    match action {
+        ProviderAccountAddAction::Login => Message::StartLogin(provider),
+        ProviderAccountAddAction::Scan => Message::StartCursorScan,
     }
 }
 
@@ -100,18 +93,20 @@ fn empty_account_button_style(
 
 pub(super) fn empty_accounts_state(
     provider: ProviderId,
+    add_action: ProviderAccountAddAction,
+    supports_opencode_import: bool,
     enabled: bool,
 ) -> Element<'static, Message> {
     let add_button = empty_account_button(
         fl!("account-add"),
         widget::text("+").size(20).into(),
         empty_account_button_class(true, enabled),
-        enabled.then(|| account_add_message(provider)),
+        enabled.then(|| account_add_message(provider, add_action)),
     );
     let mut actions = cosmic::iced::widget::column![add_button]
         .spacing(8)
         .width(Length::Fixed(250.0));
-    if opencode_import_available(provider) {
+    if supports_opencode_import {
         actions = actions.push(empty_account_button(
             fl!("import-from-opencode"),
             widget::icon::from_name("go-up-symbolic")

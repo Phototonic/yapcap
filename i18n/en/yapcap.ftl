@@ -64,6 +64,7 @@ account-dismiss = Dismiss
 account-select = Select
 account-selected = Selected
 account-select-tooltip = Make active
+restore-from-opencode = Restore from OpenCode
 codex-login-running = Waiting for Codex sign-in...
 codex-login-failed = Codex login failed
 claude-login-running = Paste the authentication code from your browser
