@@ -22,6 +22,12 @@ struct RowStatus {
     style_as_action_required: bool,
 }
 
+#[derive(Clone, Copy)]
+pub(super) struct AccountRowPosition {
+    pub(super) first: bool,
+    pub(super) last: bool,
+}
+
 fn row_status(provider: ProviderId, account: &ProviderAccountRuntimeState) -> Option<RowStatus> {
     match provider {
         ProviderId::Cursor => {
@@ -134,6 +140,7 @@ pub(super) fn account_settings_row<'a>(
     active_id: Option<&str>,
     config: &'a Config,
     enabled: bool,
+    position: AccountRowPosition,
 ) -> Element<'a, Message> {
     let is_selected = selected_ids.contains(&account.account_id.as_str());
     let is_active = active_id == Some(account.account_id.as_str());
@@ -153,6 +160,7 @@ pub(super) fn account_settings_row<'a>(
     let mut title_row = row![account_label]
         .spacing(8)
         .align_y(Alignment::Center)
+        .height(Length::Fixed(22.0))
         .width(Length::Fill);
     if is_active {
         title_row = title_row.push(badge_with_tooltip(
@@ -160,20 +168,11 @@ pub(super) fn account_settings_row<'a>(
             fl!("badge-active-tooltip"),
         ));
     }
-    let mut selector_body = cosmic::iced::widget::column![title_row]
-        .spacing(6)
-        .width(Length::Fill);
     if let Some(status) = &status {
-        selector_body = selector_body.push(
-            row![status_badge(status, enabled)]
-                .width(Length::Fill)
-                .align_y(Alignment::Center),
-        );
+        title_row = title_row.push(status_badge(status, enabled));
     }
 
-    let selector_content = container(selector_body)
-        .padding([10, 12])
-        .width(Length::Fill);
+    let selector_content = container(title_row).padding([8, 12]).width(Length::Fill);
 
     let selector = widget::button::custom(selector_content)
         .class(account_row_button_class(is_selected))
@@ -215,6 +214,8 @@ pub(super) fn account_settings_row<'a>(
         is_selected,
         enabled,
         status.is_some_and(|status| status.style_as_action_required),
+        position.first,
+        position.last,
     ))
 }
 
@@ -239,6 +240,15 @@ pub(super) fn account_selector_list<'a>(
                 snap: true,
             }
         })
+        .into()
+}
+
+pub(super) fn account_action_container<'a>(
+    content: impl Into<Element<'a, Message>>,
+) -> Element<'a, Message> {
+    container(content)
+        .padding([16, 0, 0, 0])
+        .width(Length::Fill)
         .into()
 }
 
@@ -351,6 +361,8 @@ fn account_row_container<'a>(
     selected: bool,
     enabled: bool,
     action_required: bool,
+    first: bool,
+    last: bool,
 ) -> Element<'a, Message> {
     container(
         row![selector, delete_button]
@@ -373,7 +385,7 @@ fn account_row_container<'a>(
                 surface.base.into()
             })),
             border: cosmic::iced::Border {
-                radius: 0.0.into(),
+                radius: account_row_radius(cosmic.corner_radii.radius_s, first, last),
                 width: if selected { 2.0 } else { 1.0 },
                 color: if selected {
                     if enabled {
@@ -397,6 +409,15 @@ fn account_row_container<'a>(
         }
     })
     .into()
+}
+
+fn account_row_radius(radius: [f32; 4], first: bool, last: bool) -> cosmic::iced::border::Radius {
+    cosmic::iced::border::Radius {
+        top_left: if first { radius[0] } else { 0.0 },
+        top_right: if first { radius[1] } else { 0.0 },
+        bottom_right: if last { radius[2] } else { 0.0 },
+        bottom_left: if last { radius[3] } else { 0.0 },
+    }
 }
 
 fn account_row_button_class(selected: bool) -> cosmic::theme::Button {

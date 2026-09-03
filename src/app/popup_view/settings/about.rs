@@ -74,19 +74,21 @@ fn version_badge(version: String) -> Element<'static, Message> {
 fn update_section(update_status: &UpdateStatus) -> Option<Element<'static, Message>> {
     match update_status {
         UpdateStatus::UpdateAvailable { version, url } => Some(
-            container(
+            widget::button::custom(
                 cosmic::iced::widget::column![
                     widget::text(fl!("update-available-title")).size(14),
                     widget::text(fl!("update-available-detail", version = version)).size(13),
-                    widget::button::link(fl!("update-open-release", version = version))
-                        .on_press(Message::OpenUrl(url.clone())),
+                    widget::text(fl!("update-open-release", version = version))
+                        .size(13)
+                        .class(cosmic::theme::Text::Accent),
                 ]
                 .spacing(6)
                 .width(Length::Fill),
             )
             .width(Length::Fill)
             .padding(12)
-            .style(update_available_style)
+            .class(update_available_button_class())
+            .on_press(Message::OpenUrl(url.clone()))
             .into(),
         ),
         UpdateStatus::Unchecked => Some(update_status_text(fl!("update-checking"))),
@@ -109,21 +111,32 @@ fn update_status_text(label: String) -> Element<'static, Message> {
         .into()
 }
 
-fn update_available_style(theme: &cosmic::Theme) -> cosmic::widget::container::Style {
+fn update_available_button_class() -> cosmic::theme::Button {
+    cosmic::theme::Button::Custom {
+        active: Box::new(|_focused, theme| update_available_button_style(theme, false)),
+        disabled: Box::new(|theme| update_available_button_style(theme, false)),
+        hovered: Box::new(|_focused, theme| update_available_button_style(theme, true)),
+        pressed: Box::new(|_focused, theme| update_available_button_style(theme, true)),
+    }
+}
+
+fn update_available_button_style(
+    theme: &cosmic::Theme,
+    hovered: bool,
+) -> cosmic::widget::button::Style {
     let cosmic = theme.cosmic();
     let color: Color = cosmic.destructive.base.into();
-    cosmic::widget::container::Style {
-        text_color: Some(cosmic.background(theme.transparent).on.into()),
-        background: Some(Background::Color(apply_alpha(color, 0.28))),
-        border: cosmic::iced::Border {
-            radius: cosmic.corner_radii.radius_s.into(),
-            width: 1.0,
-            color: apply_alpha(color, 0.75),
-        },
-        shadow: cosmic::iced::Shadow::default(),
-        icon_color: Some(color),
-        snap: true,
-    }
+    let mut style = cosmic::widget::button::Style::new();
+    style.text_color = Some(cosmic.background(theme.transparent).on.into());
+    style.icon_color = Some(color);
+    style.background = Some(Background::Color(apply_alpha(
+        color,
+        if hovered { 0.36 } else { 0.28 },
+    )));
+    style.border_radius = cosmic.corner_radii.radius_s.into();
+    style.border_width = 1.0;
+    style.border_color = apply_alpha(color, 0.75);
+    style
 }
 
 fn link_section<const N: usize>(
@@ -221,6 +234,6 @@ fn link_button_style(theme: &cosmic::Theme, hovered: bool) -> cosmic::widget::bu
     style.background = hovered.then(|| Background::Color(surface.hover.into()));
     style.text_color = Some(surface.on.into());
     style.icon_color = Some(surface.on.into());
-    style.border_radius = 0.0.into();
+    style.border_radius = cosmic.corner_radii.radius_s.into();
     style
 }

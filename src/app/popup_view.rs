@@ -2,7 +2,6 @@
 
 mod badges;
 mod detail;
-mod measure;
 mod settings;
 
 use self::badges::{
@@ -12,11 +11,9 @@ use self::badges::{
 };
 #[cfg(test)]
 use self::detail::active_snapshot;
-use self::detail::{empty_state_view, provider_body_height_for_page, selected_provider_view};
-use self::measure::Measure;
+use self::detail::{empty_state_view, selected_provider_view};
 use self::settings::{
     about_view, general_settings_view, manage_providers_view, provider_settings_view,
-    settings_body_height,
 };
 use super::provider_assets::{provider_icon_handle, provider_icon_variant};
 use crate::app::{Message, PopupRoute};
@@ -40,35 +37,19 @@ use crate::updates::UpdateStatus;
 use crate::usage_display;
 use cosmic::Element;
 use cosmic::iced::widget::{column, container, progress_bar, row, scrollable};
-use cosmic::iced::{Alignment, Background, Color, ContentFit, Length, Size};
+use cosmic::iced::{Alignment, Background, Color, ContentFit, Length};
 use cosmic::widget;
 
-pub const POPUP_COLUMN_WIDTH: f32 = 420.0;
-const POPUP_WIDTH: f32 = POPUP_COLUMN_WIDTH;
-const POPUP_MAX_HEIGHT: f32 = 1080.0;
-const POPUP_PADDING: f32 = 32.0;
-const POPUP_HEADER_HEIGHT: f32 = 36.0;
 const POPUP_TAB_HEIGHT: f32 = 48.0;
 pub(crate) const PROVIDER_VIEWPORT_SIZE: usize = 6;
-const POPUP_BODY_PANEL_PADDING: f32 = 24.0;
-const POPUP_BODY_BOTTOM_SLACK: f32 = 8.0;
-const EMPTY_STATE_BODY_HEIGHT: f32 = 240.0;
 const PROVIDER_CARD_SPACING: f32 = 8.0;
-const ACCOUNT_PAGER_HEIGHT: f32 = 40.0;
-const PROVIDER_SUMMARY_HEIGHT: f32 = 58.0;
-const PROVIDER_ACCOUNT_HEADER_HEIGHT: f32 = 96.0;
-const PROVIDER_SECTION_HEIGHT: f32 = 84.0;
-const PROVIDER_SECTION_WITH_ACTION_HEIGHT: f32 = 120.0;
-const PROVIDER_GROUP_HEADER_HEIGHT: f32 = 28.0;
 const PROVIDER_GROUP_PADDING: f32 = 24.0;
 const PROVIDER_GROUP_SPACING: f32 = 12.0;
-const PROVIDER_CARD_PADDING: f32 = 16.0;
-const SETTINGS_SECTION_HEIGHT: f32 = 104.0;
-const SETTINGS_PROVIDER_ROW_HEIGHT: f32 = 44.0;
 const PROVIDER_PICKER_TILE_HEIGHT: f32 = 104.0;
 const PROVIDER_PICKER_COMPACT_TILE_HEIGHT: f32 = 48.0;
-const PROVIDER_PICKER_HEIGHT: f32 = 680.0;
-const UPDATE_NOTIFICATION_DOT_COLOR: Color = Color::from_rgb(0.93, 0.11, 0.15);
+const HEADER_ICON_BUTTON_SIZE: f32 = 28.0;
+const UPDATE_NOTIFICATION_DOT_COLOR: Color = Color::from_rgb(1.0, 0.31, 0.37);
+const UPDATE_NOTIFICATION_DOT_SIZE: f32 = 12.0;
 const ACCENT_SOFT_FILL_ALPHA: f32 = 0.14;
 
 #[derive(Clone, Copy)]
@@ -90,13 +71,6 @@ pub struct DetailSelection {
     pub provider: ProviderId,
     pub account_page: usize,
     pub provider_viewport_offset: usize,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum PopupBodyMeasureTarget {
-    Provider(ProviderId),
-    EmptyState,
-    Route(PopupRoute),
 }
 
 pub fn popup_content<'a>(
@@ -146,25 +120,8 @@ pub fn popup_content<'a>(
         )
     };
 
-    let body = if matches!(route, PopupRoute::Settings | PopupRoute::About) {
-        body
-    } else {
-        scrollable(body).width(Length::Fill).into()
-    };
-    let body_panel: Element<'_, Message> = container(panel(body))
-        .width(Length::Fill)
-        .height(Length::Fill)
-        .into();
-
-    let body_stack = popup_body_stack(
-        state,
-        config,
-        detection,
-        logins,
-        update_status,
-        selection,
-        body_panel,
-    );
+    let body = popup_body_container(route, body);
+    let body_panel: Element<'_, Message> = container(panel(body)).width(Length::Fill).into();
 
     let mut chrome = column![narrow_chrome(header)].spacing(14);
     if let Some(nav_row) = nav_row {
@@ -175,11 +132,10 @@ pub fn popup_content<'a>(
     } else {
         14
     };
-    let content = column![chrome, body_stack]
+    let content = column![chrome, body_panel]
         .spacing(body_spacing)
         .padding(16)
-        .width(Length::Fill)
-        .height(Length::Fill);
+        .width(Length::Fill);
 
     Element::from(content)
 }
@@ -211,150 +167,23 @@ fn popup_body_view<'a>(
     }
 }
 
-fn popup_body_stack<'a>(
-    state: &'a AppState,
-    config: &'a Config,
-    detection: &'a DetectionSnapshot,
-    logins: ProviderLoginStates<'a>,
-    update_status: &'a UpdateStatus,
-    selection: DetailSelection,
-    body_panel: Element<'a, Message>,
+fn popup_body_container<'a>(
+    route: &PopupRoute,
+    body: impl Into<Element<'a, Message>>,
 ) -> Element<'a, Message> {
-    let mut stack = cosmic::iced::widget::Stack::new()
-        .push(body_panel)
-        .width(Length::Fill)
-        .height(Length::Fill);
-
-    if popup_empty_state_active(state) {
-        stack = stack.push(Measure::new(
-            empty_state_view(),
-            body_measure_width(1.0),
-            |size| Message::PopupBodyMeasured(PopupBodyMeasureTarget::EmptyState, size),
-        ));
+    let body = body.into();
+    if popup_body_is_scrollable(route) {
+        scrollable(body)
+            .width(Length::Fill)
+            .height(Length::Shrink)
+            .into()
+    } else {
+        body
     }
-
-    if let Some(provider) = selected_state(state, selection.provider) {
-        let provider_id = provider.provider;
-        let width = body_measure_width(1.0);
-        let body = selected_provider_view(
-            Some(provider),
-            state,
-            config,
-            detection,
-            selection.account_page,
-        );
-        stack = stack.push(Measure::new(body, width, move |size| {
-            Message::PopupBodyMeasured(PopupBodyMeasureTarget::Provider(provider_id), size)
-        }));
-    }
-
-    let general = general_settings_view(config);
-    stack = stack.push(Measure::new(general, body_measure_width(1.0), |size| {
-        Message::PopupBodyMeasured(PopupBodyMeasureTarget::Route(PopupRoute::Settings), size)
-    }));
-
-    for provider in ProviderId::ALL {
-        let body = provider_settings_view(state, config, detection, logins, provider);
-        stack = stack.push(Measure::new(body, body_measure_width(1.0), move |size| {
-            Message::PopupBodyMeasured(
-                PopupBodyMeasureTarget::Route(PopupRoute::ManageAccounts(provider)),
-                size,
-            )
-        }));
-    }
-
-    let providers = manage_providers_view(state);
-    stack = stack.push(Measure::new(providers, body_measure_width(1.0), |size| {
-        Message::PopupBodyMeasured(
-            PopupBodyMeasureTarget::Route(PopupRoute::ManageProviders),
-            size,
-        )
-    }));
-
-    let about = about_view(update_status);
-    stack = stack.push(Measure::new(about, body_measure_width(1.0), |size| {
-        Message::PopupBodyMeasured(PopupBodyMeasureTarget::Route(PopupRoute::About), size)
-    }));
-
-    stack.into()
 }
 
-pub fn popup_max_width(_state: &AppState) -> f32 {
-    POPUP_WIDTH
-}
-
-pub fn popup_session_size(state: &AppState, selected_provider: ProviderId) -> Size {
-    popup_session_size_for_page(state, selected_provider, 0)
-}
-
-pub fn popup_session_size_for_page(
-    state: &AppState,
-    selected_provider: ProviderId,
-    account_page: usize,
-) -> Size {
-    if popup_empty_state_active(state) {
-        return popup_empty_state_size(EMPTY_STATE_BODY_HEIGHT);
-    }
-    let provider_height = provider_body_height_for_page(
-        state,
-        selected_state(state, selected_provider),
-        account_page,
-    );
-    Size::new(
-        POPUP_WIDTH,
-        popup_total_height(provider_nav_height(state), provider_height),
-    )
-}
-
-pub const fn popup_provider_picker_size() -> Size {
-    Size::new(POPUP_WIDTH, PROVIDER_PICKER_HEIGHT)
-}
-
-pub fn popup_session_size_with_body_height(
-    state: &AppState,
-    _selected_provider: ProviderId,
-    body_height: f32,
-) -> Size {
-    if popup_empty_state_active(state) {
-        return popup_empty_state_size(body_height);
-    }
-    Size::new(
-        POPUP_WIDTH,
-        popup_total_height(provider_nav_height(state), body_height),
-    )
-}
-
-pub fn popup_settings_size(state: &AppState) -> Size {
-    Size::new(
-        POPUP_WIDTH,
-        popup_total_height(None, settings_body_height(state)),
-    )
-}
-
-pub fn popup_settings_size_with_body_height(body_height: f32) -> Size {
-    Size::new(POPUP_WIDTH, popup_total_height(None, body_height))
-}
-
-fn popup_total_height(nav_height: Option<f32>, body_height: f32) -> f32 {
-    let chrome_spacing = if nav_height.is_some() { 20.0 } else { 6.0 };
-    let height = POPUP_PADDING
-        + chrome_spacing
-        + POPUP_HEADER_HEIGHT
-        + nav_height.unwrap_or(0.0)
-        + POPUP_BODY_PANEL_PADDING
-        + POPUP_BODY_BOTTOM_SLACK
-        + body_height;
-    height.clamp(1.0, POPUP_MAX_HEIGHT)
-}
-
-fn popup_empty_state_size(body_height: f32) -> Size {
-    let height = POPUP_PADDING
-        + 6.0
-        + POPUP_HEADER_HEIGHT
-        + POPUP_BODY_PANEL_PADDING
-        + POPUP_BODY_BOTTOM_SLACK
-        + body_height;
-    Size::new(POPUP_WIDTH, height.clamp(1.0, POPUP_MAX_HEIGHT))
+fn popup_body_is_scrollable(route: &PopupRoute) -> bool {
+    !matches!(route, PopupRoute::Settings | PopupRoute::About)
 }
 
 pub(super) fn popup_empty_state_active(state: &AppState) -> bool {
@@ -367,10 +196,6 @@ pub(super) fn detected_without_accounts(
     provider: ProviderId,
 ) -> bool {
     detection.detected(provider) && state.accounts_for(provider).is_empty()
-}
-
-fn body_measure_width(_columns: f32) -> f32 {
-    POPUP_WIDTH - POPUP_PADDING - POPUP_BODY_PANEL_PADDING
 }
 
 pub(crate) fn account_page_next(page: usize, account_count: usize) -> usize {
@@ -411,7 +236,7 @@ pub(crate) fn pager_account_label(page: usize, label: &str) -> String {
 }
 
 fn narrow_chrome<'a>(content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
-    container(container(content.into()).width(Length::Fixed(POPUP_WIDTH)))
+    container(container(content.into()).width(Length::Fill))
         .width(Length::Fill)
         .align_x(Alignment::Center)
         .into()
@@ -434,118 +259,129 @@ fn popup_header(
             .into();
     }
 
-    let mut header = row![
-        widget::button::custom(widget::text(fl!("app-title")).size(22))
-            .class(header_title_button_class())
-            .padding(0)
-            .on_press(Message::NavigateTo(PopupRoute::ProviderDetail)),
-        cosmic::iced::widget::Space::new().width(Length::Fill),
-    ]
-    .align_y(Alignment::Center)
-    .spacing(12);
-
     let about = header_icon_button(
         "dialog-information-symbolic",
         Message::NavigateTo(PopupRoute::About),
+        true,
     );
     let about: Element<'static, Message> = if update_available(update_status) {
-        container(
-            row![about, notification_dot(8.0)]
-                .spacing(2)
-                .align_y(Alignment::Center),
-        )
+        cosmic::iced::widget::stack![
+            about,
+            container(notification_dot())
+                .width(Length::Fixed(HEADER_ICON_BUTTON_SIZE))
+                .height(Length::Fixed(HEADER_ICON_BUTTON_SIZE))
+                .align_x(cosmic::iced::alignment::Horizontal::Right)
+                .align_y(cosmic::iced::alignment::Vertical::Top),
+        ]
+        .width(Length::Fixed(HEADER_ICON_BUTTON_SIZE))
+        .height(Length::Fixed(HEADER_ICON_BUTTON_SIZE))
         .into()
     } else {
         about
     };
     let mut actions = row![
-        about,
-        header_icon_button(
-            "view-list-symbolic",
-            Message::NavigateTo(PopupRoute::ManageProviders),
+        widget::tooltip::tooltip(
+            header_icon_button(
+                "view-list-symbolic",
+                Message::NavigateTo(PopupRoute::ManageProviders),
+                false,
+            ),
+            widget::text(fl!("manage-providers-tooltip")).size(12),
+            widget::tooltip::Position::Top,
         ),
-        header_icon_button(
-            "preferences-system-symbolic",
-            Message::NavigateTo(PopupRoute::Settings),
+        widget::tooltip::tooltip(
+            header_icon_button(
+                "preferences-system-symbolic",
+                Message::NavigateTo(PopupRoute::Settings),
+                false,
+            ),
+            widget::text(fl!("settings-tooltip")).size(12),
+            widget::tooltip::Position::Top,
         ),
     ]
     .spacing(7)
     .align_y(Alignment::Center);
     if !empty_state {
         actions = actions.push(widget::tooltip::tooltip(
-            header_icon_button("view-refresh-symbolic", Message::RefreshNow),
+            header_icon_button("view-refresh-symbolic", Message::RefreshNow, false),
             widget::text(fl!("refresh-now")).size(12),
             widget::tooltip::Position::Top,
         ));
     }
-    header = header.push(actions);
+
+    let header = row![
+        widget::tooltip::tooltip(
+            about,
+            widget::text(fl!("about-tooltip")).size(12),
+            widget::tooltip::Position::Top,
+        ),
+        cosmic::iced::widget::Space::new().width(Length::Fill),
+        actions,
+    ]
+    .align_y(Alignment::Center)
+    .spacing(12);
 
     header.into()
 }
 
-fn header_icon_button(icon_name: &'static str, message: Message) -> Element<'static, Message> {
+fn header_icon_button(
+    icon_name: &'static str,
+    message: Message,
+    inverted: bool,
+) -> Element<'static, Message> {
     widget::button::icon(widget::icon::from_name(icon_name))
         .extra_small()
-        .padding(3)
-        .class(header_icon_button_class())
+        .width(Length::Fixed(HEADER_ICON_BUTTON_SIZE))
+        .height(Length::Fixed(HEADER_ICON_BUTTON_SIZE))
+        .padding(2)
+        .class(header_icon_button_class(inverted))
         .on_press(message)
         .into()
 }
 
-fn header_icon_button_class() -> cosmic::theme::Button {
+fn header_icon_button_class(inverted: bool) -> cosmic::theme::Button {
     cosmic::theme::Button::Custom {
-        active: Box::new(|_focused, theme| header_icon_button_style(theme, false)),
-        disabled: Box::new(|theme| header_icon_button_style(theme, false)),
-        hovered: Box::new(|_focused, theme| header_icon_button_style(theme, true)),
-        pressed: Box::new(|_focused, theme| header_icon_button_style(theme, true)),
+        active: Box::new(move |_focused, theme| header_icon_button_style(theme, false, inverted)),
+        disabled: Box::new(move |theme| header_icon_button_style(theme, false, inverted)),
+        hovered: Box::new(move |_focused, theme| header_icon_button_style(theme, true, inverted)),
+        pressed: Box::new(move |_focused, theme| header_icon_button_style(theme, true, inverted)),
     }
 }
 
-fn header_icon_button_style(theme: &cosmic::Theme, hovered: bool) -> widget::button::Style {
+fn header_icon_button_style(
+    theme: &cosmic::Theme,
+    hovered: bool,
+    inverted: bool,
+) -> widget::button::Style {
     let cosmic = theme.cosmic();
     let mut style = widget::button::Style::new();
     let surface = &cosmic.background(theme.transparent).component;
-    style.background = hovered.then(|| Background::Color(surface.hover.into()));
+    let icon_color = if inverted || hovered {
+        surface.on.into()
+    } else {
+        apply_alpha(surface.on.into(), 0.45)
+    };
     style.border_radius = cosmic.corner_radii.radius_s.into();
-    style.icon_color = Some(apply_alpha(
-        surface.on.into(),
-        if hovered { 0.68 } else { 0.40 },
-    ));
+    style.icon_color = Some(icon_color);
     style.text_color = style.icon_color;
-    style
-}
-
-fn header_title_button_class() -> cosmic::theme::Button {
-    cosmic::theme::Button::Custom {
-        active: Box::new(|_focused, theme| header_title_button_style(theme)),
-        disabled: Box::new(header_title_button_style),
-        hovered: Box::new(|_focused, theme| header_title_button_style(theme)),
-        pressed: Box::new(|_focused, theme| header_title_button_style(theme)),
-    }
-}
-
-fn header_title_button_style(theme: &cosmic::Theme) -> widget::button::Style {
-    let cosmic = theme.cosmic();
-    let mut style = widget::button::Style::new();
-    let foreground = cosmic.background(theme.transparent).on.into();
-    style.text_color = Some(foreground);
-    style.icon_color = Some(foreground);
     style
 }
 
 fn back_button_class() -> cosmic::theme::Button {
     cosmic::theme::Button::Custom {
-        active: Box::new(|_focused, _theme| back_button_style()),
-        disabled: Box::new(|_theme| back_button_style()),
-        hovered: Box::new(|_focused, _theme| back_button_style()),
-        pressed: Box::new(|_focused, _theme| back_button_style()),
+        active: Box::new(|_focused, theme| back_button_style(theme)),
+        disabled: Box::new(back_button_style),
+        hovered: Box::new(|_focused, theme| back_button_style(theme)),
+        pressed: Box::new(|_focused, theme| back_button_style(theme)),
     }
 }
 
-fn back_button_style() -> widget::button::Style {
+fn back_button_style(theme: &cosmic::Theme) -> widget::button::Style {
+    let cosmic = theme.cosmic();
     let mut style = widget::button::Style::new();
     style.text_color = Some(Color::WHITE);
     style.icon_color = Some(Color::WHITE);
+    style.border_radius = cosmic.corner_radii.radius_s.into();
     style
 }
 
@@ -651,6 +487,171 @@ fn card<'a>(content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
     Element::from(container(content).width(Length::Fill).padding(8))
 }
 
+pub(super) fn account_action_button(
+    label: String,
+    press: Option<Message>,
+) -> Element<'static, Message> {
+    widget::button::custom(
+        row![
+            widget::text(label),
+            cosmic::iced::widget::Space::new().width(Length::Fill),
+            widget::icon::from_name("go-next-symbolic").icon().size(16),
+        ]
+        .align_y(Alignment::Center)
+        .width(Length::Fill),
+    )
+    .width(Length::Fill)
+    .padding([4, 0])
+    .class(account_action_button_class())
+    .on_press_maybe(press)
+    .into()
+}
+
+pub(super) fn account_add_button(
+    label: String,
+    press: Option<Message>,
+) -> Element<'static, Message> {
+    account_action_button_with_icon(
+        account_action_icon(widget::text("+").size(22).into(), true, press.is_some()),
+        label,
+        press,
+    )
+}
+
+pub(super) fn account_import_button(
+    label: String,
+    press: Option<Message>,
+) -> Element<'static, Message> {
+    account_action_button_with_icon(
+        account_action_icon(
+            widget::icon::from_name("go-up-symbolic")
+                .icon()
+                .size(18)
+                .into(),
+            false,
+            press.is_some(),
+        ),
+        label,
+        press,
+    )
+}
+
+fn account_action_button_with_icon(
+    icon: Element<'static, Message>,
+    label: String,
+    press: Option<Message>,
+) -> Element<'static, Message> {
+    let copy = widget::text(label).size(14);
+
+    let content = row![
+        icon,
+        copy,
+        cosmic::iced::widget::Space::new().width(Length::Fill),
+        widget::icon::from_name("go-next-symbolic").icon().size(18),
+    ]
+    .spacing(10)
+    .align_y(Alignment::Center)
+    .width(Length::Fill);
+
+    widget::button::custom(content)
+        .width(Length::Fill)
+        .padding([8, 12])
+        .class(account_action_card_class(press.is_some()))
+        .on_press_maybe(press)
+        .into()
+}
+
+fn account_action_icon(
+    icon: Element<'static, Message>,
+    accent: bool,
+    enabled: bool,
+) -> Element<'static, Message> {
+    container(icon)
+        .width(Length::Fixed(32.0))
+        .height(Length::Fixed(32.0))
+        .align_x(cosmic::iced::alignment::Horizontal::Center)
+        .align_y(cosmic::iced::alignment::Vertical::Center)
+        .style(move |theme| {
+            let cosmic = theme.cosmic();
+            let surface = &cosmic.background(theme.transparent).component;
+            let opacity = if enabled { 1.0 } else { 0.45 };
+            let color = if accent {
+                apply_alpha(cosmic.accent.base.into(), opacity)
+            } else {
+                apply_alpha(surface.on.into(), opacity)
+            };
+            let background = if accent {
+                apply_alpha(cosmic.accent.base.into(), 0.18 * opacity)
+            } else {
+                apply_alpha(surface.on.into(), 0.12 * opacity)
+            };
+            widget::container::Style {
+                text_color: Some(color),
+                background: Some(Background::Color(background)),
+                border: cosmic::iced::Border {
+                    radius: 16.0.into(),
+                    width: 0.0,
+                    color,
+                },
+                shadow: cosmic::iced::Shadow::default(),
+                icon_color: Some(color),
+                snap: true,
+            }
+        })
+        .into()
+}
+
+fn account_action_card_class(enabled: bool) -> cosmic::theme::Button {
+    cosmic::theme::Button::Custom {
+        active: Box::new(move |_focused, theme| account_action_card_style(theme, enabled, false)),
+        disabled: Box::new(move |theme| account_action_card_style(theme, false, false)),
+        hovered: Box::new(move |_focused, theme| account_action_card_style(theme, enabled, true)),
+        pressed: Box::new(move |_focused, theme| account_action_card_style(theme, enabled, true)),
+    }
+}
+
+fn account_action_card_style(
+    theme: &cosmic::Theme,
+    enabled: bool,
+    hovered: bool,
+) -> widget::button::Style {
+    let cosmic = theme.cosmic();
+    let surface = &cosmic.background(theme.transparent).component;
+    let opacity = if enabled { 1.0 } else { 0.45 };
+    let mut style = widget::button::Style::new();
+    style.background = Some(Background::Color(if hovered {
+        surface.hover.into()
+    } else {
+        surface.base.into()
+    }));
+    style.border_radius = cosmic.corner_radii.radius_s.into();
+    style.border_width = 1.0;
+    style.border_color = apply_alpha(surface.divider.into(), opacity);
+    style.text_color = Some(apply_alpha(surface.on.into(), opacity));
+    style.icon_color = Some(apply_alpha(surface.on.into(), opacity));
+    style
+}
+
+fn account_action_button_class() -> cosmic::theme::Button {
+    cosmic::theme::Button::Custom {
+        active: Box::new(|_focused, theme| account_action_button_style(theme, false)),
+        disabled: Box::new(|theme| account_action_button_style(theme, false)),
+        hovered: Box::new(|_focused, theme| account_action_button_style(theme, true)),
+        pressed: Box::new(|_focused, theme| account_action_button_style(theme, true)),
+    }
+}
+
+fn account_action_button_style(theme: &cosmic::Theme, hovered: bool) -> widget::button::Style {
+    let cosmic = theme.cosmic();
+    let surface = &cosmic.background(theme.transparent).component;
+    let mut style = widget::button::Style::new();
+    style.background = hovered.then(|| Background::Color(surface.hover.into()));
+    style.border_radius = cosmic.corner_radii.radius_s.into();
+    style.text_color = Some(surface.on.into());
+    style.icon_color = Some(surface.on.into());
+    style
+}
+
 fn accent_selection_fill(theme: &cosmic::Theme) -> Color {
     let cosmic = theme.cosmic();
     apply_alpha(cosmic.accent.base.into(), ACCENT_SOFT_FILL_ALPHA)
@@ -713,28 +714,31 @@ fn update_available(update_status: &UpdateStatus) -> bool {
     matches!(update_status, UpdateStatus::UpdateAvailable { .. })
 }
 
-fn notification_dot(size: f32) -> Element<'static, Message> {
+fn notification_dot() -> Element<'static, Message> {
     Element::from(
         container(
             cosmic::iced::widget::Space::new()
-                .width(Length::Fixed(size))
-                .height(Length::Fixed(size)),
+                .width(Length::Fixed(UPDATE_NOTIFICATION_DOT_SIZE))
+                .height(Length::Fixed(UPDATE_NOTIFICATION_DOT_SIZE)),
         )
-        .style(move |_theme: &cosmic::Theme| widget::container::Style {
-            text_color: None,
-            background: Some(Background::Color(UPDATE_NOTIFICATION_DOT_COLOR)),
-            border: cosmic::iced::Border {
-                radius: (size / 2.0).into(),
-                width: 1.0,
-                color: Color::WHITE,
-            },
-            shadow: cosmic::iced::Shadow {
-                color: apply_alpha(UPDATE_NOTIFICATION_DOT_COLOR, 0.72),
-                offset: cosmic::iced::Vector::new(0.0, 0.0),
-                blur_radius: 4.0,
-            },
-            icon_color: None,
-            snap: true,
+        .style(|theme: &cosmic::Theme| {
+            let cosmic = theme.cosmic();
+            widget::container::Style {
+                text_color: None,
+                background: Some(Background::Color(UPDATE_NOTIFICATION_DOT_COLOR)),
+                border: cosmic::iced::Border {
+                    radius: (UPDATE_NOTIFICATION_DOT_SIZE / 2.0).into(),
+                    width: 2.0,
+                    color: cosmic.background(theme.transparent).base.into(),
+                },
+                shadow: cosmic::iced::Shadow {
+                    color: apply_alpha(UPDATE_NOTIFICATION_DOT_COLOR, 0.80),
+                    offset: cosmic::iced::Vector::new(0.0, 0.0),
+                    blur_radius: 7.0,
+                },
+                icon_color: None,
+                snap: true,
+            }
         }),
     )
 }
@@ -784,15 +788,25 @@ fn provider_tab_rows(
         .map(|provider| provider.provider)
         .collect();
     let offset = offset.min(provider_viewport_max_offset(providers.len()));
+    let visible_providers = provider_viewport(&providers, offset);
+    let (side_portion, provider_portion) = provider_viewport_portions(providers.len());
     let mut tabs = row![].width(Length::Fill).align_y(Alignment::Center);
-    for provider in provider_viewport(&providers, offset) {
+    if side_portion > 0 {
+        tabs = tabs.push(provider_viewport_spacer(side_portion));
+    }
+    for provider in visible_providers {
         tabs = tabs.push(provider_viewport_tab(
             *provider,
             *provider == selected_provider,
+            provider_portion,
         ));
     }
-    for _ in provider_viewport(&providers, offset).len()..PROVIDER_VIEWPORT_SIZE {
-        tabs = tabs.push(provider_viewport_spacer());
+    if side_portion > 0 {
+        tabs = tabs.push(provider_viewport_spacer(side_portion));
+    } else {
+        for _ in visible_providers.len()..PROVIDER_VIEWPORT_SIZE {
+            tabs = tabs.push(provider_viewport_spacer(1));
+        }
     }
 
     if provider_viewport_navigation_visible(providers.len()) {
@@ -838,6 +852,14 @@ pub(crate) fn provider_viewport_navigation_visible(provider_count: usize) -> boo
     provider_count >= PROVIDER_VIEWPORT_SIZE
 }
 
+fn provider_viewport_portions(provider_count: usize) -> (u16, u16) {
+    if provider_count < PROVIDER_VIEWPORT_SIZE {
+        ((PROVIDER_VIEWPORT_SIZE - provider_count) as u16, 2)
+    } else {
+        (0, 1)
+    }
+}
+
 pub(crate) fn provider_viewport_max_offset_for(state: &AppState) -> usize {
     provider_viewport_max_offset(enabled_provider_count(state))
 }
@@ -850,12 +872,11 @@ fn enabled_provider_count(state: &AppState) -> usize {
         .count()
 }
 
-fn provider_nav_height(state: &AppState) -> Option<f32> {
-    let count = enabled_provider_count(state);
-    (count > 1).then_some(POPUP_TAB_HEIGHT)
-}
-
-fn provider_viewport_tab(provider: ProviderId, selected: bool) -> Element<'static, Message> {
+fn provider_viewport_tab(
+    provider: ProviderId,
+    selected: bool,
+    portion: u16,
+) -> Element<'static, Message> {
     let icon_variant = provider_icon_variant();
     let icon = widget::icon::icon(provider_icon_handle(provider, icon_variant))
         .size(22)
@@ -872,23 +893,23 @@ fn provider_viewport_tab(provider: ProviderId, selected: bool) -> Element<'stati
     column![
         widget::button::custom(icon)
             .class(provider_tab_class(selected))
-            .width(Length::FillPortion(1))
+            .width(Length::FillPortion(portion))
             .height(Length::Fixed(POPUP_TAB_HEIGHT - baseline_height))
             .on_press(Message::SelectProvider(provider)),
         provider_viewport_baseline(selected),
     ]
-    .width(Length::FillPortion(1))
+    .width(Length::FillPortion(portion))
     .into()
 }
 
-fn provider_viewport_spacer() -> Element<'static, Message> {
+fn provider_viewport_spacer(portion: u16) -> Element<'static, Message> {
     let baseline_height = provider_viewport_baseline_height(false);
     column![
         cosmic::iced::widget::Space::new()
             .height(Length::Fixed(POPUP_TAB_HEIGHT - baseline_height)),
         provider_viewport_baseline(false),
     ]
-    .width(Length::FillPortion(1))
+    .width(Length::FillPortion(portion))
     .into()
 }
 
@@ -916,7 +937,10 @@ fn provider_viewport_baseline(selected: bool) -> Element<'static, Message> {
         widget::container::Style {
             text_color: None,
             background: Some(Background::Color(color)),
-            border: cosmic::iced::Border::default(),
+            border: cosmic::iced::Border {
+                radius: cosmic.corner_radii.radius_xl.into(),
+                ..Default::default()
+            },
             shadow: cosmic::iced::Shadow::default(),
             icon_color: None,
             snap: true,
@@ -967,7 +991,13 @@ fn tab_button_style(
     };
 
     style.background = background.map(|color| Background::Color(apply_alpha(color, opacity)));
-    style.border_radius = cosmic::iced::border::top(8.0);
+    let radius = cosmic.corner_radii.radius_s;
+    style.border_radius = cosmic::iced::border::Radius {
+        top_left: radius[0],
+        top_right: radius[1],
+        bottom_right: 0.0,
+        bottom_left: 0.0,
+    };
     style.border_width = 0.0;
     style.border_color = Color::TRANSPARENT;
     style.outline_width = if interaction.focused && selected {
@@ -1071,6 +1101,18 @@ mod tests {
     use super::*;
 
     #[test]
+    fn partial_provider_viewport_is_centered_with_equal_side_space() {
+        for provider_count in 2..=5 {
+            let (side_portion, provider_portion) = provider_viewport_portions(provider_count);
+
+            assert_eq!(
+                side_portion * 2 + provider_portion * provider_count as u16,
+                12
+            );
+        }
+    }
+
+    #[test]
     fn provider_tab_percents_respect_usage_amount_format() {
         let mut state = AppState::empty();
         let account_id = "codex-test";
@@ -1111,14 +1153,6 @@ mod tests {
     }
 
     #[test]
-    fn header_title_uses_normal_foreground_color() {
-        let theme = cosmic::Theme::default();
-        let expected = theme.cosmic().background(theme.transparent).on.into();
-
-        assert_eq!(header_title_button_style(&theme).text_color, Some(expected));
-    }
-
-    #[test]
     fn empty_state_is_active_without_enabled_provider_tabs() {
         let mut state = AppState::empty();
         for provider in ProviderId::ALL {
@@ -1126,11 +1160,6 @@ mod tests {
         }
 
         assert!(popup_empty_state_active(&state));
-        assert_eq!(
-            popup_session_size(&state, ProviderId::Codex).width,
-            POPUP_WIDTH
-        );
-
         state.provider_mut(ProviderId::Codex).unwrap().enabled = true;
 
         assert!(!popup_empty_state_active(&state));
@@ -1185,10 +1214,5 @@ mod tests {
                 ProviderId::OpenCodeGo,
             ]
         );
-    }
-
-    #[test]
-    fn provider_picker_has_room_for_the_complete_chooser() {
-        assert_eq!(popup_provider_picker_size(), Size::new(POPUP_WIDTH, 680.0));
     }
 }

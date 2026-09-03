@@ -1,16 +1,20 @@
+mod empty;
 mod login_controls;
 mod rows;
 
+use self::empty::{empty_accounts_state, opencode_import_available};
 use self::login_controls::{
     antigravity_login_controls, claude_login_controls, codex_login_controls,
     copilot_login_controls, cursor_scan_controls, gemini_login_controls, kimi_login_controls,
     minimax_login_controls, opencode_go_login_controls,
 };
-use self::rows::{account_selector_list, account_settings_row};
+use self::rows::{
+    AccountRowPosition, account_action_container, account_selector_list, account_settings_row,
+};
 use super::super::{
-    Alignment, AppState, Config, DetectionSnapshot, Element, Length, Message, ProviderId,
-    ProviderLoginStates, detected_without_accounts, fl, provider_icon_handle,
-    provider_icon_variant, row, settings_block_enabled, widget,
+    Alignment, AppState, Background, Config, DetectionSnapshot, Element, Length, Message,
+    ProviderId, ProviderLoginStates, container, detected_without_accounts, fl,
+    provider_icon_handle, provider_icon_variant, row, settings_block_enabled, widget,
 };
 use crate::providers::antigravity::AntigravityLoginState;
 use crate::providers::claude::ClaudeLoginState;
@@ -21,6 +25,31 @@ use crate::providers::gemini::GeminiLoginState;
 use crate::providers::kimi::login::KimiLoginState;
 use crate::providers::minimax::MinimaxLoginState;
 use crate::providers::opencode_go::login::OpenCodeGoLoginState;
+
+fn accounts_section_title(empty: bool) -> Element<'static, Message> {
+    if empty {
+        widget::text(fl!("accounts-title")).size(22).into()
+    } else {
+        widget::text(fl!("accounts-title")).size(16).into()
+    }
+}
+
+fn provider_enablement_style(theme: &cosmic::Theme) -> widget::container::Style {
+    let cosmic = theme.cosmic();
+    let surface = &cosmic.background(theme.transparent).component;
+    widget::container::Style {
+        text_color: Some(surface.on.into()),
+        background: Some(Background::Color(surface.base.into())),
+        border: cosmic::iced::Border {
+            radius: cosmic.corner_radii.radius_s.into(),
+            width: 1.0,
+            color: surface.divider.into(),
+        },
+        shadow: cosmic::iced::Shadow::default(),
+        icon_color: Some(surface.on.into()),
+        snap: true,
+    }
+}
 
 pub(super) fn provider_settings_view<'a>(
     state: &'a AppState,
@@ -33,15 +62,35 @@ pub(super) fn provider_settings_view<'a>(
         .provider(provider_id)
         .is_some_and(|provider| provider.enabled);
 
-    let provider_header = row![
-        widget::icon::icon(provider_icon_handle(provider_id, provider_icon_variant())).size(22),
-        widget::text(provider_id.label()).size(18),
-        cosmic::iced::widget::Space::new().width(Length::Fill),
-        widget::toggler(enabled)
-            .on_toggle(move |enabled| Message::SetProviderEnabled(provider_id, enabled)),
-    ]
-    .spacing(10)
-    .align_y(Alignment::Center)
+    let provider_title = container(
+        row![
+            widget::icon::icon(provider_icon_handle(provider_id, provider_icon_variant())).size(22),
+            widget::text(provider_id.label()).size(18),
+        ]
+        .spacing(10)
+        .align_y(Alignment::Center)
+        .width(Length::Fill),
+    )
+    .padding([0, 12])
+    .width(Length::Fill);
+
+    let provider_header = container(
+        container(
+            row![
+                widget::text(fl!("provider-enable", provider = provider_id.label())).size(16),
+                cosmic::iced::widget::Space::new().width(Length::Fill),
+                widget::toggler(enabled)
+                    .on_toggle(move |enabled| Message::SetProviderEnabled(provider_id, enabled)),
+            ]
+            .spacing(10)
+            .align_y(Alignment::Center)
+            .width(Length::Fill),
+        )
+        .padding([10, 12])
+        .width(Length::Fill)
+        .style(provider_enablement_style),
+    )
+    .padding([0, 12])
     .width(Length::Fill);
 
     let accounts_section = match provider_id {
@@ -60,7 +109,7 @@ pub(super) fn provider_settings_view<'a>(
         }
     };
 
-    let mut sections = cosmic::iced::widget::column![provider_header].spacing(14);
+    let mut sections = cosmic::iced::widget::column![provider_title, provider_header].spacing(14);
     if detected_without_accounts(state, detection, provider_id) {
         sections = sections.push(widget::text(fl!("provider-detected-caption")).size(13));
     }
@@ -85,17 +134,22 @@ fn codex_accounts_section<'a>(
         .unwrap_or_default();
     let accounts = state.accounts_for(ProviderId::Codex);
     let active_id = codex.and_then(|provider| provider.system_active_account_id.as_deref());
+    let empty_state = accounts.is_empty() && codex_login.is_none();
     let mut rows = cosmic::iced::widget::column![]
         .spacing(8)
         .width(Length::Fill);
 
     if accounts.is_empty() {
-        rows = rows.push(widget::text(fl!("codex-accounts-empty")).size(13));
+        rows = if empty_state {
+            rows.push(empty_accounts_state(ProviderId::Codex, enabled))
+        } else {
+            rows.push(widget::text(fl!("accounts-empty-title")).size(13))
+        };
     } else {
         let mut account_rows = cosmic::iced::widget::column![]
             .spacing(0)
             .width(Length::Fill);
-        for account in &accounts {
+        for (index, account) in accounts.iter().enumerate() {
             account_rows = account_rows.push(account_settings_row(
                 ProviderId::Codex,
                 account,
@@ -103,6 +157,10 @@ fn codex_accounts_section<'a>(
                 active_id,
                 config,
                 enabled,
+                AccountRowPosition {
+                    first: index == 0,
+                    last: index + 1 == accounts.len(),
+                },
             ));
         }
         rows = rows.push(account_selector_list(account_rows));
@@ -114,17 +172,15 @@ fn codex_accounts_section<'a>(
         rows = rows.push(widget::text(fl!("codex-account-select-required")).size(13));
     }
 
-    rows = rows.push(codex_login_controls(
-        codex_login,
-        crate::providers::codex::opencode_import_available(),
-        enabled,
-    ));
+    if !empty_state {
+        rows = rows.push(account_action_container(codex_login_controls(
+            codex_login,
+            opencode_import_available(ProviderId::Codex),
+            enabled,
+        )));
+    }
 
-    settings_block_enabled(
-        widget::text(fl!("codex-accounts-title")).size(16).into(),
-        rows,
-        enabled,
-    )
+    settings_block_enabled(accounts_section_title(accounts.is_empty()), rows, enabled)
 }
 
 fn claude_accounts_section<'a>(
@@ -147,17 +203,22 @@ fn claude_accounts_section<'a>(
     let active_id = state
         .provider(ProviderId::Claude)
         .and_then(|provider| provider.system_active_account_id.as_deref());
+    let empty_state = accounts.is_empty() && claude_login.is_none();
     let mut rows = cosmic::iced::widget::column![]
         .spacing(8)
         .width(Length::Fill);
 
     if accounts.is_empty() {
-        rows = rows.push(widget::text(fl!("claude-accounts-empty")).size(13));
+        rows = if empty_state {
+            rows.push(empty_accounts_state(ProviderId::Claude, enabled))
+        } else {
+            rows.push(widget::text(fl!("accounts-empty-title")).size(13))
+        };
     } else {
         let mut account_rows = cosmic::iced::widget::column![]
             .spacing(0)
             .width(Length::Fill);
-        for account in &accounts {
+        for (index, account) in accounts.iter().enumerate() {
             account_rows = account_rows.push(account_settings_row(
                 ProviderId::Claude,
                 account,
@@ -165,6 +226,10 @@ fn claude_accounts_section<'a>(
                 active_id,
                 config,
                 enabled,
+                AccountRowPosition {
+                    first: index == 0,
+                    last: index + 1 == accounts.len(),
+                },
             ));
         }
         rows = rows.push(account_selector_list(account_rows));
@@ -175,13 +240,14 @@ fn claude_accounts_section<'a>(
     {
         rows = rows.push(widget::text(fl!("account-browser-login-hint")).size(12));
     }
-    rows = rows.push(claude_login_controls(claude_login, enabled));
+    if !empty_state {
+        rows = rows.push(account_action_container(claude_login_controls(
+            claude_login,
+            enabled,
+        )));
+    }
 
-    settings_block_enabled(
-        widget::text(fl!("claude-accounts-title")).size(16).into(),
-        rows,
-        enabled,
-    )
+    settings_block_enabled(accounts_section_title(accounts.is_empty()), rows, enabled)
 }
 
 fn gemini_accounts_section<'a>(
@@ -204,17 +270,22 @@ fn gemini_accounts_section<'a>(
     let active_id = state
         .provider(ProviderId::Gemini)
         .and_then(|provider| provider.system_active_account_id.as_deref());
+    let empty_state = accounts.is_empty() && gemini_login.is_none();
     let mut rows = cosmic::iced::widget::column![]
         .spacing(8)
         .width(Length::Fill);
 
     if accounts.is_empty() {
-        rows = rows.push(widget::text(fl!("gemini-accounts-empty")).size(13));
+        rows = if empty_state {
+            rows.push(empty_accounts_state(ProviderId::Gemini, enabled))
+        } else {
+            rows.push(widget::text(fl!("accounts-empty-title")).size(13))
+        };
     } else {
         let mut account_rows = cosmic::iced::widget::column![]
             .spacing(0)
             .width(Length::Fill);
-        for account in &accounts {
+        for (index, account) in accounts.iter().enumerate() {
             account_rows = account_rows.push(account_settings_row(
                 ProviderId::Gemini,
                 account,
@@ -222,18 +293,23 @@ fn gemini_accounts_section<'a>(
                 active_id,
                 config,
                 enabled,
+                AccountRowPosition {
+                    first: index == 0,
+                    last: index + 1 == accounts.len(),
+                },
             ));
         }
         rows = rows.push(account_selector_list(account_rows));
     }
 
-    rows = rows.push(gemini_login_controls(gemini_login, enabled));
+    if !empty_state {
+        rows = rows.push(account_action_container(gemini_login_controls(
+            gemini_login,
+            enabled,
+        )));
+    }
 
-    settings_block_enabled(
-        widget::text(fl!("gemini-accounts-title")).size(16).into(),
-        rows,
-        enabled,
-    )
+    settings_block_enabled(accounts_section_title(accounts.is_empty()), rows, enabled)
 }
 
 fn antigravity_accounts_section<'a>(
@@ -256,17 +332,22 @@ fn antigravity_accounts_section<'a>(
     let active_id = state
         .provider(ProviderId::Antigravity)
         .and_then(|provider| provider.system_active_account_id.as_deref());
+    let empty_state = accounts.is_empty() && antigravity_login.is_none();
     let mut rows = cosmic::iced::widget::column![]
         .spacing(8)
         .width(Length::Fill);
 
     if accounts.is_empty() {
-        rows = rows.push(widget::text(fl!("antigravity-accounts-empty")).size(13));
+        rows = if empty_state {
+            rows.push(empty_accounts_state(ProviderId::Antigravity, enabled))
+        } else {
+            rows.push(widget::text(fl!("accounts-empty-title")).size(13))
+        };
     } else {
         let mut account_rows = cosmic::iced::widget::column![]
             .spacing(0)
             .width(Length::Fill);
-        for account in &accounts {
+        for (index, account) in accounts.iter().enumerate() {
             account_rows = account_rows.push(account_settings_row(
                 ProviderId::Antigravity,
                 account,
@@ -274,20 +355,23 @@ fn antigravity_accounts_section<'a>(
                 active_id,
                 config,
                 enabled,
+                AccountRowPosition {
+                    first: index == 0,
+                    last: index + 1 == accounts.len(),
+                },
             ));
         }
         rows = rows.push(account_selector_list(account_rows));
     }
 
-    rows = rows.push(antigravity_login_controls(antigravity_login, enabled));
+    if !empty_state {
+        rows = rows.push(account_action_container(antigravity_login_controls(
+            antigravity_login,
+            enabled,
+        )));
+    }
 
-    settings_block_enabled(
-        widget::text(fl!("antigravity-accounts-title"))
-            .size(16)
-            .into(),
-        rows,
-        enabled,
-    )
+    settings_block_enabled(accounts_section_title(accounts.is_empty()), rows, enabled)
 }
 
 fn cursor_accounts_section<'a>(
@@ -310,17 +394,22 @@ fn cursor_accounts_section<'a>(
     let active_id = state
         .provider(ProviderId::Cursor)
         .and_then(|provider| provider.system_active_account_id.as_deref());
+    let empty_state = accounts.is_empty() && matches!(cursor_scan, CursorScanState::Idle);
     let mut rows = cosmic::iced::widget::column![]
         .spacing(8)
         .width(Length::Fill);
 
     if accounts.is_empty() {
-        rows = rows.push(widget::text(fl!("cursor-accounts-empty")).size(13));
+        rows = if empty_state {
+            rows.push(empty_accounts_state(ProviderId::Cursor, enabled))
+        } else {
+            rows.push(widget::text(fl!("accounts-empty-title")).size(13))
+        };
     } else {
         let mut account_rows = cosmic::iced::widget::column![]
             .spacing(0)
             .width(Length::Fill);
-        for account in &accounts {
+        for (index, account) in accounts.iter().enumerate() {
             account_rows = account_rows.push(account_settings_row(
                 ProviderId::Cursor,
                 account,
@@ -328,18 +417,23 @@ fn cursor_accounts_section<'a>(
                 active_id,
                 config,
                 enabled,
+                AccountRowPosition {
+                    first: index == 0,
+                    last: index + 1 == accounts.len(),
+                },
             ));
         }
         rows = rows.push(account_selector_list(account_rows));
     }
 
-    rows = rows.push(cursor_scan_controls(cursor_scan, enabled));
+    if !empty_state {
+        rows = rows.push(account_action_container(cursor_scan_controls(
+            cursor_scan,
+            enabled,
+        )));
+    }
 
-    settings_block_enabled(
-        widget::text(fl!("cursor-accounts-title")).size(16).into(),
-        rows,
-        enabled,
-    )
+    settings_block_enabled(accounts_section_title(accounts.is_empty()), rows, enabled)
 }
 
 fn copilot_accounts_section<'a>(
@@ -362,17 +456,22 @@ fn copilot_accounts_section<'a>(
     let active_id = state
         .provider(ProviderId::Copilot)
         .and_then(|provider| provider.system_active_account_id.as_deref());
+    let empty_state = accounts.is_empty() && copilot_login.is_none();
     let mut rows = cosmic::iced::widget::column![]
         .spacing(8)
         .width(Length::Fill);
 
     if accounts.is_empty() {
-        rows = rows.push(widget::text(fl!("copilot-accounts-empty")).size(13));
+        rows = if empty_state {
+            rows.push(empty_accounts_state(ProviderId::Copilot, enabled))
+        } else {
+            rows.push(widget::text(fl!("accounts-empty-title")).size(13))
+        };
     } else {
         let mut account_rows = cosmic::iced::widget::column![]
             .spacing(0)
             .width(Length::Fill);
-        for account in &accounts {
+        for (index, account) in accounts.iter().enumerate() {
             account_rows = account_rows.push(account_settings_row(
                 ProviderId::Copilot,
                 account,
@@ -380,22 +479,24 @@ fn copilot_accounts_section<'a>(
                 active_id,
                 config,
                 enabled,
+                AccountRowPosition {
+                    first: index == 0,
+                    last: index + 1 == accounts.len(),
+                },
             ));
         }
         rows = rows.push(account_selector_list(account_rows));
     }
 
-    rows = rows.push(copilot_login_controls(
-        copilot_login,
-        crate::providers::copilot::opencode_import_available(),
-        enabled,
-    ));
+    if !empty_state {
+        rows = rows.push(account_action_container(copilot_login_controls(
+            copilot_login,
+            opencode_import_available(ProviderId::Copilot),
+            enabled,
+        )));
+    }
 
-    settings_block_enabled(
-        widget::text(fl!("copilot-accounts-title")).size(16).into(),
-        rows,
-        enabled,
-    )
+    settings_block_enabled(accounts_section_title(accounts.is_empty()), rows, enabled)
 }
 
 fn minimax_accounts_section<'a>(
@@ -416,17 +517,22 @@ fn minimax_accounts_section<'a>(
         .unwrap_or_default();
     let accounts = state.accounts_for(ProviderId::Minimax);
     let active_id = minimax.and_then(|provider| provider.system_active_account_id.as_deref());
+    let empty_state = accounts.is_empty() && minimax_login.is_none();
     let mut rows = cosmic::iced::widget::column![]
         .spacing(8)
         .width(Length::Fill);
 
     if accounts.is_empty() {
-        rows = rows.push(widget::text(fl!("minimax-accounts-empty")).size(13));
+        rows = if empty_state {
+            rows.push(empty_accounts_state(ProviderId::Minimax, enabled))
+        } else {
+            rows.push(widget::text(fl!("accounts-empty-title")).size(13))
+        };
     } else {
         let mut account_rows = cosmic::iced::widget::column![]
             .spacing(0)
             .width(Length::Fill);
-        for account in &accounts {
+        for (index, account) in accounts.iter().enumerate() {
             account_rows = account_rows.push(account_settings_row(
                 ProviderId::Minimax,
                 account,
@@ -434,6 +540,10 @@ fn minimax_accounts_section<'a>(
                 active_id,
                 config,
                 enabled,
+                AccountRowPosition {
+                    first: index == 0,
+                    last: index + 1 == accounts.len(),
+                },
             ));
         }
         rows = rows.push(account_selector_list(account_rows));
@@ -445,13 +555,14 @@ fn minimax_accounts_section<'a>(
         rows = rows.push(widget::text(fl!("minimax-account-select-required")).size(13));
     }
 
-    rows = rows.push(minimax_login_controls(minimax_login, enabled));
+    if !empty_state {
+        rows = rows.push(account_action_container(minimax_login_controls(
+            minimax_login,
+            enabled,
+        )));
+    }
 
-    settings_block_enabled(
-        widget::text("Minimax Accounts").size(16).into(),
-        rows,
-        enabled,
-    )
+    settings_block_enabled(accounts_section_title(accounts.is_empty()), rows, enabled)
 }
 
 fn kimi_accounts_section<'a>(
@@ -472,17 +583,22 @@ fn kimi_accounts_section<'a>(
         .unwrap_or_default();
     let accounts = state.accounts_for(ProviderId::Kimi);
     let active_id = kimi.and_then(|provider| provider.system_active_account_id.as_deref());
+    let empty_state = accounts.is_empty() && kimi_login.is_none();
     let mut rows = cosmic::iced::widget::column![]
         .spacing(8)
         .width(Length::Fill);
 
     if accounts.is_empty() {
-        rows = rows.push(widget::text(fl!("kimi-accounts-empty")).size(13));
+        rows = if empty_state {
+            rows.push(empty_accounts_state(ProviderId::Kimi, enabled))
+        } else {
+            rows.push(widget::text(fl!("accounts-empty-title")).size(13))
+        };
     } else {
         let mut account_rows = cosmic::iced::widget::column![]
             .spacing(0)
             .width(Length::Fill);
-        for account in &accounts {
+        for (index, account) in accounts.iter().enumerate() {
             account_rows = account_rows.push(account_settings_row(
                 ProviderId::Kimi,
                 account,
@@ -490,6 +606,10 @@ fn kimi_accounts_section<'a>(
                 active_id,
                 config,
                 enabled,
+                AccountRowPosition {
+                    first: index == 0,
+                    last: index + 1 == accounts.len(),
+                },
             ));
         }
         rows = rows.push(account_selector_list(account_rows));
@@ -501,13 +621,13 @@ fn kimi_accounts_section<'a>(
         rows = rows.push(widget::text(fl!("kimi-account-select-required")).size(13));
     }
 
-    rows = rows.push(kimi_login_controls(kimi_login, enabled));
+    if !empty_state {
+        rows = rows.push(account_action_container(kimi_login_controls(
+            kimi_login, enabled,
+        )));
+    }
 
-    settings_block_enabled(
-        widget::text(fl!("kimi-accounts-title")).size(16).into(),
-        rows,
-        enabled,
-    )
+    settings_block_enabled(accounts_section_title(accounts.is_empty()), rows, enabled)
 }
 
 fn opencode_go_accounts_section<'a>(
@@ -528,16 +648,21 @@ fn opencode_go_accounts_section<'a>(
         .unwrap_or_default();
     let accounts = state.accounts_for(ProviderId::OpenCodeGo);
     let active_id = provider.and_then(|value| value.system_active_account_id.as_deref());
+    let empty_state = accounts.is_empty() && login.is_none();
     let mut rows = cosmic::iced::widget::column![]
         .spacing(8)
         .width(Length::Fill);
     if accounts.is_empty() {
-        rows = rows.push(widget::text("No OpenCode Go accounts").size(13));
+        rows = if empty_state {
+            rows.push(empty_accounts_state(ProviderId::OpenCodeGo, enabled))
+        } else {
+            rows.push(widget::text(fl!("accounts-empty-title")).size(13))
+        };
     } else {
         let mut account_rows = cosmic::iced::widget::column![]
             .spacing(0)
             .width(Length::Fill);
-        for account in &accounts {
+        for (index, account) in accounts.iter().enumerate() {
             account_rows = account_rows.push(account_settings_row(
                 ProviderId::OpenCodeGo,
                 account,
@@ -545,14 +670,18 @@ fn opencode_go_accounts_section<'a>(
                 active_id,
                 config,
                 enabled,
+                AccountRowPosition {
+                    first: index == 0,
+                    last: index + 1 == accounts.len(),
+                },
             ));
         }
         rows = rows.push(account_selector_list(account_rows));
     }
-    rows = rows.push(opencode_go_login_controls(login, enabled));
-    settings_block_enabled(
-        widget::text("OpenCode Go Accounts").size(16).into(),
-        rows,
-        enabled,
-    )
+    if !empty_state {
+        rows = rows.push(account_action_container(opencode_go_login_controls(
+            login, enabled,
+        )));
+    }
+    settings_block_enabled(accounts_section_title(accounts.is_empty()), rows, enabled)
 }

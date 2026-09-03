@@ -23,8 +23,6 @@ pub(super) fn test_app() -> AppModel {
         provider_picker_open: false,
         update_status: crate::updates::UpdateStatus::Unchecked,
         launch_mode: crate::app::LaunchMode::Standalone,
-        popup_size: None,
-        popup_body_measurements: Default::default(),
         shared_control: Default::default(),
         process_info: crate::refresh_owner::ProcessInfo {
             id: "login-flow-test-process".to_string(),

@@ -2,9 +2,8 @@ use super::{
     AccountSelectionStatus, AppModel, Config, CosmicConfigEntry, Id, Message, PagerDirection,
     PanelIconStyle, PopupRoute, ProviderId, ProviderRefreshResult, ResetTimeFormat, Size, Task,
     UpdateStatus, UsageAmountFormat, app_popup, demo_env, destroy_popup, format_retry_delay,
-    panel_button_size, popup_size_limits_with_max_width, popup_size_tuple, popup_view,
-    refresh_provider_account_statuses_task, registry, resize_popup, runtime, select_provider,
-    update_retry_delay, update_retry_task,
+    panel_button_size, popup_view, refresh_provider_account_statuses_task, registry, runtime,
+    select_provider, update_retry_delay, update_retry_task,
 };
 use crate::config::APP_ID;
 use crate::shared_state::{self, ProviderRefreshRequest, RefreshRequestReason};
@@ -121,7 +120,7 @@ impl AppModel {
         Task::none()
     }
 
-    pub(super) fn navigate_to(&mut self, route: PopupRoute) -> Option<Task<Message>> {
+    pub(super) fn navigate_to(&mut self, route: PopupRoute) {
         tracing::info!(
             process_id = %self.process_info.id,
             from = popup_route_label(self.popup_route),
@@ -130,58 +129,7 @@ impl AppModel {
             to_provider = popup_route_provider_label(route, self.selected_provider),
             "popup navigation requested"
         );
-        let resize = self.resize_popup_to_route(&route);
         self.popup_route = route;
-        resize
-    }
-
-    pub(super) fn popup_size_for_route(&self, route: &PopupRoute) -> Size {
-        if self.provider_picker_open && matches!(route, PopupRoute::ProviderDetail) {
-            return popup_view::popup_provider_picker_size();
-        }
-        if let Some(size) = self.measured_popup_size_for_route(route) {
-            return size;
-        }
-        match route {
-            PopupRoute::ProviderDetail => popup_view::popup_session_size_for_page(
-                &self.state,
-                self.selected_provider,
-                self.detail_account_page,
-            ),
-            PopupRoute::Settings
-            | PopupRoute::ManageProviders
-            | PopupRoute::ManageAccounts(_)
-            | PopupRoute::About => popup_view::popup_settings_size(&self.state),
-        }
-    }
-
-    fn measured_popup_size_for_route(&self, route: &PopupRoute) -> Option<Size> {
-        match route {
-            PopupRoute::ProviderDetail if popup_view::popup_empty_state_active(&self.state) => self
-                .popup_body_measurements
-                .empty_state_height()
-                .map(|height| {
-                    popup_view::popup_session_size_with_body_height(
-                        &self.state,
-                        self.selected_provider,
-                        height,
-                    )
-                }),
-            PopupRoute::ProviderDetail => self
-                .popup_body_measurements
-                .provider(self.selected_provider)
-                .map(|height| {
-                    popup_view::popup_session_size_with_body_height(
-                        &self.state,
-                        self.selected_provider,
-                        height,
-                    )
-                }),
-            route => self
-                .popup_body_measurements
-                .route_height(*route)
-                .map(popup_view::popup_settings_size_with_body_height),
-        }
     }
 
     pub(super) fn sync_panel_suggested_bounds(&mut self) {
@@ -211,25 +159,19 @@ impl AppModel {
         Task::none()
     }
 
-    pub(super) fn page_provider_viewport(
-        &mut self,
-        direction: PagerDirection,
-    ) -> Option<Task<Message>> {
+    pub(super) fn page_provider_viewport(&mut self, direction: PagerDirection) {
         let max_offset = popup_view::provider_viewport_max_offset_for(&self.state);
         let previous = self.provider_viewport_offset;
         self.provider_viewport_offset = match direction {
             PagerDirection::Previous => previous.saturating_sub(1),
             PagerDirection::Next => previous.saturating_add(1).min(max_offset),
         };
-        (previous != self.provider_viewport_offset)
-            .then(|| self.resize_popup_to_provider(self.selected_provider))
-            .flatten()
     }
 
     pub(super) fn select_provider_tab(&mut self, provider: ProviderId) -> Task<Message> {
         let previous = self.selected_provider;
         self.selected_provider = provider;
-        self.detail_account_page = 0;
+        self.detail_account_page = self.state.selected_account_index(provider);
         tracing::info!(
             process_id = %self.process_info.id,
             previous_provider = previous.label(),
@@ -240,12 +182,7 @@ impl AppModel {
             new_config.selected_provider = provider;
         });
         self.sync_panel_suggested_bounds();
-        let refresh = self.request_refresh_for_selected_provider(provider);
-        if let Some(resize) = self.resize_popup_to_provider(provider) {
-            Task::batch(vec![resize, refresh])
-        } else {
-            refresh
-        }
+        self.request_refresh_for_selected_provider(provider)
     }
 
     fn request_refresh_for_selected_provider(&mut self, provider: ProviderId) -> Task<Message> {
@@ -292,33 +229,8 @@ impl AppModel {
         self.handle_shared_control_update(shared_control)
     }
 
-    pub(super) fn resize_popup_to_provider(
-        &mut self,
-        provider: ProviderId,
-    ) -> Option<Task<Message>> {
-        let new_size = popup_view::popup_session_size_for_page(
-            &self.state,
-            provider,
-            self.detail_account_page,
-        );
-        self.resize_popup_to_size(new_size)
-    }
-
-    pub(super) fn resize_popup_to_route(&mut self, route: &PopupRoute) -> Option<Task<Message>> {
-        let new_size = self.popup_size_for_route(route);
-        self.resize_popup_to_size(new_size)
-    }
-
-    pub(super) fn resize_popup_to_size(&mut self, new_size: Size) -> Option<Task<Message>> {
-        let popup_id = self.popup?;
-        self.popup_size = Some(new_size);
-        let (w, h) = popup_size_tuple(new_size);
-        Some(resize_popup(popup_id, w, h))
-    }
-
     pub(super) fn toggle_popup(&mut self) -> Task<Message> {
         if let Some(p) = self.popup.take() {
-            self.popup_size = None;
             tracing::info!(
                 process_id = %self.process_info.id,
                 route = popup_route_label(self.popup_route),
@@ -330,9 +242,6 @@ impl AppModel {
             )));
         }
 
-        let popup_size = self.popup_size_for_route(&self.popup_route.clone());
-        let max_width = popup_view::popup_max_width(&self.state);
-        self.popup_size = Some(popup_size);
         tracing::info!(
             process_id = %self.process_info.id,
             route = popup_route_label(self.popup_route),
@@ -345,17 +254,15 @@ impl AppModel {
                 move |state| {
                     let new_id = Id::unique();
                     state.popup.replace(new_id);
-                    let mut popup_settings = state.core.applet.get_popup_settings(
+                    let mut settings = state.core.applet.get_popup_settings(
                         state.core.main_window_id().unwrap(),
                         new_id,
-                        Some(popup_size_tuple(popup_size)),
+                        None,
                         None,
                         None,
                     );
-                    popup_settings.positioner.size_limits =
-                        popup_size_limits_with_max_width(popup_size, max_width);
-                    popup_settings.positioner.reactive = false;
-                    popup_settings
+                    settings.positioner.size_limits = super::popup_size_limits();
+                    settings
                 },
                 None,
             ),
@@ -637,21 +544,12 @@ impl AppModel {
             "account selection changed"
         );
         self.sync_panel_suggested_bounds();
-        let refresh = if is_selected {
+        if is_selected {
             self.request_provider_refresh(provider, RefreshRequestReason::AccountAction)
         } else {
             self.persist_runtime_if_owner("account_selection_changed");
             Task::none()
-        };
-        if provider == self.selected_provider
-            && matches!(self.popup_route, PopupRoute::ProviderDetail)
-        {
-            self.popup_body_measurements.clear_provider(provider);
-            if let Some(resize) = self.resize_popup_to_provider(provider) {
-                return Task::batch(vec![resize, refresh]);
-            }
         }
-        refresh
     }
 
     pub(super) fn delete_account(

@@ -235,3 +235,44 @@ fn system_active_account_id_only_supported_by_codex_claude_gemini_minimax_kimi_o
         );
     }
 }
+
+#[test]
+fn opencode_go_system_active_account_id_matches_opencode_auth_file() {
+    use crate::config::{ManagedOpenCodeGoAccountConfig, paths};
+    use crate::providers::opencode_auth::OPENCODE_AUTH_PATH_ENV;
+    use crate::providers::opencode_go::storage::write_api_key_at;
+    use chrono::Utc;
+    use std::fs;
+
+    let temp = tempfile::tempdir().unwrap();
+    let state = temp.path().join("state");
+    let auth_path = temp.path().join("auth.json");
+    let mut env = crate::test_support::test_env();
+    env.set("XDG_STATE_HOME", &state);
+    env.set(OPENCODE_AUTH_PATH_ENV, &auth_path);
+    env.remove("OPENCODE_API_KEY");
+    env.remove("OPENCODE_GO_API_KEY");
+
+    fs::write(
+        &auth_path,
+        r#"{"opencode-go":{"type":"api","key":"test-key"}}"#,
+    )
+    .unwrap();
+    write_api_key_at(&paths().opencode_go_accounts_dir, "go-1", "test-key").unwrap();
+    let config = Config {
+        opencode_go_managed_accounts: vec![ManagedOpenCodeGoAccountConfig {
+            id: "go-1".to_string(),
+            label: "OpenCode Go".to_string(),
+            api_key_source: "stored".to_string(),
+            created_at: Utc::now(),
+            updated_at: Utc::now(),
+            last_authenticated_at: None,
+        }],
+        ..Config::default()
+    };
+
+    assert_eq!(
+        system_active_account_id(ProviderId::OpenCodeGo, &config),
+        Some("go-1".to_string())
+    );
+}

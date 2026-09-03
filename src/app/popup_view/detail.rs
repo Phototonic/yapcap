@@ -1,10 +1,8 @@
 use super::super::provider_assets::app_icon_handle;
 use super::{
-    ACCOUNT_PAGER_HEIGHT, Message, PROVIDER_ACCOUNT_HEADER_HEIGHT, PROVIDER_CARD_PADDING,
-    PROVIDER_CARD_SPACING, PROVIDER_GROUP_HEADER_HEIGHT, PROVIDER_GROUP_PADDING,
-    PROVIDER_GROUP_SPACING, PROVIDER_SECTION_HEIGHT, PROVIDER_SECTION_WITH_ACTION_HEIGHT,
-    PROVIDER_SUMMARY_HEIGHT, PopupRoute, account_label_text, apply_alpha, badge_destructive,
-    badge_neutral, badge_success, badge_warning, badge_with_tooltip, card, clamp_account_page,
+    Message, PROVIDER_CARD_SPACING, PROVIDER_GROUP_PADDING, PROVIDER_GROUP_SPACING, PopupRoute,
+    account_action_button, account_label_text, apply_alpha, badge_destructive, badge_neutral,
+    badge_success, badge_warning, badge_with_tooltip, card, clamp_account_page,
     detected_without_accounts, info_block, pager_account_label, plan_badge, provider_icon_handle,
     provider_icon_variant, provider_summary,
 };
@@ -169,26 +167,6 @@ fn account_page_dot(active: bool) -> Element<'static, Message> {
     .into()
 }
 
-pub(super) fn provider_body_height_for_page(
-    state: &AppState,
-    provider: Option<&ProviderRuntimeState>,
-    account_page: usize,
-) -> f32 {
-    let Some(provider) = provider else {
-        return PROVIDER_SUMMARY_HEIGHT;
-    };
-    let accounts = state.accounts_for(provider.provider);
-    if accounts.is_empty() {
-        return provider_body_height_for_account(provider, None);
-    }
-    let active = clamp_account_page(account_page, accounts.len());
-    let account_height = provider_body_height_for_account(provider, Some(accounts[active]));
-    if accounts.len() == 1 {
-        return account_height;
-    }
-    account_height + PROVIDER_CARD_SPACING + ACCOUNT_PAGER_HEIGHT
-}
-
 #[cfg(test)]
 pub(super) fn active_snapshot<'a>(
     state: &'a AppState,
@@ -275,21 +253,12 @@ fn account_column_header_content<'a>(
         label_row,
         status_row,
         account_card_divider(),
-        widget::button::custom(
-            row![
-                widget::text(fl!("manage-accounts")),
-                cosmic::iced::widget::Space::new().width(Length::Fill),
-                widget::icon::from_name("go-next-symbolic").icon().size(16),
-            ]
-            .align_y(Alignment::Center)
-            .width(Length::Fill),
-        )
-        .width(Length::Fill)
-        .padding([4, 0])
-        .class(account_card_action_class())
-        .on_press(Message::NavigateTo(PopupRoute::ManageAccounts(
-            provider.provider
-        ))),
+        account_action_button(
+            fl!("manage-accounts"),
+            Some(Message::NavigateTo(PopupRoute::ManageAccounts(
+                provider.provider,
+            ))),
+        ),
     ]
     .spacing(8)
     .width(Length::Fill)
@@ -354,26 +323,6 @@ fn account_card_divider() -> Element<'static, Message> {
             }
         })
         .into()
-}
-
-fn account_card_action_class() -> cosmic::theme::Button {
-    cosmic::theme::Button::Custom {
-        active: Box::new(|_focused, theme| account_card_action_style(theme, false)),
-        disabled: Box::new(|theme| account_card_action_style(theme, false)),
-        hovered: Box::new(|_focused, theme| account_card_action_style(theme, true)),
-        pressed: Box::new(|_focused, theme| account_card_action_style(theme, true)),
-    }
-}
-
-fn account_card_action_style(theme: &cosmic::Theme, hovered: bool) -> widget::button::Style {
-    let cosmic = theme.cosmic();
-    let surface = &cosmic.background(theme.transparent).component;
-    let mut style = widget::button::Style::new();
-    style.background = hovered.then(|| Background::Color(surface.hover.into()));
-    style.border_radius = cosmic.corner_radii.radius_s.into();
-    style.text_color = Some(surface.on.into());
-    style.icon_color = Some(surface.on.into());
-    style
 }
 
 fn usage_card<'a>(items: Vec<Element<'a, Message>>) -> Element<'a, Message> {
@@ -545,66 +494,6 @@ fn dedup_status_messages(messages: Vec<String>) -> Vec<String> {
     deduped
 }
 
-fn provider_body_height_for_account(
-    provider: &ProviderRuntimeState,
-    account: Option<&ProviderAccountRuntimeState>,
-) -> f32 {
-    let mut height = PROVIDER_SUMMARY_HEIGHT;
-    let mut cards = 1usize;
-
-    if account.is_some() {
-        height += PROVIDER_ACCOUNT_HEADER_HEIGHT;
-        cards += 1;
-    }
-
-    let snapshot = active_snapshot_for_account(account, provider);
-    if let Some(snapshot) = snapshot {
-        if account.map(|account| &account.health) == Some(&ProviderHealth::Error) {
-            height += PROVIDER_SECTION_HEIGHT;
-            cards += 1;
-        }
-
-        let ungrouped = snapshot
-            .windows
-            .iter()
-            .filter(|window| window.group.is_none())
-            .count();
-        height += f32::from(u16::try_from(ungrouped).unwrap_or(u16::MAX)) * PROVIDER_SECTION_HEIGHT;
-        cards += ungrouped;
-
-        for run in grouped_run_lengths(&snapshot.windows) {
-            height += group_card_height(run);
-            cards += 1;
-        }
-        match snapshot.provider {
-            ProviderId::Claude => {
-                if snapshot.extra_usage.is_some() || snapshot.provider_cost.as_ref().is_some() {
-                    height += PROVIDER_SECTION_HEIGHT;
-                    cards += 1;
-                }
-            }
-            _ => {
-                if snapshot.provider_cost.as_ref().is_some() {
-                    height += PROVIDER_SECTION_HEIGHT;
-                    cards += 1;
-                }
-            }
-        }
-    } else {
-        height += if account.is_none()
-            && provider.account_status == AccountSelectionStatus::LoginRequired
-        {
-            PROVIDER_SECTION_WITH_ACTION_HEIGHT
-        } else {
-            PROVIDER_SECTION_HEIGHT
-        };
-        cards += 1;
-    }
-
-    let gaps = f32::from(u16::try_from(cards.saturating_sub(1)).unwrap_or(u16::MAX));
-    height + gaps * PROVIDER_CARD_SPACING
-}
-
 fn active_snapshot_for_account<'a>(
     account: Option<&'a ProviderAccountRuntimeState>,
     provider: &'a ProviderRuntimeState,
@@ -683,29 +572,6 @@ fn usage_section_content(
             overage: overage_text(window),
         },
     )
-}
-
-fn group_card_height(windows: usize) -> f32 {
-    let n = f32::from(u16::try_from(windows).unwrap_or(u16::MAX));
-    PROVIDER_GROUP_PADDING
-        + PROVIDER_GROUP_HEADER_HEIGHT
-        + n * (PROVIDER_SECTION_HEIGHT - PROVIDER_CARD_PADDING)
-        + n * PROVIDER_GROUP_SPACING
-}
-
-fn grouped_run_lengths(windows: &[UsageWindow]) -> Vec<usize> {
-    let mut runs = Vec::new();
-    let mut previous: Option<&str> = None;
-    for window in windows {
-        if let Some(group) = window.group.as_deref() {
-            match runs.last_mut() {
-                Some(last) if previous == Some(group) => *last += 1,
-                _ => runs.push(1),
-            }
-        }
-        previous = window.group.as_deref();
-    }
-    runs
 }
 
 fn window_display_label(provider: ProviderId, label: &str) -> String {
@@ -925,7 +791,7 @@ fn pace_marker(expected_percent: f32) -> Element<'static, Message> {
                     text_color: None,
                     background: Some(Background::Color(cosmic.accent.pressed.into())),
                     border: cosmic::iced::Border {
-                        radius: 0.0.into(),
+                        radius: cosmic.corner_radii.radius_xl.into(),
                         width: 0.0,
                         color: Color::TRANSPARENT,
                     },
@@ -1019,56 +885,6 @@ fn format_updated_label(last_success_at: chrono::DateTime<chrono::Utc>) -> Strin
 mod tests {
     use super::*;
     use crate::model::{AccountSelectionStatus, AuthState, ProviderHealth};
-
-    fn grouped_window(group: &str) -> UsageWindow {
-        UsageWindow {
-            label: "Weekly Limit".to_string(),
-            used_percent: 10.0,
-            reset_at: None,
-            window_seconds: Some(5 * 3600),
-            reset_description: None,
-            group: Some(group.to_string()),
-        }
-    }
-
-    fn ungrouped_window() -> UsageWindow {
-        UsageWindow {
-            label: "Session".to_string(),
-            used_percent: 10.0,
-            reset_at: None,
-            window_seconds: None,
-            reset_description: None,
-            group: None,
-        }
-    }
-
-    #[test]
-    fn grouped_run_lengths_splits_runs_at_group_boundaries() {
-        let windows = vec![
-            grouped_window("Gemini Models"),
-            grouped_window("Gemini Models"),
-            grouped_window("Claude and GPT models"),
-            grouped_window("Claude and GPT models"),
-        ];
-        assert_eq!(grouped_run_lengths(&windows), vec![2, 2]);
-    }
-
-    #[test]
-    fn grouped_run_lengths_skips_ungrouped_windows() {
-        let windows = vec![
-            ungrouped_window(),
-            grouped_window("Gemini Models"),
-            ungrouped_window(),
-            grouped_window("Gemini Models"),
-        ];
-        assert_eq!(grouped_run_lengths(&windows), vec![1, 1]);
-    }
-
-    #[test]
-    fn grouped_run_lengths_is_empty_for_ungrouped_providers() {
-        let windows = vec![ungrouped_window(), ungrouped_window()];
-        assert!(grouped_run_lengths(&windows).is_empty());
-    }
 
     #[test]
     fn action_required_account_reports_reauth_message() {

@@ -4,16 +4,14 @@ use super::applet::{
     applet_percent_text, panel_fallback_active, select_provider, selected_provider_all_bar_layouts,
 };
 use super::popup_view::{
-    POPUP_COLUMN_WIDTH, account_page_next, account_page_previous, clamp_account_page,
-    pager_account_label, popup_session_size, popup_session_size_for_page, popup_settings_size,
+    account_page_next, account_page_previous, clamp_account_page, pager_account_label,
     provider_viewport, provider_viewport_navigation_visible,
 };
 use super::refresh::should_refresh_account_statuses;
 use super::{
     APPLET_ACCOUNT_GAP, APPLET_ICON_GAP, APPLET_PERCENT_ACCOUNT_GAP, AppModel, AppState, Config,
-    LaunchMode, Message, PanelIconStyle, PopupBodyMeasurements, PopupRoute, ProviderId, Size,
-    UsageAmountFormat, automatic_refresh_poll_interval, format_retry_delay,
-    popup_size_limits_with_max_width, popup_size_tuple, update_retry_delay,
+    LaunchMode, Message, PanelIconStyle, PopupRoute, ProviderId, UsageAmountFormat,
+    automatic_refresh_poll_interval, format_retry_delay, popup_size_limits, update_retry_delay,
 };
 use crate::account_storage::{NewProviderAccount, ProviderAccountStorage, ProviderAccountTokens};
 use crate::config::{
@@ -22,8 +20,8 @@ use crate::config::{
     ManagedMinimaxAccountConfig,
 };
 use crate::model::{
-    AccountSelectionStatus, ExtraUsageState, ProviderAccountRuntimeState, ProviderCost,
-    ProviderIdentity, ProviderRuntimeState, UsageHeadline, UsageSnapshot, UsageWindow,
+    AccountSelectionStatus, ProviderAccountRuntimeState, ProviderIdentity, ProviderRuntimeState,
+    UsageHeadline, UsageSnapshot, UsageWindow,
 };
 use crate::providers::cursor::CursorScanState;
 use crate::refresh_owner::{ProcessInfo, RefreshOwner, RefreshOwnerAttempt};
@@ -34,21 +32,6 @@ use crate::updates::UpdateStatus;
 use chrono::Utc;
 use std::path::PathBuf;
 use std::time::Duration;
-
-#[test]
-fn popup_limits_allow_wider_max() {
-    let limits = popup_size_limits_with_max_width(Size::new(420.0, 640.0), 840.0);
-
-    assert_eq!(limits.min().width, 1.0);
-    assert_eq!(limits.max().width, 840.0);
-    assert_eq!(limits.min().height, 640.0);
-    assert_eq!(limits.max().height, 640.0);
-}
-
-#[test]
-fn popup_size_tuple_rounds_logical_size() {
-    assert_eq!(popup_size_tuple(Size::new(419.6, 640.2)), (420, 640));
-}
 
 #[test]
 fn update_retry_delay_backs_off_to_cap() {
@@ -68,6 +51,11 @@ fn retry_delay_format_is_compact() {
 #[test]
 fn automatic_refresh_poll_checks_more_often_than_default_refresh_interval() {
     assert_eq!(automatic_refresh_poll_interval(), Duration::from_secs(10));
+}
+
+#[test]
+fn popup_size_limits_allow_tall_account_details() {
+    assert_eq!(popup_size_limits().max().height, 1200.0);
 }
 
 #[test]
@@ -498,6 +486,19 @@ fn update_check_messages_keep_current_error_and_available_states() {
 }
 
 #[test]
+fn demo_startup_keeps_update_check_task() {
+    let startup = super::startup_task(
+        true,
+        cosmic::app::Task::none(),
+        cosmic::app::Task::done(cosmic::Action::App(Message::Tick)),
+        cosmic::app::Task::none(),
+        cosmic::app::Task::none(),
+    );
+
+    assert_eq!(startup.units(), 1);
+}
+
+#[test]
 fn partial_config_update_preserves_locally_written_account() {
     let mut app = test_app(None);
     app.config.codex_managed_accounts = vec![codex_account("codex-1")];
@@ -888,15 +889,6 @@ fn applet_percent_groups_are_capped_to_four_selected_accounts() {
 }
 
 #[test]
-fn popup_session_width_is_capped_to_four_selected_accounts() {
-    let state = state_with_selected_account_percents(&[1.0, 2.0, 3.0, 4.0, 5.0]);
-
-    let size = popup_session_size(&state, ProviderId::Codex);
-
-    assert_eq!(size.width, POPUP_COLUMN_WIDTH);
-}
-
-#[test]
 fn account_pager_wraps_and_clamps() {
     assert_eq!(account_page_next(1, 2), 0);
     assert_eq!(account_page_previous(0, 2), 1);
@@ -914,32 +906,7 @@ fn account_pager_uses_a_fallback_label() {
 }
 
 #[test]
-fn popup_size_uses_the_active_account_page() {
-    let mut state = state_with_selected_account_percents(&[10.0, 20.0]);
-    state.provider_accounts[1]
-        .snapshot
-        .as_mut()
-        .unwrap()
-        .windows
-        .push(UsageWindow {
-            label: "Weekly".to_string(),
-            used_percent: 30.0,
-            reset_at: None,
-            window_seconds: None,
-            reset_description: None,
-            group: None,
-        });
-
-    let first = popup_session_size_for_page(&state, ProviderId::Codex, 0);
-    let second = popup_session_size_for_page(&state, ProviderId::Codex, 1);
-
-    assert!(second.height > first.height);
-    assert_eq!(first.width, POPUP_COLUMN_WIDTH);
-    assert_eq!(second.width, POPUP_COLUMN_WIDTH);
-}
-
-#[test]
-fn account_pager_selects_the_next_account_and_resizes_for_it() {
+fn account_pager_selects_the_next_account() {
     let mut app = test_app(None);
     app.selected_provider = ProviderId::Copilot;
     app.config.copilot_managed_accounts = vec![
@@ -965,8 +932,6 @@ fn account_pager_selects_the_next_account_and_resizes_for_it() {
         extra_usage: None,
         identity: ProviderIdentity::default(),
     });
-    app.popup_body_measurements.copilot = Some(1.0);
-
     let _ = app.page_provider_account(super::PagerDirection::Next);
 
     assert_eq!(app.detail_account_page, 1);
@@ -982,36 +947,30 @@ fn account_pager_selects_the_next_account_and_resizes_for_it() {
         app.shared_control.requests[0].reason,
         RefreshRequestReason::AccountAction
     );
-    assert_eq!(app.popup_body_measurements.copilot, None);
-    assert_eq!(
-        app.popup_size_for_route(&PopupRoute::ProviderDetail),
-        popup_session_size_for_page(&app.state, ProviderId::Copilot, 1)
-    );
 }
 
 #[test]
-fn popup_size_caps_an_oversized_active_page() {
-    let mut state = state_with_selected_account_percents(&[10.0]);
-    let windows = &mut state.provider_accounts[0]
-        .snapshot
-        .as_mut()
-        .unwrap()
-        .windows;
-    for index in 0..20 {
-        windows.push(UsageWindow {
-            label: format!("Window {index}"),
-            used_percent: 10.0,
-            reset_at: None,
-            window_seconds: None,
-            reset_description: None,
-            group: None,
-        });
-    }
+fn provider_switch_restores_the_selected_account_page() {
+    let mut app = test_app(None);
+    app.selected_provider = ProviderId::Copilot;
+    app.config.copilot_managed_accounts = vec![
+        copilot_account("copilot-1", "first"),
+        copilot_account("copilot-2", "second"),
+    ];
+    runtime_reconcile_provider(&app.config, &mut app.state, ProviderId::Copilot);
+    let _ = app.page_provider_account(super::PagerDirection::Next);
+
+    let _ = app.handle_message(Message::SelectProvider(ProviderId::Claude));
+    let _ = app.handle_message(Message::SelectProvider(ProviderId::Copilot));
 
     assert_eq!(
-        popup_session_size_for_page(&state, ProviderId::Codex, 0).height,
-        1080.0
+        app.state
+            .provider(ProviderId::Copilot)
+            .unwrap()
+            .selected_account_ids,
+        ["copilot-2"]
     );
+    assert_eq!(app.detail_account_page, 1);
 }
 
 #[test]
@@ -1030,76 +989,6 @@ fn provider_viewport_shifts_one_icon_and_stops_at_the_end() {
 fn provider_viewport_navigation_requires_six_enabled_providers() {
     assert!(!provider_viewport_navigation_visible(5));
     assert!(provider_viewport_navigation_visible(6));
-}
-
-#[test]
-fn popup_height_fits_the_selected_provider() {
-    let state = state_with_provider_window_counts(&[
-        (ProviderId::Codex, 1, false),
-        (ProviderId::Claude, 3, true),
-        (ProviderId::Cursor, 2, false),
-    ]);
-
-    let codex = popup_session_size(&state, ProviderId::Codex);
-    let claude = popup_session_size(&state, ProviderId::Claude);
-    let cursor = popup_session_size(&state, ProviderId::Cursor);
-
-    assert!(claude.height > codex.height);
-    assert!(claude.height > cursor.height);
-}
-
-#[test]
-fn popup_provider_viewport_does_not_change_popup_height() {
-    let mut state = state_with_provider_window_counts(&[(ProviderId::Codex, 1, false)]);
-    for provider in ProviderId::ALL {
-        state.provider_mut(provider).unwrap().enabled = false;
-    }
-    for provider in [
-        ProviderId::Codex,
-        ProviderId::Claude,
-        ProviderId::Cursor,
-        ProviderId::Gemini,
-    ] {
-        state.provider_mut(provider).unwrap().enabled = true;
-    }
-
-    let four_enabled = popup_session_size(&state, ProviderId::Codex);
-
-    for provider in [
-        ProviderId::Minimax,
-        ProviderId::Kimi,
-        ProviderId::Antigravity,
-        ProviderId::OpenCodeGo,
-    ] {
-        state.provider_mut(provider).unwrap().enabled = true;
-    }
-    let nine_enabled = popup_session_size(&state, ProviderId::Codex);
-
-    assert_eq!(nine_enabled.height, four_enabled.height);
-}
-
-#[test]
-fn popup_provider_height_is_independent_from_settings_height() {
-    let mut state = state_with_provider_window_counts(&[
-        (ProviderId::Codex, 1, false),
-        (ProviderId::Claude, 1, false),
-        (ProviderId::Cursor, 1, false),
-    ]);
-    for provider in ProviderId::ALL {
-        for i in 1..8 {
-            state.upsert_account(ProviderAccountRuntimeState::empty(
-                provider,
-                format!("{provider:?}-{i}"),
-                provider.label(),
-            ));
-        }
-    }
-
-    let provider = popup_session_size(&state, ProviderId::Codex);
-    let settings = popup_settings_size(&state);
-
-    assert!(settings.height > provider.height);
-    assert_eq!(provider.width, POPUP_COLUMN_WIDTH);
 }
 
 #[test]
@@ -1291,8 +1180,6 @@ pub(super) fn test_app(refresh_owner: Option<RefreshOwner>) -> AppModel {
         provider_picker_open: false,
         update_status: UpdateStatus::Unchecked,
         launch_mode: LaunchMode::Standalone,
-        popup_size: None,
-        popup_body_measurements: PopupBodyMeasurements::default(),
         shared_control: SharedControlState::default(),
         process_info: ProcessInfo {
             id: "test-process".to_string(),
@@ -1675,56 +1562,6 @@ fn refresh_owner(name: &str) -> RefreshOwner {
     match crate::refresh_owner::try_acquire(lock_path).unwrap() {
         RefreshOwnerAttempt::Owner(owner) => owner,
         RefreshOwnerAttempt::NonOwner(_) => panic!("test lock should be available"),
-    }
-}
-
-fn state_with_provider_window_counts(providers: &[(ProviderId, usize, bool)]) -> AppState {
-    let mut state = AppState::empty();
-    for &(provider, window_count, with_extra_usage) in providers {
-        let account_id = format!("{provider:?}-0");
-        state.provider_mut(provider).unwrap().selected_account_ids = vec![account_id.clone()];
-        let mut account =
-            ProviderAccountRuntimeState::empty(provider, account_id, provider.label());
-        account.snapshot = Some(snapshot_with_windows(
-            provider,
-            window_count,
-            with_extra_usage,
-        ));
-        state.upsert_account(account);
-    }
-    state
-}
-
-fn snapshot_with_windows(
-    provider: ProviderId,
-    window_count: usize,
-    with_extra_usage: bool,
-) -> UsageSnapshot {
-    UsageSnapshot {
-        provider,
-        source: "test".to_string(),
-        updated_at: Utc::now(),
-        headline: UsageHeadline(0),
-        windows: (0..window_count)
-            .map(|i| UsageWindow {
-                label: format!("Window {i}"),
-                used_percent: 10.0,
-                reset_at: None,
-                window_seconds: None,
-                reset_description: None,
-                group: None,
-            })
-            .collect(),
-        provider_cost: None,
-        extra_usage: with_extra_usage.then_some(ExtraUsageState::Active {
-            used_percent: 25.0,
-            cost: ProviderCost {
-                used: 5.0,
-                limit: Some(20.0),
-                units: "USD".to_string(),
-            },
-        }),
-        identity: ProviderIdentity::default(),
     }
 }
 

@@ -76,6 +76,13 @@ run *args:
 run-demo *args:
     env YAPCAP_DEMO=1 RUST_BACKTRACE=full cargo run {{args}}
 
+# Run the debug build with synthetic demo data and an available update
+run-demo-update *args:
+    env YAPCAP_DEMO=1 YAPCAP_DEBUG_UPDATE_AVAILABLE=1 RUST_BACKTRACE=full cargo run {{args}}
+
+run-demo-update-debug *args:
+    env YAPCAP_DEMO=1 YAPCAP_DEBUG_UPDATE_AVAILABLE=1 RUST_LOG='warn,yapcap::app=info,yapcap::app::popup_diagnostics=debug' RUST_BACKTRACE=full cargo run {{args}}
+
 # Runs with empty HOME/XDG dirs so provider discovery finds nothing
 run-empty-discovery *args:
     rm -rf /tmp/yapcap-empty-home /tmp/yapcap-empty-config /tmp/yapcap-empty-state

@@ -1,7 +1,8 @@
 use super::super::super::{
     Alignment, AntigravityLoginState, AntigravityLoginStatus, ClaudeLoginState, ClaudeLoginStatus,
     CodexLoginState, CodexLoginStatus, CopilotLoginState, CopilotLoginStatus, CursorScanState,
-    Element, GeminiLoginState, GeminiLoginStatus, Length, Message, fl, row, widget,
+    Element, GeminiLoginState, GeminiLoginStatus, Length, Message, account_add_button,
+    account_import_button, fl, row, widget,
 };
 use crate::app::login::{KimiLoginFlow, LoginFlow, MinimaxLoginFlow, OpenCodeGoLoginFlow};
 use crate::providers::kimi::login::{KimiLoginEvent, KimiLoginState, KimiLoginStatus};
@@ -28,22 +29,22 @@ pub(super) fn codex_login_controls(
     enabled: bool,
 ) -> Element<'_, Message> {
     let Some(login) = login else {
-        let mut controls = row![
-            widget::button::standard(fl!("codex-sign-in-with-chatgpt")).on_press_maybe(
-                enabled.then_some(Message::StartLogin(crate::model::ProviderId::Codex))
-            )
-        ];
+        let mut controls = cosmic::iced::widget::column![account_add_button(
+            fl!("account-add"),
+            enabled.then_some(Message::StartLogin(crate::model::ProviderId::Codex)),
+        )]
+        .spacing(8)
+        .width(Length::Fill);
         if opencode_import_available {
-            controls = controls.push(
-                widget::button::text(fl!("import-from-opencode")).on_press_maybe(
-                    enabled.then_some(Message::ImportFromOpenCode(
-                        crate::model::ProviderId::Codex,
-                        None,
-                    )),
-                ),
-            );
+            controls = controls.push(account_import_button(
+                fl!("import-from-opencode"),
+                enabled.then_some(Message::ImportFromOpenCode(
+                    crate::model::ProviderId::Codex,
+                    None,
+                )),
+            ));
         }
-        return controls.spacing(8).into();
+        return controls.into();
     };
 
     let mut content =
@@ -65,20 +66,20 @@ pub(super) fn codex_login_controls(
             enabled.then_some(Message::CancelLogin(crate::model::ProviderId::Codex)),
         ));
     } else {
-        let mut controls = row![
-            widget::button::text(fl!("codex-sign-in-with-chatgpt")).on_press_maybe(
-                enabled.then_some(Message::StartLogin(crate::model::ProviderId::Codex))
-            )
-        ];
+        let mut controls = cosmic::iced::widget::column![account_add_button(
+            fl!("account-add"),
+            enabled.then_some(Message::StartLogin(crate::model::ProviderId::Codex)),
+        )]
+        .spacing(8)
+        .width(Length::Fill);
         if opencode_import_available {
-            controls = controls.push(
-                widget::button::text(fl!("import-from-opencode")).on_press_maybe(
-                    enabled.then_some(Message::ImportFromOpenCode(
-                        crate::model::ProviderId::Codex,
-                        None,
-                    )),
-                ),
-            );
+            controls = controls.push(account_import_button(
+                fl!("import-from-opencode"),
+                enabled.then_some(Message::ImportFromOpenCode(
+                    crate::model::ProviderId::Codex,
+                    None,
+                )),
+            ));
         }
         content = content.push(
             controls
@@ -97,11 +98,10 @@ pub(super) fn claude_login_controls(
     enabled: bool,
 ) -> Element<'_, Message> {
     let Some(login) = login else {
-        return widget::button::standard(fl!("account-add"))
-            .on_press_maybe(
-                enabled.then_some(Message::StartLogin(crate::model::ProviderId::Claude)),
-            )
-            .into();
+        return account_add_button(
+            fl!("account-add"),
+            enabled.then_some(Message::StartLogin(crate::model::ProviderId::Claude)),
+        );
     };
 
     let mut content =
@@ -156,11 +156,10 @@ pub(super) fn gemini_login_controls(
     enabled: bool,
 ) -> Element<'_, Message> {
     let Some(login) = login else {
-        return widget::button::standard(fl!("account-add"))
-            .on_press_maybe(
-                enabled.then_some(Message::StartLogin(crate::model::ProviderId::Gemini)),
-            )
-            .into();
+        return account_add_button(
+            fl!("account-add"),
+            enabled.then_some(Message::StartLogin(crate::model::ProviderId::Gemini)),
+        );
     };
 
     let mut content =
@@ -204,20 +203,22 @@ pub(super) fn copilot_login_controls(
     enabled: bool,
 ) -> Element<'_, Message> {
     let Some(login) = login else {
-        let mut controls = row![widget::button::standard(fl!("account-add")).on_press_maybe(
-            enabled.then_some(Message::StartLogin(crate::model::ProviderId::Copilot))
-        )];
+        let mut controls = cosmic::iced::widget::column![account_add_button(
+            fl!("account-add"),
+            enabled.then_some(Message::StartLogin(crate::model::ProviderId::Copilot)),
+        )]
+        .spacing(8)
+        .width(Length::Fill);
         if opencode_import_available {
-            controls = controls.push(
-                widget::button::text(fl!("import-from-opencode")).on_press_maybe(
-                    enabled.then_some(Message::ImportFromOpenCode(
-                        crate::model::ProviderId::Copilot,
-                        None,
-                    )),
-                ),
-            );
+            controls = controls.push(account_import_button(
+                fl!("import-from-opencode"),
+                enabled.then_some(Message::ImportFromOpenCode(
+                    crate::model::ProviderId::Copilot,
+                    None,
+                )),
+            ));
         }
-        return controls.spacing(8).into();
+        return controls.into();
     };
 
     let mut content =
@@ -248,28 +249,26 @@ pub(super) fn copilot_login_controls(
             enabled.then_some(Message::CancelLogin(crate::model::ProviderId::Copilot)),
         ));
     } else {
-        let mut controls = row![
-            widget::button::text(fl!("account-add-another")).on_press_maybe(
-                enabled.then_some(Message::StartLogin(crate::model::ProviderId::Copilot))
-            )
-        ];
+        let mut controls = cosmic::iced::widget::column![account_add_button(
+            fl!("account-add-another"),
+            enabled.then_some(Message::StartLogin(crate::model::ProviderId::Copilot)),
+        )]
+        .spacing(8)
+        .width(Length::Fill);
         if opencode_import_available {
-            controls = controls.push(
-                widget::button::text(fl!("import-from-opencode")).on_press_maybe(
-                    enabled.then_some(Message::ImportFromOpenCode(
-                        crate::model::ProviderId::Copilot,
-                        None,
-                    )),
-                ),
-            );
+            controls = controls.push(account_import_button(
+                fl!("import-from-opencode"),
+                enabled.then_some(Message::ImportFromOpenCode(
+                    crate::model::ProviderId::Copilot,
+                    None,
+                )),
+            ));
         }
-        content = content.push(
-            controls
-                .push(widget::button::text(fl!("account-dismiss")).on_press_maybe(
-                    enabled.then_some(Message::CancelLogin(crate::model::ProviderId::Copilot)),
-                ))
-                .spacing(8),
-        );
+        content = content.push(controls.push(
+            widget::button::text(fl!("account-dismiss")).on_press_maybe(
+                enabled.then_some(Message::CancelLogin(crate::model::ProviderId::Copilot)),
+            ),
+        ));
     }
 
     Element::from(content)
@@ -340,11 +339,10 @@ pub(super) fn antigravity_login_controls(
     enabled: bool,
 ) -> Element<'_, Message> {
     let Some(login) = login else {
-        return widget::button::standard(fl!("account-add"))
-            .on_press_maybe(
-                enabled.then_some(Message::StartLogin(crate::model::ProviderId::Antigravity)),
-            )
-            .into();
+        return account_add_button(
+            fl!("account-add"),
+            enabled.then_some(Message::StartLogin(crate::model::ProviderId::Antigravity)),
+        );
     };
 
     let mut content =
@@ -394,21 +392,10 @@ fn antigravity_login_status(login: &AntigravityLoginState) -> String {
 
 pub(super) fn cursor_scan_controls(scan: &CursorScanState, enabled: bool) -> Element<'_, Message> {
     match scan {
-        CursorScanState::Idle => {
-            let mut content = cosmic::iced::widget::column![]
-                .spacing(6)
-                .width(Length::Fill);
-            content = content.push(
-                widget::button::standard(fl!("cursor-scan-button"))
-                    .on_press_maybe(enabled.then_some(Message::StartCursorScan)),
-            );
-            content = content.push(
-                widget::text(fl!("cursor-scan-subtitle"))
-                    .size(12)
-                    .width(Length::Fill),
-            );
-            Element::from(content)
-        }
+        CursorScanState::Idle => account_add_button(
+            fl!("account-add"),
+            enabled.then_some(Message::StartCursorScan),
+        ),
         CursorScanState::Scanning => Element::from(
             cosmic::iced::widget::column![widget::text(fl!("cursor-scanning")).size(13)]
                 .spacing(10)
@@ -493,11 +480,10 @@ pub(super) fn minimax_login_controls(
     enabled: bool,
 ) -> Element<'_, Message> {
     let Some(login) = login else {
-        return widget::button::standard(fl!("account-add"))
-            .on_press_maybe(
-                enabled.then_some(Message::StartLogin(crate::model::ProviderId::Minimax)),
-            )
-            .into();
+        return account_add_button(
+            fl!("account-add"),
+            enabled.then_some(Message::StartLogin(crate::model::ProviderId::Minimax)),
+        );
     };
 
     let mut content = if let Some(error) = &login.error {
@@ -581,9 +567,10 @@ pub(super) fn kimi_login_controls(
     enabled: bool,
 ) -> Element<'_, Message> {
     let Some(login) = login else {
-        return widget::button::standard(fl!("account-add"))
-            .on_press_maybe(enabled.then_some(Message::StartLogin(crate::model::ProviderId::Kimi)))
-            .into();
+        return account_add_button(
+            fl!("account-add"),
+            enabled.then_some(Message::StartLogin(crate::model::ProviderId::Kimi)),
+        );
     };
 
     let mut content = if let Some(error) = &login.error {
@@ -664,11 +651,10 @@ pub(super) fn opencode_go_login_controls(
     enabled: bool,
 ) -> Element<'_, Message> {
     let Some(login) = login else {
-        return widget::button::standard(fl!("account-add"))
-            .on_press_maybe(
-                enabled.then_some(Message::StartLogin(crate::model::ProviderId::OpenCodeGo)),
-            )
-            .into();
+        return account_add_button(
+            fl!("account-add"),
+            enabled.then_some(Message::StartLogin(crate::model::ProviderId::OpenCodeGo)),
+        );
     };
 
     let mut content = if let Some(error) = &login.error {

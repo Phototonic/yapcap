@@ -40,6 +40,20 @@ impl AppState {
     }
 
     #[must_use]
+    pub fn selected_account_index(&self, provider: ProviderId) -> usize {
+        let Some(selected_id) = self
+            .provider(provider)
+            .and_then(|entry| entry.selected_account_ids.first())
+        else {
+            return 0;
+        };
+        self.accounts_for(provider)
+            .iter()
+            .position(|account| account.account_id == *selected_id)
+            .unwrap_or(0)
+    }
+
+    #[must_use]
     pub fn selected_accounts(&self, provider: ProviderId) -> Vec<&ProviderAccountRuntimeState> {
         let selected_ids = self
             .provider(provider)

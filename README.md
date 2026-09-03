@@ -36,7 +36,7 @@ YapCap lives in your COSMIC panel and shows how much of your AI coding quota you
 - 🔎 **Automatic discovery** — detected providers appear automatically, provider availability updates live, and an empty setup points directly to Settings. Gemini remains opt-in and must be enabled manually.
 - 🔐 **In-app login** — guided browser login for Codex, Claude, Antigravity, Gemini, and Copilot; API-key forms for Minimax, Kimi, and OpenCode Go; Cursor scans the local IDE state.
 - 🔑 **OpenCode integration** — compatible keys can optionally prefill Minimax, Kimi, and OpenCode Go forms; Codex and Copilot offer explicit OAuth imports. Credentials are copied only after confirmation and are never synchronized with OpenCode.
-- ✅ **Active badge** — marks the account currently in use by the host tool or environment for Codex, Claude, Cursor, Gemini, Minimax, and Kimi.
+- ✅ **Active badge** — marks the account currently in use by the host tool or environment for Codex, Claude, Cursor, Gemini, Minimax, Kimi, and OpenCode Go.
 - ⚙️ **Configurable panel** — logo+bars, bars only, logo+%, or %-only; used/left toggle; relative or absolute reset times.
 
 ## Screenshots

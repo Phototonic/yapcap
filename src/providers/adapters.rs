@@ -16,7 +16,7 @@ use crate::model::{
     AccountSelectionStatus, AppState, AuthState, ProviderAccountRuntimeState, ProviderId,
 };
 use crate::providers::interface::{ProviderAccountDescriptor, ProviderAdapter};
-use crate::providers::{claude, codex, cursor, gemini};
+use crate::providers::{claude, codex, cursor, gemini, opencode_go};
 
 pub(super) fn adapter(provider: ProviderId) -> &'static dyn ProviderAdapter {
     match provider {
@@ -47,14 +47,17 @@ static OPENCODE_GO_ADAPTER: opencode_go_adapter::OpenCodeGoAdapter =
 pub(super) fn opencode_go_system_active_account_id(
     managed_accounts: &[crate::config::ManagedOpenCodeGoAccountConfig],
 ) -> Option<String> {
-    let key = std::env::var("OPENCODE_GO_API_KEY").ok()?;
-    if key.is_empty() {
-        return None;
+    let storage = ProviderAccountStorage::new(paths().opencode_go_accounts_dir);
+    if let Some(key) = opencode_go::opencode::discover_api_key() {
+        return opencode_go::account::system_active_account_id(managed_accounts, &storage, &key);
     }
-    managed_accounts
-        .iter()
-        .find(|account| account.api_key_source == "env:OPENCODE_GO_API_KEY")
-        .map(|account| account.id.clone())
+    let (key, source) = opencode_go::environment_api_key()?;
+    opencode_go::account::system_active_account_id(managed_accounts, &storage, &key).or_else(|| {
+        managed_accounts
+            .iter()
+            .find(|account| account.api_key_source == source)
+            .map(|account| account.id.clone())
+    })
 }
 
 pub(super) fn reconcile_provider_account_descriptors(

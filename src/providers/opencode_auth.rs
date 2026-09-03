@@ -7,6 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 
 pub const OPENCODE_AUTH_PATH_ENV: &str = "YAPCAP_OPENCODE_AUTH_PATH";
+pub const OPENCODE_AUTH_CONTENT_ENV: &str = "OPENCODE_AUTH_CONTENT";
 
 pub enum OpenCodeCredential {
     Api {
@@ -70,9 +71,7 @@ pub fn auth_path() -> Option<PathBuf> {
 }
 
 pub fn discover(provider_id: &str) -> Option<OpenCodeCredential> {
-    let path = auth_path()?;
-    let body = fs::read_to_string(path).ok()?;
-    let auth: Value = serde_json::from_str(&body).ok()?;
+    let auth = auth_json()?;
     let entry = auth.get(provider_id)?.clone();
     let credential: RawCredential = serde_json::from_value(entry).ok()?;
 
@@ -101,6 +100,18 @@ pub fn discover(provider_id: &str) -> Option<OpenCodeCredential> {
     }
 }
 
+fn auth_json() -> Option<Value> {
+    let from_content = std::env::var(OPENCODE_AUTH_CONTENT_ENV)
+        .ok()
+        .filter(|content| !content.is_empty())
+        .and_then(|content| serde_json::from_str(&content).ok());
+    from_content.or_else(|| {
+        let path = auth_path()?;
+        let body = fs::read_to_string(path).ok()?;
+        serde_json::from_str(&body).ok()
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -112,6 +123,7 @@ mod tests {
         let path = temp.path().join("auth.json");
         fs::write(&path, contents).unwrap();
         let mut env = crate::test_support::test_env();
+        env.remove(OPENCODE_AUTH_CONTENT_ENV);
         env.set(OPENCODE_AUTH_PATH_ENV, &path);
         discover(provider_id)
     }
@@ -311,6 +323,39 @@ mod tests {
         assert!(matches!(
             discover("provider"),
             Some(OpenCodeCredential::Api { key }) if key == "override-key"
+        ));
+    }
+
+    #[test]
+    fn auth_content_overrides_auth_file() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("auth.json");
+        fs::write(&path, r#"{"provider":{"type":"api","key":"file-key"}}"#).unwrap();
+        let mut env = crate::test_support::test_env();
+        env.set(OPENCODE_AUTH_PATH_ENV, &path);
+        env.set(
+            OPENCODE_AUTH_CONTENT_ENV,
+            r#"{"provider":{"type":"api","key":"content-key"}}"#,
+        );
+
+        assert!(matches!(
+            discover("provider"),
+            Some(OpenCodeCredential::Api { key }) if key == "content-key"
+        ));
+    }
+
+    #[test]
+    fn malformed_auth_content_falls_back_to_auth_file() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("auth.json");
+        fs::write(&path, r#"{"provider":{"type":"api","key":"file-key"}}"#).unwrap();
+        let mut env = crate::test_support::test_env();
+        env.set(OPENCODE_AUTH_PATH_ENV, &path);
+        env.set(OPENCODE_AUTH_CONTENT_ENV, "not-json");
+
+        assert!(matches!(
+            discover("provider"),
+            Some(OpenCodeCredential::Api { key }) if key == "file-key"
         ));
     }
 }

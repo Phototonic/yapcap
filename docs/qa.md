@@ -34,6 +34,9 @@ Do not expect the Flatpak build to use `~/.local/state/yapcap/` for YapCap data�
   provider remains reachable through the settings categories.
 - Add an account from Settings with no detection marker. Its provider becomes
   visible and normal panel rendering replaces the app-icon fallback.
+- On a provider's account settings page with no accounts, verify the tighter
+  centered `No accounts` card shows `Add account`; Codex and Copilot also show
+  `Import from OpenCode` only when a compatible OpenCode credential is available.
 - Existing `v503` COSMIC settings are not loaded after the `v600` schema boundary; users must re-add accounts.
 - Existing account directories, old snapshot caches, and logs are not automatically deleted by the schema boundary and may remain orphaned.
 - Settings → General → About shows correct version and dist label ("Native" or "Flatpak").
@@ -658,20 +661,16 @@ In Settings → General, cycle through all four panel icon styles and verify the
 
 ## 17. Popup sizing
 
-- One enabled provider: the provider navigation row is hidden entirely and the
-  popup is shorter by one row height plus its chrome gap.
-- Two or three enabled providers: tabs share the full row width equally, with no
-  empty slots.
-- Four or more enabled providers: tabs wrap into rows of four; partial rows keep
-  four equal-width slots and the popup grows by one tab-row height per extra row.
-- Body heights are measured at the width the body actually renders in, so text
-  that wraps at a narrower multi-account width is fully included (no clipping).
-- Single-account provider: popup is 420 px wide.
-- Two-account provider: popup is 840 px wide.
-- Switching from a two-account tab to a one-account tab shrinks popup immediately.
-- Switching from provider view to Settings shrinks to settings width.
-- Content taller than 1080 px: body scrolls, header/nav/footer stay fixed.
-- Header, nav, and footer stay centred at 420 px even in wide multi-account popup.
+- Popup creation passes no application-owned initial size to
+  `get_popup_settings`, and the positioner remains reactive.
+- The rendered popup content is returned through `core.applet.popup_container`.
+- Switching providers, accounts, routes, or update state changes application
+  state only; libcosmic's `Autosize` layout follows the rebuilt content.
+- Provider detail, provider management, and account management scroll their
+  potentially long body content while header/navigation content remains outside
+  the scrollable region.
+- No application code dispatches `set_size`, caches body measurements, or waits
+  for resize acknowledgements.
 
 ---
 

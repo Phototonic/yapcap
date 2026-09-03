@@ -1,7 +1,8 @@
 use super::super::{
-    Alignment, Background, ButtonInteraction, Element, Length, Message, PanelIconStyle, ProviderId,
-    ResetTimeFormat, UsageAmountFormat, UsageWindow, apply_alpha, container, fl, progress_bar,
-    provider_icon_handle, provider_icon_variant, row, settings_block, usage_display, widget,
+    Alignment, Background, ButtonInteraction, Color, Element, Length, Message, PanelIconStyle,
+    ProviderId, ResetTimeFormat, UsageAmountFormat, UsageWindow, apply_alpha, container, fl,
+    progress_bar, provider_icon_handle, provider_icon_variant, row, settings_block, usage_display,
+    widget,
 };
 
 pub(super) fn general_settings_view<'a>(config: &'a crate::config::Config) -> Element<'a, Message> {
@@ -35,7 +36,14 @@ fn refresh_section(current_seconds: u64) -> Element<'static, Message> {
                 [9, 8],
                 34.0,
             );
-            row.push(
+            let tooltip = match *secs {
+                60 => fl!("refresh-interval-1-tooltip"),
+                300 => fl!("refresh-interval-5-tooltip"),
+                900 => fl!("refresh-interval-15-tooltip"),
+                1800 => fl!("refresh-interval-30-tooltip"),
+                _ => fl!("refresh-interval-tooltip"),
+            };
+            row.push(widget::tooltip::tooltip(
                 widget::button::custom(content)
                     .class(segmented_option_class(
                         is_selected,
@@ -45,7 +53,9 @@ fn refresh_section(current_seconds: u64) -> Element<'static, Message> {
                     .padding(0)
                     .on_press(Message::SetRefreshInterval(*secs))
                     .width(Length::FillPortion(1)),
-            )
+                widget::text(tooltip).size(12),
+                widget::tooltip::Position::Top,
+            ))
         },
     );
 
@@ -85,18 +95,18 @@ fn panel_icon_section(current_style: PanelIconStyle) -> Element<'static, Message
                     .padding(0)
                     .on_press(Message::SetPanelIconStyle(*style))
                     .width(Length::FillPortion(1));
-                let content: Element<'static, Message> = if *style == PanelIconStyle::PercentOnly {
-                    widget::tooltip::tooltip(
-                        button,
-                        widget::text(fl!("panel-icon-percent-only-tooltip")).size(12),
-                        widget::tooltip::Position::Top,
-                    )
-                    .into()
-                } else {
-                    button.into()
+                let tooltip = match *style {
+                    PanelIconStyle::LogoAndBars => fl!("panel-icon-logo-and-bars-tooltip"),
+                    PanelIconStyle::BarsOnly => fl!("panel-icon-bars-only-tooltip"),
+                    PanelIconStyle::LogoAndPercent => fl!("panel-icon-logo-and-percent-tooltip"),
+                    PanelIconStyle::PercentOnly => fl!("panel-icon-percent-only-tooltip"),
                 };
 
-                row.push(content)
+                row.push(widget::tooltip::tooltip(
+                    button,
+                    widget::text(tooltip).size(12),
+                    widget::tooltip::Position::Top,
+                ))
             });
 
     settings_block(
@@ -178,7 +188,11 @@ fn reset_time_section(current_format: ResetTimeFormat) -> Element<'static, Messa
                 [9, 8],
                 48.0,
             );
-            row.push(
+            let tooltip = match *format {
+                ResetTimeFormat::Relative => fl!("reset-time-relative-tooltip"),
+                ResetTimeFormat::Absolute => fl!("reset-time-absolute-tooltip"),
+            };
+            row.push(widget::tooltip::tooltip(
                 widget::button::custom(content)
                     .class(segmented_option_class(
                         is_selected,
@@ -188,7 +202,9 @@ fn reset_time_section(current_format: ResetTimeFormat) -> Element<'static, Messa
                     .padding(0)
                     .on_press(Message::SetResetTimeFormat(*format))
                     .width(Length::FillPortion(1)),
-            )
+                widget::text(tooltip).size(12),
+                widget::tooltip::Position::Top,
+            ))
         },
     );
 
@@ -217,7 +233,11 @@ fn usage_amount_section(current_format: UsageAmountFormat) -> Element<'static, M
                 [9, 8],
                 34.0,
             );
-            row.push(
+            let tooltip = match *format {
+                UsageAmountFormat::Used => fl!("usage-amount-used-tooltip"),
+                UsageAmountFormat::Left => fl!("usage-amount-left-tooltip"),
+            };
+            row.push(widget::tooltip::tooltip(
                 widget::button::custom(content)
                     .class(segmented_option_class(
                         is_selected,
@@ -227,7 +247,9 @@ fn usage_amount_section(current_format: UsageAmountFormat) -> Element<'static, M
                     .padding(0)
                     .on_press(Message::SetUsageAmountFormat(*format))
                     .width(Length::FillPortion(1)),
-            )
+                widget::text(tooltip).size(12),
+                widget::tooltip::Position::Top,
+            ))
         },
     );
 
@@ -413,13 +435,16 @@ fn segmented_option_interaction_style(
     let surface = &cosmic.background(theme.transparent).component;
 
     let (background, foreground) = if selected {
-        (surface.divider.into(), cosmic.accent_text_color().into())
+        (
+            Color::from_rgb(0.23, 0.24, 0.27),
+            cosmic.accent_text_color().into(),
+        )
     } else if interaction.pressed {
         (surface.divider.into(), surface.on.into())
     } else if interaction.hovered {
         (surface.hover.into(), surface.on.into())
     } else {
-        (surface.base.into(), surface.on.into())
+        (Color::from_rgb(0.19, 0.20, 0.23), surface.on.into())
     };
 
     style.background = Some(Background::Color(apply_alpha(background, opacity)));

@@ -14,7 +14,8 @@ use serde::Deserialize;
 pub use storage::load_api_key;
 
 const OPENCODE_GO_API_URL: &str = "https://opencode.ai/zen/go/v1/usage";
-const OPENCODE_GO_API_KEY_ENV: &str = "OPENCODE_GO_API_KEY";
+pub(crate) const OPENCODE_API_KEY_ENV: &str = "OPENCODE_API_KEY";
+pub(crate) const OPENCODE_GO_API_KEY_ENV: &str = "OPENCODE_GO_API_KEY";
 
 #[derive(Debug, Deserialize)]
 struct OpenCodeGoUsageResponse {
@@ -51,11 +52,24 @@ pub async fn fetch(
     let api_key = load_api_key(&account.id)
         .ok()
         .filter(|key| !key.is_empty())
-        .or_else(|| std::env::var(OPENCODE_GO_API_KEY_ENV).ok())
-        .filter(|key| !key.is_empty())
+        .or_else(|| environment_api_key().map(|(key, _)| key))
         .ok_or(OpenCodeGoError::LoginRequired)?;
 
     fetch_at(client, &api_key, OPENCODE_GO_API_URL).await
+}
+
+pub(crate) fn environment_api_key() -> Option<(String, &'static str)> {
+    [
+        (OPENCODE_API_KEY_ENV, "env:OPENCODE_API_KEY"),
+        (OPENCODE_GO_API_KEY_ENV, "env:OPENCODE_GO_API_KEY"),
+    ]
+    .into_iter()
+    .find_map(|(name, source)| {
+        std::env::var(name)
+            .ok()
+            .filter(|key| !key.is_empty())
+            .map(|key| (key, source))
+    })
 }
 
 async fn fetch_at(
