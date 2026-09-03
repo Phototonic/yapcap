@@ -1,12 +1,14 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::config::{Config, ProviderVisibilityMode};
+use crate::config::Config;
 use crate::model::{AppState, ProviderAccountRuntimeState, ProviderId, UsageSnapshot};
 use crate::providers::adapters::adapter;
 use crate::providers::interface::{
     ProviderAccountDescriptor, ProviderAccountHandle, ProviderCapabilities,
 };
-use crate::providers::{claude, codex, copilot, cursor, gemini, kimi, minimax, opencode_go};
+use crate::providers::{
+    antigravity, claude, codex, copilot, cursor, gemini, kimi, minimax, opencode_go,
+};
 
 #[cfg(test)]
 mod tests;
@@ -23,6 +25,7 @@ pub fn startup_sync(config: &mut Config) -> bool {
     let copilot_changed = copilot::sync_managed_accounts(config);
     let minimax_changed = minimax::sync_managed_accounts(config);
     let kimi_changed = kimi::sync_managed_accounts(config);
+    let antigravity_changed = antigravity::sync_managed_accounts(config);
     let opencode_go_changed = opencode_go::sync_managed_accounts(config);
     codex_changed
         | cursor_changed
@@ -31,27 +34,8 @@ pub fn startup_sync(config: &mut Config) -> bool {
         | copilot_changed
         | minimax_changed
         | kimi_changed
+        | antigravity_changed
         | opencode_go_changed
-}
-
-pub fn initialize_provider_visibility(config: &mut Config, providers: &[ProviderId]) -> bool {
-    if config.provider_visibility_mode != ProviderVisibilityMode::AutoInitPending {
-        return false;
-    }
-
-    let mut changed = false;
-    for &provider in providers {
-        changed |= config.set_provider_enabled(provider, true);
-    }
-    changed
-}
-
-pub fn finalize_provider_visibility_initialization(config: &mut Config) -> bool {
-    if config.provider_visibility_mode != ProviderVisibilityMode::AutoInitPending {
-        return false;
-    }
-    config.provider_visibility_mode = ProviderVisibilityMode::UserManaged;
-    true
 }
 
 pub fn discover_accounts(provider: ProviderId, config: &Config) -> Vec<ProviderAccountDescriptor> {
@@ -59,18 +43,9 @@ pub fn discover_accounts(provider: ProviderId, config: &Config) -> Vec<ProviderA
 }
 
 pub fn toggle_account_selection(provider: ProviderId, config: &mut Config, account_id: &str) {
-    if !config.show_all_accounts(provider) {
-        let ids = config.selected_account_ids_mut(provider);
-        if ids.as_slice() != [account_id] {
-            ids.clear();
-            ids.push(account_id.to_string());
-        }
-        return;
-    }
     let ids = config.selected_account_ids_mut(provider);
-    if let Some(pos) = ids.iter().position(|id| id == account_id) {
-        ids.remove(pos);
-    } else {
+    if ids.as_slice() != [account_id] {
+        ids.clear();
         ids.push(account_id.to_string());
     }
 }
@@ -99,6 +74,7 @@ pub async fn fetch_handle(
         ProviderAccountHandle::Copilot(_) => ProviderId::Copilot,
         ProviderAccountHandle::Minimax(_) => ProviderId::Minimax,
         ProviderAccountHandle::Kimi(_) => ProviderId::Kimi,
+        ProviderAccountHandle::Antigravity(_) => ProviderId::Antigravity,
         ProviderAccountHandle::OpenCodeGo(_) => ProviderId::OpenCodeGo,
     };
     adapter(provider).fetch_account(handle, client).await

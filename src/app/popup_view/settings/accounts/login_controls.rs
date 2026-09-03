@@ -1,7 +1,7 @@
 use super::super::super::{
-    Alignment, ClaudeLoginState, ClaudeLoginStatus, CodexLoginState, CodexLoginStatus,
-    CopilotLoginState, CopilotLoginStatus, CursorScanState, Element, GeminiLoginState,
-    GeminiLoginStatus, Length, Message, fl, row, widget,
+    Alignment, AntigravityLoginState, AntigravityLoginStatus, ClaudeLoginState, ClaudeLoginStatus,
+    CodexLoginState, CodexLoginStatus, CopilotLoginState, CopilotLoginStatus, CursorScanState,
+    Element, GeminiLoginState, GeminiLoginStatus, Length, Message, fl, row, widget,
 };
 use crate::app::login::{KimiLoginFlow, LoginFlow, MinimaxLoginFlow, OpenCodeGoLoginFlow};
 use crate::providers::kimi::login::{KimiLoginEvent, KimiLoginState, KimiLoginStatus};
@@ -285,7 +285,14 @@ fn copilot_user_code_row<'a>(code: &'a str, copied: bool, enabled: bool) -> Elem
     let copy_icon = widget::Svg::new(copy_icon_handle)
         .symbolic(true)
         .class(cosmic::theme::Svg::custom(|theme| widget::svg::Style {
-            color: Some(theme.cosmic().background.component.on.into()),
+            color: Some(
+                theme
+                    .cosmic()
+                    .background(theme.transparent)
+                    .component
+                    .on
+                    .into(),
+            ),
         }))
         .width(Length::Fixed(16.0))
         .height(Length::Fixed(16.0));
@@ -311,7 +318,6 @@ fn copilot_login_status(login: &CopilotLoginState) -> String {
     match login.status {
         CopilotLoginStatus::Running if login.importing_from_opencode => fl!("opencode-importing"),
         CopilotLoginStatus::Running => fl!("copilot-login-running"),
-        CopilotLoginStatus::Succeeded => fl!("copilot-login-succeeded"),
         CopilotLoginStatus::Failed => login
             .error
             .clone()
@@ -322,11 +328,67 @@ fn copilot_login_status(login: &CopilotLoginState) -> String {
 fn gemini_login_status(login: &GeminiLoginState) -> String {
     match login.status {
         GeminiLoginStatus::Running => fl!("gemini-login-running"),
-        GeminiLoginStatus::Succeeded => fl!("gemini-login-succeeded"),
         GeminiLoginStatus::Failed => login
             .error
             .clone()
             .unwrap_or_else(|| fl!("gemini-login-failed")),
+    }
+}
+
+pub(super) fn antigravity_login_controls(
+    login: Option<&AntigravityLoginState>,
+    enabled: bool,
+) -> Element<'_, Message> {
+    let Some(login) = login else {
+        return widget::button::standard(fl!("account-add"))
+            .on_press_maybe(
+                enabled.then_some(Message::StartLogin(crate::model::ProviderId::Antigravity)),
+            )
+            .into();
+    };
+
+    let mut content =
+        cosmic::iced::widget::column![widget::text(antigravity_login_status(login)).size(13)]
+            .spacing(10)
+            .width(Length::Fill);
+
+    if login.status == AntigravityLoginStatus::Running
+        && let Some(url) = &login.login_url
+    {
+        content = content.push(
+            widget::button::standard(fl!("open-browser"))
+                .on_press_maybe(enabled.then_some(Message::OpenUrl(url.clone()))),
+        );
+    }
+
+    if login.status == AntigravityLoginStatus::Running {
+        content = content.push(widget::button::text(fl!("account-cancel")).on_press_maybe(
+            enabled.then_some(Message::CancelLogin(crate::model::ProviderId::Antigravity)),
+        ));
+    } else {
+        content = content.push(
+            row![
+                widget::button::text(fl!("account-add-another")).on_press_maybe(
+                    enabled.then_some(Message::StartLogin(crate::model::ProviderId::Antigravity))
+                ),
+                widget::button::text(fl!("account-dismiss")).on_press_maybe(
+                    enabled.then_some(Message::CancelLogin(crate::model::ProviderId::Antigravity))
+                ),
+            ]
+            .spacing(8),
+        );
+    }
+
+    Element::from(content)
+}
+
+fn antigravity_login_status(login: &AntigravityLoginState) -> String {
+    match login.status {
+        AntigravityLoginStatus::Running => fl!("antigravity-login-running"),
+        AntigravityLoginStatus::Failed => login
+            .error
+            .clone()
+            .unwrap_or_else(|| fl!("antigravity-login-failed")),
     }
 }
 
@@ -408,7 +470,6 @@ fn codex_login_status(login: &CodexLoginState) -> String {
     match login.status {
         CodexLoginStatus::Running if login.importing_from_opencode => fl!("opencode-importing"),
         CodexLoginStatus::Running => fl!("codex-login-running"),
-        CodexLoginStatus::Succeeded => fl!("codex-login-succeeded"),
         CodexLoginStatus::Failed => login
             .error
             .clone()
@@ -419,7 +480,6 @@ fn codex_login_status(login: &CodexLoginState) -> String {
 fn claude_login_status(login: &ClaudeLoginState) -> String {
     match login.status {
         ClaudeLoginStatus::Running => fl!("claude-login-running"),
-        ClaudeLoginStatus::Succeeded => fl!("claude-login-succeeded"),
         ClaudeLoginStatus::Failed => match login.error.as_deref() {
             Some("invalid-code") => fl!("claude-login-code-invalid"),
             Some(msg) => msg.to_string(),
@@ -509,7 +569,6 @@ pub(super) fn minimax_login_controls(
 fn minimax_login_status(login: &MinimaxLoginState) -> String {
     match login.status {
         MinimaxLoginStatus::Editing => fl!("minimax-login-editing"),
-        MinimaxLoginStatus::Saved => fl!("minimax-login-saved"),
         MinimaxLoginStatus::Failed => login
             .error
             .clone()

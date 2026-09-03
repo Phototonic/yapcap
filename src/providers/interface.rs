@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::config::{
-    Config, ManagedClaudeAccountConfig, ManagedCodexAccountConfig, ManagedCopilotAccountConfig,
-    ManagedCursorAccountConfig, ManagedGeminiAccountConfig, ManagedKimiAccountConfig,
-    ManagedMinimaxAccountConfig, ManagedOpenCodeGoAccountConfig,
+    Config, ManagedAntigravityAccountConfig, ManagedClaudeAccountConfig, ManagedCodexAccountConfig,
+    ManagedCopilotAccountConfig, ManagedCursorAccountConfig, ManagedGeminiAccountConfig,
+    ManagedKimiAccountConfig, ManagedMinimaxAccountConfig, ManagedOpenCodeGoAccountConfig,
 };
 use crate::error::AppError;
 use crate::model::{AppState, ProviderAccountRuntimeState, ProviderId, UsageSnapshot};
@@ -63,6 +63,7 @@ pub enum ProviderAccountHandle {
     Copilot(ManagedCopilotAccountConfig),
     Minimax(ManagedMinimaxAccountConfig),
     Kimi(ManagedKimiAccountConfig),
+    Antigravity(ManagedAntigravityAccountConfig),
     OpenCodeGo(ManagedOpenCodeGoAccountConfig),
 }
 

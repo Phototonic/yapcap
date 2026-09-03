@@ -12,6 +12,7 @@ pub enum ProviderId {
     Codex,
     Claude,
     Cursor,
+    Antigravity,
     Gemini,
     Copilot,
     Minimax,
@@ -20,10 +21,11 @@ pub enum ProviderId {
 }
 
 impl ProviderId {
-    pub const ALL: [Self; 8] = [
+    pub const ALL: [Self; 9] = [
         Self::Codex,
         Self::Claude,
         Self::Cursor,
+        Self::Antigravity,
         Self::Gemini,
         Self::Copilot,
         Self::Minimax,
@@ -38,6 +40,7 @@ impl ProviderId {
             Self::Claude => "Claude",
             Self::Cursor => "Cursor",
             Self::Gemini => "Gemini",
+            Self::Antigravity => "Antigravity",
             Self::Copilot => "Copilot",
             Self::Minimax => "Minimax",
             Self::Kimi => "Kimi",
@@ -54,6 +57,8 @@ pub struct UsageWindow {
     #[serde(default)]
     pub window_seconds: Option<i64>,
     pub reset_description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub group: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -125,6 +130,19 @@ impl UsageSnapshot {
                 primary,
                 secondary: self.windows.get(2).or_else(|| self.windows.get(1)),
             });
+        }
+        if self.provider == ProviderId::Antigravity {
+            let five_hour: Vec<&UsageWindow> = self
+                .windows
+                .iter()
+                .filter(|window| window.window_seconds == Some(5 * 3600))
+                .collect();
+            if let [primary, secondary, ..] = five_hour.as_slice() {
+                return Some(AppletWindows {
+                    primary,
+                    secondary: Some(secondary),
+                });
+            }
         }
         self.windows.first().map(|primary| AppletWindows {
             primary,
@@ -344,6 +362,7 @@ mod tests {
             reset_at: None,
             window_seconds: None,
             reset_description: None,
+            group: None,
         }
     }
 
@@ -377,6 +396,72 @@ mod tests {
         assert_eq!(windows.secondary.map(|w| w.label.as_str()), None);
     }
 
+    fn five_hour_window(label: &str) -> UsageWindow {
+        UsageWindow {
+            label: label.to_string(),
+            used_percent: 10.0,
+            reset_at: None,
+            window_seconds: Some(5 * 3600),
+            reset_description: None,
+            group: None,
+        }
+    }
+
+    fn weekly_window(label: &str) -> UsageWindow {
+        UsageWindow {
+            label: label.to_string(),
+            used_percent: 10.0,
+            reset_at: None,
+            window_seconds: Some(7 * 24 * 3600),
+            reset_description: None,
+            group: None,
+        }
+    }
+
+    #[test]
+    fn antigravity_applet_selects_two_five_hour_windows_in_order() {
+        let mut snap = snapshot(ProviderId::Antigravity);
+        snap.windows = vec![
+            weekly_window("Gemini Weekly"),
+            five_hour_window("Gemini 5h"),
+            weekly_window("3p Weekly"),
+            five_hour_window("3p 5h"),
+        ];
+        let windows = snap.applet_windows().unwrap();
+        assert_eq!(windows.primary.label, "Gemini 5h");
+        assert_eq!(windows.secondary.map(|w| w.label.as_str()), Some("3p 5h"));
+    }
+
+    #[test]
+    fn antigravity_applet_falls_back_to_first_two_when_fewer_than_two_five_hour() {
+        let mut snap = snapshot(ProviderId::Antigravity);
+        snap.windows = vec![weekly_window("Weekly"), five_hour_window("5h")];
+        let windows = snap.applet_windows().unwrap();
+        assert_eq!(windows.primary.label, "Weekly");
+        assert_eq!(windows.secondary.map(|w| w.label.as_str()), Some("5h"));
+    }
+
+    #[test]
+    fn antigravity_applet_falls_back_when_no_five_hour_windows() {
+        let mut snap = snapshot(ProviderId::Antigravity);
+        snap.windows = vec![weekly_window("A"), weekly_window("B")];
+        let windows = snap.applet_windows().unwrap();
+        assert_eq!(windows.primary.label, "A");
+        assert_eq!(windows.secondary.map(|w| w.label.as_str()), Some("B"));
+    }
+
+    #[test]
+    fn usage_window_group_round_trips_and_defaults_to_none() {
+        let json = r#"{"label":"x","used_percent":1.0,"reset_at":null,"reset_description":null}"#;
+        let parsed: UsageWindow = serde_json::from_str(json).unwrap();
+        assert_eq!(parsed.group, None);
+        let mut grouped = parsed.clone();
+        grouped.group = Some("Gemini Models".to_string());
+        let round: UsageWindow =
+            serde_json::from_str(&serde_json::to_string(&grouped).unwrap()).unwrap();
+        assert_eq!(round.group.as_deref(), Some("Gemini Models"));
+    }
+
     #[test]
     fn cursor_applet_windows_use_total_and_api() {
         let mut snap = snapshot(ProviderId::Cursor);
@@ -407,6 +492,7 @@ mod tests {
                 reset_at: None,
                 window_seconds: None,
                 reset_description: None,
+                group: None,
             },
             UsageWindow {
                 label: "Weekly".to_string(),
@@ -414,6 +500,7 @@ mod tests {
                 reset_at: None,
                 window_seconds: None,
                 reset_description: None,
+                group: None,
             },
         ];
         snapshot.headline = UsageHeadline::first_available(&snapshot.windows);
@@ -436,6 +523,7 @@ mod tests {
             reset_at: None,
             window_seconds: None,
             reset_description: None,
+            group: None,
         }];
         snap.headline = UsageHeadline(0);
         account.snapshot = Some(snap);

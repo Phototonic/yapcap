@@ -3,7 +3,7 @@ use super::super::super::{
     ProviderAccountRuntimeState, ProviderId, accent_selection_fill, account_label_text,
     apply_alpha, badge_destructive, badge_destructive_soft, badge_neutral, badge_neutral_soft,
     badge_success, badge_success_soft, badge_warning, badge_warning_soft, badge_with_tooltip,
-    container, fl, registry, row, widget,
+    container, disabled_account_label_text, fl, registry, row, widget,
 };
 use crate::model::{AuthState, ProviderHealth, STALE_THRESHOLD};
 
@@ -61,6 +61,7 @@ fn row_status(provider: ProviderId, account: &ProviderAccountRuntimeState) -> Op
         | ProviderId::Copilot
         | ProviderId::Minimax
         | ProviderId::Kimi
+        | ProviderId::Antigravity
         | ProviderId::OpenCodeGo => {
             (account.auth_state == AuthState::ActionRequired).then(|| RowStatus {
                 kind: RowBadgeKind::Warning,
@@ -106,7 +107,7 @@ fn reauth_capability_satisfied(
         ProviderId::Cursor => action_support.is_some_and(|support| {
             support.can_reauthenticate && support.supports_background_status_refresh
         }),
-        ProviderId::Claude | ProviderId::Gemini | ProviderId::Copilot => {
+        ProviderId::Claude | ProviderId::Gemini | ProviderId::Copilot | ProviderId::Antigravity => {
             action_support.is_some_and(|support| support.can_reauthenticate)
         }
     }
@@ -121,23 +122,8 @@ fn reauth_tooltip(provider: ProviderId) -> String {
         ProviderId::Copilot => fl!("copilot-account-reauth-tooltip"),
         ProviderId::Minimax => fl!("minimax-account-reauth-tooltip"),
         ProviderId::Kimi => fl!("kimi-account-reauth-tooltip"),
-        ProviderId::OpenCodeGo => fl!("opencode-go-account-reauth-tooltip"),
-    }
-}
-
-fn can_restore_from_opencode(
-    provider: ProviderId,
-    status: Option<&RowStatus>,
-    opencode_import_available: bool,
-    enabled: bool,
-) -> bool {
-    if !enabled || !opencode_import_available {
-        return false;
-    }
-    match provider {
-        ProviderId::Codex => status.is_some_and(|status| status.style_as_action_required),
-        ProviderId::Copilot => true,
-        _ => false,
+        ProviderId::Antigravity => fl!("antigravity-account-reauth-tooltip"),
+        ProviderId::OpenCodeGo => "Re-authenticate this OpenCode Go account".to_string(),
     }
 }
 
@@ -147,7 +133,6 @@ pub(super) fn account_settings_row<'a>(
     selected_ids: &[&str],
     active_id: Option<&str>,
     config: &'a Config,
-    opencode_import_available: bool,
     enabled: bool,
 ) -> Element<'a, Message> {
     let is_selected = selected_ids.contains(&account.account_id.as_str());
@@ -160,7 +145,12 @@ pub(super) fn account_settings_row<'a>(
     let account_id = account.account_id.clone();
     let label = row_label(provider, account, config);
 
-    let mut title_row = row![account_label_text(&label, 14)]
+    let account_label = if enabled {
+        account_label_text(&label, 14)
+    } else {
+        disabled_account_label_text(&label, 14)
+    };
+    let mut title_row = row![account_label]
         .spacing(8)
         .align_y(Alignment::Center)
         .width(Length::Fill);
@@ -200,22 +190,17 @@ pub(super) fn account_settings_row<'a>(
         .spacing(0)
         .align_y(Alignment::Center);
     if can_reauthenticate {
+        let message = if matches!(provider, ProviderId::Codex | ProviderId::Copilot)
+            && account.auth_state == AuthState::ActionRequired
+        {
+            Message::RestoreFromOpenCode(provider, account_id.clone())
+        } else {
+            Message::ReauthenticateAccount(provider, account_id.clone())
+        };
         actions = actions.push(account_action_icon_button(
             "view-refresh-symbolic",
             reauth_tooltip(provider),
-            Some(Message::ReauthenticateAccount(provider, account_id.clone())),
-        ));
-    }
-    if can_restore_from_opencode(
-        provider,
-        status.as_ref(),
-        opencode_import_available,
-        enabled,
-    ) {
-        actions = actions.push(account_action_icon_button(
-            "document-import-symbolic",
-            fl!("restore-from-opencode"),
-            Some(Message::RestoreFromOpenCode(provider, account_id.clone())),
+            Some(message),
         ));
     }
     actions = actions.push(account_action_icon_button(
@@ -236,116 +221,25 @@ pub(super) fn account_settings_row<'a>(
 pub(super) fn account_selector_list<'a>(
     rows: impl Into<Element<'a, Message>>,
 ) -> Element<'a, Message> {
-    container(rows).width(Length::Fill).into()
-}
-
-pub(super) fn show_all_accounts_row(
-    provider: ProviderId,
-    show_all: bool,
-    enabled: bool,
-) -> Element<'static, Message> {
-    let opacity = if enabled { 1.0 } else { 0.45 };
-    let label = widget::tooltip::tooltip(
-        container(widget::text(fl!("show-all-accounts-label")).size(13)).style(
-            move |theme: &cosmic::Theme| {
-                let color = apply_alpha(theme.cosmic().background.component.on.into(), opacity);
-                widget::container::Style {
-                    text_color: Some(color),
-                    background: None,
-                    border: cosmic::iced::Border::default(),
-                    shadow: cosmic::iced::Shadow::default(),
-                    icon_color: Some(color),
-                    snap: true,
-                }
-            },
-        ),
-        widget::text(fl!("show-all-accounts-detail")).size(12),
-        widget::tooltip::Position::Top,
-    );
-
-    let toggle: Element<'static, Message> = if enabled {
-        widget::toggler(show_all)
-            .on_toggle(move |enabled| Message::SetShowAllAccounts(provider, enabled))
-            .into()
-    } else {
-        disabled_show_all_accounts_toggle(show_all)
-    };
-
-    container(
-        row![label, toggle]
-            .spacing(12)
-            .align_y(Alignment::Center)
-            .width(Length::Fill),
-    )
-    .width(Length::Fill)
-    .padding([4, 0])
-    .into()
-}
-
-fn disabled_show_all_accounts_toggle(show_all: bool) -> Element<'static, Message> {
-    let handle = container(
-        cosmic::iced::widget::Space::new()
-            .width(Length::Fixed(20.0))
-            .height(Length::Fixed(20.0)),
-    )
-    .width(Length::Fixed(20.0))
-    .height(Length::Fixed(20.0))
-    .style(|theme: &cosmic::Theme| {
-        let color = apply_alpha(theme.cosmic().background.component.on.into(), 0.45);
-        widget::container::Style {
-            text_color: None,
-            background: Some(Background::Color(color)),
-            border: cosmic::iced::Border {
-                radius: theme.cosmic().radius_xl().into(),
-                width: 0.0,
-                color: cosmic::iced::Color::TRANSPARENT,
-            },
-            shadow: cosmic::iced::Shadow::default(),
-            icon_color: None,
-            snap: true,
-        }
-    });
-    let spacer = cosmic::iced::widget::Space::new()
-        .width(Length::Fixed(24.0))
-        .height(Length::Fixed(20.0));
-    let content = if show_all {
-        row![spacer, handle]
-    } else {
-        row![handle, spacer]
-    };
-
-    container(
-        content
-            .spacing(0)
-            .align_y(Alignment::Center)
-            .width(Length::Fill),
-    )
-    .width(Length::Fixed(48.0))
-    .height(Length::Fixed(24.0))
-    .padding(2)
-    .style(move |theme: &cosmic::Theme| {
-        let cosmic = theme.cosmic();
-        let background = if show_all {
-            apply_alpha(cosmic.accent.base.into(), 0.24)
-        } else if cosmic.is_dark {
-            apply_alpha(cosmic.palette.neutral_6.into(), 0.45)
-        } else {
-            apply_alpha(cosmic.palette.neutral_5.into(), 0.45)
-        };
-        widget::container::Style {
-            text_color: None,
-            background: Some(Background::Color(background)),
-            border: cosmic::iced::Border {
-                radius: cosmic.radius_xl().into(),
-                width: 0.0,
-                color: cosmic::iced::Color::TRANSPARENT,
-            },
-            shadow: cosmic::iced::Shadow::default(),
-            icon_color: None,
-            snap: true,
-        }
-    })
-    .into()
+    container(rows)
+        .width(Length::Fill)
+        .style(|theme: &cosmic::Theme| {
+            let cosmic = theme.cosmic();
+            let surface = &cosmic.background(theme.transparent).component;
+            widget::container::Style {
+                text_color: Some(surface.on.into()),
+                background: Some(Background::Color(surface.base.into())),
+                border: cosmic::iced::Border {
+                    radius: cosmic.corner_radii.radius_s.into(),
+                    width: 1.0,
+                    color: surface.divider.into(),
+                },
+                shadow: cosmic::iced::Shadow::default(),
+                icon_color: Some(surface.on.into()),
+                snap: true,
+            }
+        })
+        .into()
 }
 
 fn claude_account_row_label(account: &ProviderAccountRuntimeState, config: &Config) -> String {
@@ -423,7 +317,10 @@ fn account_selected_marker(selected: bool, enabled: bool) -> Element<'static, Me
         let color = if enabled {
             cosmic.accent.base.into()
         } else {
-            apply_alpha(cosmic.background.component.on.into(), 0.45)
+            apply_alpha(
+                cosmic.background(theme.transparent).component.on.into(),
+                0.45,
+            )
         };
         widget::container::Style {
             text_color: Some(color),
@@ -464,7 +361,7 @@ fn account_row_container<'a>(
     .width(Length::Fill)
     .style(move |theme: &cosmic::Theme| {
         let cosmic = theme.cosmic();
-        let surface = &cosmic.background.component;
+        let surface = &cosmic.background(theme.transparent).component;
         let warning = cosmic.warning.base;
         widget::container::Style {
             text_color: Some(surface.on.into()),
@@ -476,7 +373,7 @@ fn account_row_container<'a>(
                 surface.base.into()
             })),
             border: cosmic::iced::Border {
-                radius: cosmic.corner_radii.radius_s.into(),
+                radius: 0.0.into(),
                 width: if selected { 2.0 } else { 1.0 },
                 color: if selected {
                     if enabled {
@@ -507,10 +404,7 @@ fn account_row_button_class(selected: bool) -> cosmic::theme::Button {
         active: Box::new(move |focused, theme| {
             account_row_button_style(theme, selected, focused, 1.0)
         }),
-        disabled: Box::new(move |theme| {
-            let opacity = if selected { 1.0 } else { 0.45 };
-            account_row_button_style(theme, selected, false, opacity)
-        }),
+        disabled: Box::new(move |theme| account_row_button_style(theme, selected, false, 0.45)),
         hovered: Box::new(move |focused, theme| {
             account_row_button_style(theme, selected, focused, 1.0)
         }),
@@ -528,7 +422,7 @@ fn account_row_button_style(
 ) -> widget::button::Style {
     let cosmic = theme.cosmic();
     let mut style = widget::button::Style::new();
-    let foreground = cosmic.background.component.on.into();
+    let foreground = cosmic.background(theme.transparent).component.on.into();
 
     style.icon_color = Some(apply_alpha(foreground, opacity));
     style.text_color = Some(apply_alpha(foreground, opacity));
@@ -567,7 +461,14 @@ fn account_action_icon_button(
     let icon = widget::Svg::new(handle)
         .symbolic(true)
         .class(cosmic::theme::Svg::custom(|theme| widget::svg::Style {
-            color: Some(theme.cosmic().background.component.on.into()),
+            color: Some(
+                theme
+                    .cosmic()
+                    .background(theme.transparent)
+                    .component
+                    .on
+                    .into(),
+            ),
         }))
         .opacity(if available { 1.0_f32 } else { 0.45_f32 })
         .width(Length::Fixed(16.0))
@@ -587,7 +488,7 @@ fn account_action_icon_button(
 fn account_row_icon_button_style(theme: &cosmic::Theme, opacity: f32) -> widget::button::Style {
     let cosmic = theme.cosmic();
     let mut style = widget::button::Style::new();
-    let foreground = cosmic.background.component.on.into();
+    let foreground = cosmic.background(theme.transparent).component.on.into();
 
     style.icon_color = Some(apply_alpha(foreground, opacity));
     style.text_color = Some(apply_alpha(foreground, opacity));
@@ -664,51 +565,6 @@ mod tests {
             ProviderAccountRuntimeState::empty(ProviderId::Codex, "codex-1", "Codex account");
         account.auth_state = AuthState::Ready;
         assert!(row_status(ProviderId::Codex, &account).is_none());
-    }
-
-    #[test]
-    fn restore_action_limits_codex_and_retains_copilot_action() {
-        assert!(reauth_capability_satisfied(ProviderId::Codex, None));
-        let status = RowStatus {
-            kind: RowBadgeKind::Warning,
-            badge_text: String::new(),
-            tooltip_text: String::new(),
-            reauth_eligible: true,
-            style_as_action_required: true,
-        };
-        assert!(can_restore_from_opencode(
-            ProviderId::Codex,
-            Some(&status),
-            true,
-            true,
-        ));
-        assert!(can_restore_from_opencode(
-            ProviderId::Copilot,
-            None,
-            true,
-            true,
-        ));
-        assert!(!can_restore_from_opencode(
-            ProviderId::Codex,
-            None,
-            true,
-            true,
-        ));
-        let mut invalid_account =
-            ProviderAccountRuntimeState::empty(ProviderId::Codex, "codex-1", "Codex account");
-        invalid_account.auth_state = AuthState::Error;
-        assert!(!can_restore_from_opencode(
-            ProviderId::Codex,
-            row_status(ProviderId::Codex, &invalid_account).as_ref(),
-            true,
-            true,
-        ));
-        assert!(!can_restore_from_opencode(
-            ProviderId::Kimi,
-            Some(&status),
-            true,
-            true,
-        ));
     }
 
     #[test]

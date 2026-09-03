@@ -6,7 +6,7 @@ Icon=io.github.TopiCsarno.YapCap
 Exec=env YAPCAP_DEMO=1 yapcap-debug
 Terminal=false
 StartupNotify=true
-Categories=COSMIC;
+Categories=Utility;X-COSMIC;
 Keywords=COSMIC;Usage;Quota;Debug;
 NoDisplay=true
 X-CosmicApplet=true

@@ -27,7 +27,6 @@ struct MinimaxReauthTarget {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MinimaxLoginStatus {
     Editing,
-    Saved,
     Failed,
 }
 

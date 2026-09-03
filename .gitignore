@@ -14,6 +14,7 @@ docs/todo.md
 **/*.rs.bk
 debug/
 target/
+graphify-out/
 vendor/
 vendor.tar
 make_screenshot.py

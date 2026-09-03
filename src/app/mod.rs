@@ -16,7 +16,10 @@ mod tests;
 mod window;
 
 pub(crate) use self::applet::applet_settings;
-use self::applet::{applet_button, applet_button_size, applet_indicator, select_provider};
+use self::applet::{
+    applet_button, applet_fallback_indicator, applet_indicator, panel_button_size,
+    panel_fallback_active, select_provider,
+};
 use self::popup_view::{PopupBodyMeasureTarget, ProviderLoginStates};
 use self::provider_assets::{provider_icon_handle, provider_icon_variant};
 use self::refresh::{
@@ -35,6 +38,9 @@ use crate::config::{
 use crate::demo_env;
 use crate::model::{
     AccountSelectionStatus, AppState, ProviderAccountRuntimeState, ProviderHealth, ProviderId,
+};
+use crate::providers::antigravity::{
+    self, AntigravityLoginEvent, AntigravityLoginState, AntigravityLoginStatus,
 };
 use crate::providers::claude::{self, ClaudeLoginEvent, ClaudeLoginState, ClaudeLoginStatus};
 use crate::providers::codex::{self, CodexLoginEvent, CodexLoginState, CodexLoginStatus};
@@ -61,7 +67,7 @@ use crate::updates::UpdateStatus;
 use crate::usage_display;
 use chrono::Utc;
 use cosmic::app::Task;
-use cosmic::cosmic_config::{self, CosmicConfigEntry};
+use cosmic::cosmic_config::CosmicConfigEntry;
 use cosmic::iced::task::Handle;
 use cosmic::iced::time;
 use cosmic::iced::widget::{progress_bar, row};
@@ -93,9 +99,13 @@ pub struct AppModel {
     popup: Option<Id>,
     config: Config,
     state: AppState,
+    #[cfg_attr(not(test), allow(dead_code))]
+    detection: crate::detection::DetectionSnapshot,
     selected_provider: ProviderId,
     detail_account_page: usize,
+    provider_viewport_offset: usize,
     popup_route: PopupRoute,
+    provider_picker_open: bool,
     update_status: UpdateStatus,
     launch_mode: LaunchMode,
     popup_size: Option<Size>,
@@ -103,7 +113,6 @@ pub struct AppModel {
     shared_control: SharedControlState,
     process_info: ProcessInfo,
     refresh_owner: Option<RefreshOwner>,
-    opencode_import_availability: OpenCodeImportAvailability,
     codex_login: Option<CodexLoginState>,
     codex_login_handle: Option<Handle>,
     claude_login: Option<ClaudeLoginState>,
@@ -118,23 +127,10 @@ pub struct AppModel {
     minimax_login_handle: Option<Handle>,
     kimi_login: Option<KimiLoginState>,
     kimi_login_handle: Option<Handle>,
+    antigravity_login: Option<AntigravityLoginState>,
+    antigravity_login_handle: Option<Handle>,
     opencode_go_login: Option<OpenCodeGoLoginState>,
     opencode_go_login_handle: Option<Handle>,
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-pub struct OpenCodeImportAvailability {
-    pub codex: bool,
-    pub copilot: bool,
-}
-
-impl OpenCodeImportAvailability {
-    fn discover() -> Self {
-        Self {
-            codex: codex::opencode_import_available(),
-            copilot: crate::providers::copilot::opencode_import_available(),
-        }
-    }
 }
 
 impl Drop for AppModel {
@@ -158,13 +154,10 @@ pub enum LaunchMode {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PopupRoute {
     ProviderDetail,
-    Settings(SettingsRoute),
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SettingsRoute {
-    General,
-    Provider(ProviderId),
+    Settings,
+    ManageProviders,
+    ManageAccounts(ProviderId),
+    About,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -183,12 +176,14 @@ pub enum Message {
     RefreshOwnershipAcquired(Result<RefreshOwner, String>),
     Tick,
     RefreshNow,
+    OpenProviderPickerProvider(ProviderId),
     ProviderRefreshed(Box<ProviderRefreshResult>),
     SelectProvider(ProviderId),
     NavigateTo(PopupRoute),
     SetProviderEnabled(ProviderId, bool),
     ToggleAccountSelection(ProviderId, String),
     PageProviderAccount(PagerDirection),
+    PageProviderViewport(PagerDirection),
     DeleteAccount(ProviderId, String),
     UpdateClaudeLoginCode(String),
     SubmitClaudeLoginCode,
@@ -210,12 +205,10 @@ pub enum Message {
     SetResetTimeFormat(ResetTimeFormat),
     SetUsageAmountFormat(UsageAmountFormat),
     SetPanelIconStyle(PanelIconStyle),
-    SetShowAllAccounts(ProviderId, bool),
     CheckUpdates,
     UpdateChecked { status: UpdateStatus, attempt: u32 },
     RetryUpdateCheck(u32),
     OpenUrl(String),
-    Quit,
     HostCliAuthChanged,
 }
 
@@ -228,8 +221,12 @@ pub(super) struct PopupBodyMeasurements {
     copilot: Option<f32>,
     minimax: Option<f32>,
     kimi: Option<f32>,
+    antigravity: Option<f32>,
     opencode_go: Option<f32>,
+    empty_state: Option<f32>,
     general_settings: Option<f32>,
+    manage_providers: Option<f32>,
+    about: Option<f32>,
     codex_settings: Option<f32>,
     claude_settings: Option<f32>,
     cursor_settings: Option<f32>,
@@ -237,6 +234,7 @@ pub(super) struct PopupBodyMeasurements {
     copilot_settings: Option<f32>,
     minimax_settings: Option<f32>,
     kimi_settings: Option<f32>,
+    antigravity_settings: Option<f32>,
     opencode_go_settings: Option<f32>,
 }
 
@@ -250,6 +248,7 @@ impl PopupBodyMeasurements {
             ProviderId::Copilot => self.copilot,
             ProviderId::Minimax => self.minimax,
             ProviderId::Kimi => self.kimi,
+            ProviderId::Antigravity => self.antigravity,
             ProviderId::OpenCodeGo => self.opencode_go,
         }
     }
@@ -263,52 +262,69 @@ impl PopupBodyMeasurements {
             ProviderId::Copilot => self.copilot = Some(height),
             ProviderId::Minimax => self.minimax = Some(height),
             ProviderId::Kimi => self.kimi = Some(height),
+            ProviderId::Antigravity => self.antigravity = Some(height),
             ProviderId::OpenCodeGo => self.opencode_go = Some(height),
         }
     }
 
-    fn set_settings(&mut self, route: SettingsRoute, height: f32) {
-        match route {
-            SettingsRoute::General => self.general_settings = Some(height),
-            SettingsRoute::Provider(ProviderId::Codex) => self.codex_settings = Some(height),
-            SettingsRoute::Provider(ProviderId::Claude) => self.claude_settings = Some(height),
-            SettingsRoute::Provider(ProviderId::Cursor) => self.cursor_settings = Some(height),
-            SettingsRoute::Provider(ProviderId::Gemini) => self.gemini_settings = Some(height),
-            SettingsRoute::Provider(ProviderId::Copilot) => self.copilot_settings = Some(height),
-            SettingsRoute::Provider(ProviderId::Minimax) => self.minimax_settings = Some(height),
-            SettingsRoute::Provider(ProviderId::Kimi) => self.kimi_settings = Some(height),
-            SettingsRoute::Provider(ProviderId::OpenCodeGo) => {
-                self.opencode_go_settings = Some(height)
-            }
+    fn clear_provider(&mut self, provider: ProviderId) {
+        match provider {
+            ProviderId::Codex => self.codex = None,
+            ProviderId::Claude => self.claude = None,
+            ProviderId::Cursor => self.cursor = None,
+            ProviderId::Gemini => self.gemini = None,
+            ProviderId::Copilot => self.copilot = None,
+            ProviderId::Minimax => self.minimax = None,
+            ProviderId::Kimi => self.kimi = None,
+            ProviderId::Antigravity => self.antigravity = None,
+            ProviderId::OpenCodeGo => self.opencode_go = None,
         }
     }
 
-    fn settings_height(&self) -> Option<f32> {
-        Some(
-            self.general_settings?
-                .max(self.codex_settings?)
-                .max(self.claude_settings?)
-                .max(self.cursor_settings?)
-                .max(self.gemini_settings?)
-                .max(self.copilot_settings?)
-                .max(self.minimax_settings?)
-                .max(self.kimi_settings?)
-                .max(self.opencode_go_settings?),
-        )
+    fn set_route(&mut self, route: PopupRoute, height: f32) {
+        match route {
+            PopupRoute::Settings => self.general_settings = Some(height),
+            PopupRoute::ManageProviders => self.manage_providers = Some(height),
+            PopupRoute::About => self.about = Some(height),
+            PopupRoute::ManageAccounts(ProviderId::Codex) => self.codex_settings = Some(height),
+            PopupRoute::ManageAccounts(ProviderId::Claude) => self.claude_settings = Some(height),
+            PopupRoute::ManageAccounts(ProviderId::Cursor) => self.cursor_settings = Some(height),
+            PopupRoute::ManageAccounts(ProviderId::Gemini) => self.gemini_settings = Some(height),
+            PopupRoute::ManageAccounts(ProviderId::Copilot) => self.copilot_settings = Some(height),
+            PopupRoute::ManageAccounts(ProviderId::Minimax) => self.minimax_settings = Some(height),
+            PopupRoute::ManageAccounts(ProviderId::Kimi) => self.kimi_settings = Some(height),
+            PopupRoute::ManageAccounts(ProviderId::Antigravity) => {
+                self.antigravity_settings = Some(height);
+            }
+            PopupRoute::ManageAccounts(ProviderId::OpenCodeGo) => {
+                self.opencode_go_settings = Some(height);
+            }
+            PopupRoute::ProviderDetail => {}
+        }
     }
 
-    fn provider_height(&self, state: &AppState) -> Option<f32> {
-        let mut any_enabled = false;
-        let height = state
-            .providers
-            .iter()
-            .filter(|provider| provider.enabled)
-            .map(|provider| {
-                any_enabled = true;
-                self.provider(provider.provider)
-            })
-            .try_fold(0.0_f32, |height, next| next.map(|next| height.max(next)))?;
-        any_enabled.then_some(height)
+    fn route_height(&self, route: PopupRoute) -> Option<f32> {
+        match route {
+            PopupRoute::Settings => self.general_settings,
+            PopupRoute::ManageProviders => self.manage_providers,
+            PopupRoute::About => self.about,
+            PopupRoute::ManageAccounts(provider) => match provider {
+                ProviderId::Codex => self.codex_settings,
+                ProviderId::Claude => self.claude_settings,
+                ProviderId::Cursor => self.cursor_settings,
+                ProviderId::Gemini => self.gemini_settings,
+                ProviderId::Copilot => self.copilot_settings,
+                ProviderId::Minimax => self.minimax_settings,
+                ProviderId::Kimi => self.kimi_settings,
+                ProviderId::Antigravity => self.antigravity_settings,
+                ProviderId::OpenCodeGo => self.opencode_go_settings,
+            },
+            PopupRoute::ProviderDetail => None,
+        }
+    }
+
+    fn empty_state_height(&self) -> Option<f32> {
+        self.empty_state
     }
 }
 
@@ -334,15 +350,14 @@ impl cosmic::Application for AppModel {
         core.window.show_minimize = false;
         core.window.use_template = false;
 
-        let config = cosmic_config::Config::new(Self::APP_ID, Config::VERSION)
+        let config = crate::config::cosmic_config_context(Self::APP_ID, Config::VERSION)
             .map(|ctx| {
                 let mut config = match Config::get_entry(&ctx) {
                     Ok(cfg) => cfg,
                     Err((_errors, cfg)) => cfg,
                 };
-                let mut changed = registry::startup_sync(&mut config);
-                changed |= registry::initialize_provider_visibility(&mut config, &ProviderId::ALL);
-                changed |= registry::finalize_provider_visibility_initialization(&mut config);
+                let mut changed = crate::config::migrate_provider_enablement(&ctx, &mut config);
+                changed |= registry::startup_sync(&mut config);
                 changed |= demo_env::strip_leaked_state(&mut config);
                 if changed {
                     let _ = config.write_entry(&ctx);
@@ -352,6 +367,15 @@ impl cosmic::Application for AppModel {
             })
             .unwrap_or_default();
 
+        let detection = if demo_env::is_active() {
+            demo_env::detection_snapshot()
+        } else {
+            crate::detection::startup_snapshot(crate::config::host_user_home_dir())
+        };
+        tracing::info!(
+            detected_providers = ?detection.detected_providers(),
+            "startup provider detection"
+        );
         let initial_config = config.clone();
         let shared_runtime = shared_state::load_runtime(Self::APP_ID);
         let mut shared_control = shared_state::load_control(Self::APP_ID);
@@ -363,23 +387,29 @@ impl cosmic::Application for AppModel {
             StartupDiagnostics::new(shared_runtime_generation, shared_control_generation);
         let (refresh_owner, ownership_task) =
             initialize_refresh_ownership(&process_info, &startup_diagnostics, &mut shared_control);
-        let mut state = runtime::load_initial_state(&initial_config, shared_runtime);
+        let mut state = runtime::load_initial_state(&initial_config, &detection, shared_runtime);
         #[cfg(debug_assertions)]
         crate::debug_env::apply(&mut state);
         demo_env::apply(&initial_config, &mut state);
         let selected_provider = select_provider(initial_config.selected_provider, &state);
-        let n_accounts_init = state.display_selected_account_count(selected_provider);
-        let (applet_width, applet_height) =
-            applet_button_size(&core, initial_config.panel_icon_style, n_accounts_init);
+        let (applet_width, applet_height) = panel_button_size(
+            &core,
+            &state,
+            initial_config.panel_icon_style,
+            selected_provider,
+        );
         core.applet.suggested_bounds = Some(Size::new(applet_width, applet_height));
         let mut app = AppModel {
             core,
             popup: None,
             config,
             state,
+            detection,
             selected_provider,
             detail_account_page: 0,
+            provider_viewport_offset: 0,
             popup_route: PopupRoute::ProviderDetail,
+            provider_picker_open: false,
             update_status: UpdateStatus::Unchecked,
             launch_mode,
             popup_size: None,
@@ -387,7 +417,6 @@ impl cosmic::Application for AppModel {
             shared_control,
             process_info,
             refresh_owner,
-            opencode_import_availability: OpenCodeImportAvailability::discover(),
             codex_login: None,
             codex_login_handle: None,
             claude_login: None,
@@ -402,6 +431,8 @@ impl cosmic::Application for AppModel {
             minimax_login_handle: None,
             kimi_login: None,
             kimi_login_handle: None,
+            antigravity_login: None,
+            antigravity_login_handle: None,
             opencode_go_login: None,
             opencode_go_login_handle: None,
         };
@@ -419,7 +450,7 @@ impl cosmic::Application for AppModel {
             selected_provider = app.selected_provider.label(),
             enabled_provider_count = ProviderId::ALL
                 .into_iter()
-                .filter(|provider| app.config.provider_enabled(*provider))
+                .filter(|provider| app.state.provider(*provider).is_some_and(|state| state.enabled))
                 .count(),
             account_count = app.state.provider_accounts.len(),
             refresh_interval_seconds = app.config.refresh_interval_seconds,
@@ -452,25 +483,30 @@ impl cosmic::Application for AppModel {
     }
 
     fn view(&self) -> Element<'_, Self::Message> {
-        let n_accounts = self
-            .state
-            .display_selected_account_count(self.selected_provider);
-        let indicator = applet_indicator(
+        let indicator = if panel_fallback_active(&self.state) {
+            applet_fallback_indicator(&self.core)
+        } else {
+            let n_accounts = self
+                .state
+                .display_selected_account_count(self.selected_provider);
+            applet_indicator(
+                &self.state,
+                self.selected_provider,
+                self.config.panel_icon_style,
+                self.config.usage_amount_format,
+                &self.core,
+                n_accounts,
+            )
+        };
+        let size = panel_button_size(
+            &self.core,
             &self.state,
+            self.config.panel_icon_style,
             self.selected_provider,
-            self.config.panel_icon_style,
-            self.config.usage_amount_format,
-            &self.core,
-            n_accounts,
         );
-        let button: Element<'_, Message> = applet_button(
-            &self.core,
-            self.config.panel_icon_style,
-            n_accounts,
-            indicator,
-        )
-        .on_press(Message::TogglePopup)
-        .into();
+        let button: Element<'_, Message> = applet_button(&self.core, size, indicator)
+            .on_press(Message::TogglePopup)
+            .into();
 
         match self.launch_mode {
             LaunchMode::Panel => self.core.applet.autosize_window(button).into(),
@@ -485,7 +521,9 @@ impl cosmic::Application for AppModel {
         let content = popup_view::popup_content(
             &self.state,
             &self.config,
+            &self.detection,
             ProviderLoginStates {
+                provider_picker_open: self.provider_picker_open,
                 codex: self.codex_login.as_ref(),
                 claude: self.claude_login.as_ref(),
                 cursor_scan: &self.cursor_scan,
@@ -493,11 +531,14 @@ impl cosmic::Application for AppModel {
                 copilot: self.copilot_login.as_ref(),
                 minimax: self.minimax_login.as_ref(),
                 kimi: self.kimi_login.as_ref(),
+                antigravity: self.antigravity_login.as_ref(),
                 opencode_go: self.opencode_go_login.as_ref(),
-                opencode_import_availability: self.opencode_import_availability,
             },
-            self.selected_provider,
-            self.detail_account_page,
+            popup_view::DetailSelection {
+                provider: self.selected_provider,
+                account_page: self.detail_account_page,
+                provider_viewport_offset: self.provider_viewport_offset,
+            },
             &self.popup_route,
             &self.update_status,
         );
@@ -508,15 +549,17 @@ impl cosmic::Application for AppModel {
                 let cosmic = theme.cosmic();
                 let corners = cosmic.corner_radii;
                 widget::container::Style {
-                    text_color: Some(cosmic.background.on.into()),
-                    background: Some(Background::Color(cosmic.background.base.into())),
+                    text_color: Some(cosmic.background(theme.transparent).on.into()),
+                    background: Some(Background::Color(
+                        cosmic.background(theme.transparent).base.into(),
+                    )),
                     border: cosmic::iced::Border {
                         radius: corners.radius_m.into(),
                         width: 1.0,
-                        color: cosmic.background.divider.into(),
+                        color: cosmic.background(theme.transparent).divider.into(),
                     },
                     shadow: Shadow::default(),
-                    icon_color: Some(cosmic.background.on.into()),
+                    icon_color: Some(cosmic.background(theme.transparent).on.into()),
                     snap: true,
                 }
             })
@@ -598,6 +641,10 @@ impl AppModel {
             Message::RefreshNow => {
                 return Some(self.handle_refresh_now());
             }
+            Message::OpenProviderPickerProvider(provider) => {
+                self.provider_picker_open = false;
+                return self.navigate_to(PopupRoute::ManageAccounts(provider));
+            }
             Message::ProviderRefreshed(refresh_result) => {
                 return Some(self.handle_provider_refreshed(*refresh_result));
             }
@@ -613,15 +660,11 @@ impl AppModel {
             Message::PageProviderAccount(direction) => {
                 return Some(self.page_provider_account(direction));
             }
+            Message::PageProviderViewport(direction) => {
+                return self.page_provider_viewport(direction);
+            }
             Message::NavigateTo(route) => {
-                if matches!(
-                    route,
-                    PopupRoute::Settings(SettingsRoute::Provider(
-                        ProviderId::Codex | ProviderId::Copilot
-                    ))
-                ) {
-                    self.opencode_import_availability = OpenCodeImportAvailability::discover();
-                }
+                self.provider_picker_open = false;
                 return self.navigate_to(route);
             }
             Message::UpdateChecked { status, attempt } => {
@@ -643,7 +686,6 @@ impl AppModel {
                 }
             }
             Message::OpenUrl(url) => open_url(&url),
-            Message::Quit => return Some(self.handle_quit()),
             Message::HostCliAuthChanged => self.on_host_cli_auth_changed(),
             Message::SetProviderEnabled(provider, enabled) => {
                 return Some(self.set_provider_enabled(provider, enabled));
@@ -659,9 +701,6 @@ impl AppModel {
             }
             Message::SetPanelIconStyle(style) => {
                 return Some(self.set_panel_icon_style(style));
-            }
-            Message::SetShowAllAccounts(provider, show_all) => {
-                return Some(self.set_show_all_accounts(provider, show_all));
             }
             Message::ToggleAccountSelection(provider, account_id) => {
                 return Some(self.toggle_account_selection(provider, &account_id));
@@ -706,6 +745,9 @@ impl AppModel {
                     (ProviderId::Kimi, login::LoginEventKind::Kimi(event)) => {
                         login::KimiLoginFlow::on_event(self, event)
                     }
+                    (ProviderId::Antigravity, login::LoginEventKind::Antigravity(event)) => {
+                        login::AntigravityLoginFlow::on_event(self, event)
+                    }
                     (ProviderId::OpenCodeGo, login::LoginEventKind::OpenCodeGo(event)) => {
                         login::OpenCodeGoLoginFlow::on_event(self, event)
                     }
@@ -728,16 +770,6 @@ impl AppModel {
             }
         }
         None
-    }
-
-    fn handle_quit(&mut self) -> Task<Message> {
-        tracing::info!(
-            process_id = %self.process_info.id,
-            panel_output = ?self.process_info.panel_output,
-            owner_status = self.owner_status(),
-            "quit requested by user"
-        );
-        cosmic::iced::exit()
     }
 
     fn owner_status(&self) -> &'static str {
@@ -817,10 +849,14 @@ impl AppModel {
     fn handle_refresh_now(&mut self) -> Task<Message> {
         let requested_provider_count = ProviderId::ALL
             .into_iter()
-            .filter(|provider| self.config.provider_enabled(*provider))
+            .filter(|provider| {
+                self.state
+                    .provider(*provider)
+                    .is_some_and(|state| state.enabled)
+            })
             .count();
         let shared_control = shared_control_with_user_refresh_requests(
-            &self.config,
+            &self.state,
             &self.shared_control,
             &self.process_info.id,
         );
@@ -909,35 +945,46 @@ impl AppModel {
                 self.popup_body_measurements.set_provider(provider, height);
                 previous
             }
-            PopupBodyMeasureTarget::Settings(route) => {
+            PopupBodyMeasureTarget::EmptyState => {
+                let previous = self.popup_body_measurements.empty_state;
+                self.popup_body_measurements.empty_state = Some(height);
+                previous
+            }
+            PopupBodyMeasureTarget::Route(route) => {
                 let previous = match route {
-                    SettingsRoute::General => self.popup_body_measurements.general_settings,
-                    SettingsRoute::Provider(ProviderId::Codex) => {
+                    PopupRoute::Settings => self.popup_body_measurements.general_settings,
+                    PopupRoute::ManageProviders => self.popup_body_measurements.manage_providers,
+                    PopupRoute::About => self.popup_body_measurements.about,
+                    PopupRoute::ManageAccounts(ProviderId::Codex) => {
                         self.popup_body_measurements.codex_settings
                     }
-                    SettingsRoute::Provider(ProviderId::Claude) => {
+                    PopupRoute::ManageAccounts(ProviderId::Claude) => {
                         self.popup_body_measurements.claude_settings
                     }
-                    SettingsRoute::Provider(ProviderId::Cursor) => {
+                    PopupRoute::ManageAccounts(ProviderId::Cursor) => {
                         self.popup_body_measurements.cursor_settings
                     }
-                    SettingsRoute::Provider(ProviderId::Gemini) => {
+                    PopupRoute::ManageAccounts(ProviderId::Gemini) => {
                         self.popup_body_measurements.gemini_settings
                     }
-                    SettingsRoute::Provider(ProviderId::Copilot) => {
+                    PopupRoute::ManageAccounts(ProviderId::Copilot) => {
                         self.popup_body_measurements.copilot_settings
                     }
-                    SettingsRoute::Provider(ProviderId::Minimax) => {
+                    PopupRoute::ManageAccounts(ProviderId::Minimax) => {
                         self.popup_body_measurements.minimax_settings
                     }
-                    SettingsRoute::Provider(ProviderId::Kimi) => {
+                    PopupRoute::ManageAccounts(ProviderId::Kimi) => {
                         self.popup_body_measurements.kimi_settings
                     }
-                    SettingsRoute::Provider(ProviderId::OpenCodeGo) => {
+                    PopupRoute::ManageAccounts(ProviderId::Antigravity) => {
+                        self.popup_body_measurements.antigravity_settings
+                    }
+                    PopupRoute::ManageAccounts(ProviderId::OpenCodeGo) => {
                         self.popup_body_measurements.opencode_go_settings
                     }
+                    PopupRoute::ProviderDetail => None,
                 };
-                self.popup_body_measurements.set_settings(route, height);
+                self.popup_body_measurements.set_route(route, height);
                 previous
             }
         };
@@ -1010,7 +1057,10 @@ fn owner_shared_control_refresh_task(
                 request.reason,
                 RefreshRequestReason::User | RefreshRequestReason::AccountAction
             );
-            if !config.provider_enabled(request.provider) {
+            if !state
+                .provider(request.provider)
+                .is_some_and(|entry| entry.enabled)
+            {
                 evaluation.record_outcome(request.provider, "disabled");
                 consumed_providers.push(request.provider);
                 return None;
@@ -1150,13 +1200,13 @@ impl SharedRefreshEvaluationLog {
 }
 
 fn shared_control_with_user_refresh_requests(
-    config: &Config,
+    state: &AppState,
     shared_control: &SharedControlState,
     process_id: &str,
 ) -> SharedControlState {
     let mut next = shared_control.clone();
     for provider in ProviderId::ALL {
-        if !config.provider_enabled(provider) {
+        if !state.provider(provider).is_some_and(|entry| entry.enabled) {
             continue;
         }
         next.upsert_request(ProviderRefreshRequest {

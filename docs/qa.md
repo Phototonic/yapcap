@@ -1,18 +1,18 @@
 # YapCap QA Plan
 
-Manual test plan for v0.5.2. Run against both Native (`just install`) and Flatpak (`just flatpak-install`) builds unless noted.
+Manual test plan for v0.6.0. Run against both Native (`just install`) and Flatpak (`just flatpak-install`) builds unless noted.
 
 Paths used below:
 
 **Native** (default XDG layout on typical Linux installs):
 
-- Config: `~/.config/cosmic/io.github.TopiCsarno.YapCap/v502/`
+- Config: `~/.config/cosmic/io.github.TopiCsarno.YapCap/v600/`
 - Former snapshot cache, no longer active runtime state: `~/.cache/yapcap/snapshots.json`
 - Accounts + logs: `~/.local/state/yapcap/` (e.g. `…/logs/yapcap.log`)
 
 **Flatpak** (app id `io.github.TopiCsarno.YapCap`; paths use passwd `pw_dir` as `~`):
 
-- Config: same COSMIC config schema `v502` dir (manifest mounts `~/.config/cosmic`)
+- Config: same COSMIC config schema `v600` dir (manifest mounts `~/.config/cosmic`)
 - Former snapshot cache, no longer active runtime state: `~/.var/app/io.github.TopiCsarno.YapCap/cache/yapcap/snapshots.json`
 - Accounts + logs: `~/.var/app/io.github.TopiCsarno.YapCap/data/yapcap/`
 
@@ -22,11 +22,67 @@ Do not expect the Flatpak build to use `~/.local/state/yapcap/` for YapCap data�
 
 ## 1. Fresh install
 
-- `just clear-all-data` then install. All eight provider tabs visible with "Login required" state (not hidden).
-- Existing `v501` COSMIC settings are not loaded after the `v502` schema boundary; users must re-add accounts.
+- For an isolated Native check, run `just run-empty-discovery`. It clears and
+  uses `/tmp/yapcap-empty-home`, `/tmp/yapcap-empty-config`, and
+  `/tmp/yapcap-empty-state`; do not use `just clear-all-data` unless wiping
+  your real YapCap accounts and settings is intentional.
+- With no detection markers and no YapCap accounts, the panel shows only the
+  YapCap app icon. The popup shows the centered "No providers set up yet" hero
+  and its `Open Settings` action; it has no provider tabs and hides both
+  `Refresh now` and `Add provider` (`+`).
+- The hero's `Open Settings` action opens Settings → General. From there, every
+  provider remains reachable through the settings categories.
+- Add an account from Settings with no detection marker. Its provider becomes
+  visible and normal panel rendering replaces the app-icon fallback.
+- Existing `v503` COSMIC settings are not loaded after the `v600` schema boundary; users must re-add accounts.
 - Existing account directories, old snapshot caches, and logs are not automatically deleted by the schema boundary and may remain orphaned.
 - Settings → General → About shows correct version and dist label ("Native" or "Flatpak").
 - Panel icon renders without clipping or overflow.
+
+### 1.1 Provider discovery
+
+- Start `just run-empty-discovery`, then create and remove the marker paths
+  below while YapCap is running. The matching provider tab, detected hint, and
+  effective enablement should change without a restart; unrelated filesystem
+  changes must not affect the UI.
+
+  | Provider | Marker path | Expected kind |
+  | --- | --- | --- |
+  | Codex | `~/.codex` | directory |
+  | Claude | `~/.claude` or `~/.claude.json` | directory or file |
+  | Cursor | `~/.config/Cursor` | directory |
+  | Gemini | `~/.gemini/settings.json` | file |
+  | Antigravity | `~/.config/Antigravity` | directory |
+  | Copilot | `~/.config/github-copilot` or `~/.copilot` | directory |
+  | Minimax | `~/.mmx` | directory |
+
+- Kimi has no reliable installation marker. It remains available in Settings
+  and becomes visible after adding a managed account or explicitly enabling it;
+  an OpenCode installation alone must not mark Kimi as detected.
+- A bare `~/.gemini/` directory must not detect Gemini; neither may a directory
+  named `settings.json`. File/dir kind mismatches for the other markers must
+  also remain undetected.
+- A detected provider with no YapCap account has a normal provider tab. Its
+  detail view shows an accent `Detected` chip and an add-account action that
+  opens that provider's Settings category.
+- The same detected-and-unconfigured provider shows a `Detected on this machine`
+  caption on its Settings page (there is no longer an accent dot on the Settings
+  tab). Explicitly disabling it hides its provider tab but does not hide that
+  Settings caption.
+- On a non-empty popup, the popup header shows an `Add account` (`+`) button next
+  to `Refresh now`. Clicking `+` replaces the provider detail with an add-account
+  chooser (420 px wide, 680 px tall) that hides the provider navigation while
+  open: a `Detected on this machine` section lists providers with no YapCap
+  account first as two-column tiles with a `Connect account` action, followed by
+  the remaining providers as compact tiles. Every tile opens the matching
+  Settings category.
+- From the add-account chooser or any Settings category, clicking the `YapCap`
+  title returns to the selected provider's detail view.
+- Removing a detection marker hides an `Auto` provider with no account. Add an
+  account first, then remove its marker: the provider must remain visible,
+  because account presence wins over detection.
+- Change a detected provider's settings toggle off and on. It must write an
+  explicit disabled/enabled choice; detection does not override either choice.
 
 ---
 
@@ -84,11 +140,19 @@ In Settings → General, cycle through all four panel icon styles and verify the
 - Stored directory contains `metadata.json` and `tokens.json`; `metadata.json` has `email` and `provider_account_id`; `tokens.json` has `access_token`, `refresh_token`, and `expires_at`.
 - Duplicate login (same email) updates the existing account directory, not a second entry.
 - New account is selected immediately in single-account mode.
+- On success the login controls clear immediately to the normal add-account state
+  with no confirmation or `Dismiss` step. A failed login instead keeps the error
+  with `Add another` / `Dismiss` controls. This success/failure behavior applies
+  to every provider's add-account flow (and Minimax's or Kimi's API-key save).
 
 ### 6.2 Usage display
 
 - Session window (5h) shows used/left percent and reset time.
 - Weekly window (7d) shows used/left percent and reset time.
+- Session/Weekly labels are derived from each window's duration
+  (`limit_window_seconds`): ~5h reads as Session, ~7d as Weekly. A window with a
+  missing or unknown duration uses the positional fallback (first is Session,
+  second is Weekly).
 - If credits balance present, cost card is visible.
 - Pace indicator marker visible on bars with both `reset_at` and `window_seconds`.
 
@@ -97,15 +161,6 @@ In Settings → General, cycle through all four panel icon styles and verify the
 - Corrupt `tokens.json` → `access_token` only, remove `refresh_token`. Verify "Login required" state after one failed refresh.
 - Set `expires_at` to one minute in the past with a valid `refresh_token`. On next refresh, YapCap should transparently renew the token and fetch usage without showing an error. Verify `tokens.json` `expires_at` is updated.
 - Set `expires_at` far in the past and set `refresh_token` to a junk value. Verify `ActionRequired` state ("Login" badge) and re-auth prompt in Settings.
-- With a managed Codex entry still present in config, remove `tokens.json` or
-  `metadata.json`. Restart or reconcile and verify the account row remains
-  visible, shows an action-required state, and offers **Restore from OpenCode**
-  rather than disappearing.
-- With a matching test-only `openai` OAuth fixture, click **Restore from
-  OpenCode** on that row. Verify the same managed account id and `created_at`
-  remain, credentials are restored, and the OpenCode auth file is unchanged.
-- Repeat with a mismatched email or provider account id. Verify restore is
-  rejected and the existing account/configuration remains unchanged.
 
 ### 6.4 Remove account
 
@@ -200,9 +255,16 @@ In Settings → General, cycle through all four panel icon styles and verify the
 
 ## 9. Gemini
 
-### 9.1 Fresh install / Login required
+### 9.1 Detection and Login required
 
-- With no Gemini accounts configured, the Gemini provider tab is visible and shows the **Login required** empty state pointing to Settings → Gemini → Add account.
+- With no Gemini accounts configured, `~/.gemini/settings.json` is detected and
+  shown as a `Detected on this machine` hint in Settings, but Gemini remains
+  disabled by default and has no provider tab. Explicitly enable it in Settings
+  to make its tab visible; it then shows the detected call to action pointing to
+  Settings → Gemini → Add account.
+- Without that marker, Gemini remains available through Settings and the
+  `Add provider` picker; explicitly enabling it makes its tab visible and shows
+  the normal **Login required** state.
 - Pre-existing host `~/.gemini/oauth_creds.json` is **not** imported. YapCap does not read host tokens.
 
 ### 9.2 Add account (Native and Flatpak)
@@ -261,26 +323,119 @@ In Settings → General, cycle through all four panel icon styles and verify the
 
 ---
 
-## 10. Copilot
+## 10. Antigravity
 
-### 10.1 Add account
+### 10.1 Detection and empty state
+
+- With no Antigravity accounts configured, a `~/.config/Antigravity` directory
+  detects Antigravity and makes its provider tab visible. The tab shows the
+  detected call to action pointing to Settings → Antigravity → Add account.
+- Without that marker, Antigravity remains available through Settings and the
+  `Add account` chooser; explicitly enabling it shows the normal **Login
+  required** state.
+- Pre-existing host Antigravity credentials are **not** imported; YapCap stores
+  its own OAuth tokens.
+
+### 10.2 Add account (Native and Flatpak)
+
+- Settings → Antigravity → Add account opens the Google OAuth browser flow
+  (Native: directly; Flatpak: via `org.freedesktop.portal.OpenURI`).
+- The browser redirects back to a loopback `127.0.0.1:<port>` callback served by
+  YapCap; the success page confirms sign-in and invites closing the tab.
+- Cancel or abort during login commits nothing.
+- Successful login stores the account under native
+  `~/.local/state/yapcap/antigravity-accounts/<id>/` or Flatpak
+  `~/.var/app/io.github.TopiCsarno.YapCap/data/yapcap/antigravity-accounts/<id>/`.
+- Stored directory contains `metadata.json` (email, sub, optional `hd`, last tier
+  id, last `cloudaicompanionProject`) and `tokens.json` (`access_token`,
+  `refresh_token`, `expires_at`, `scope`).
+- New account is selected immediately in single-account mode.
+
+### 10.3 Multi-account dedupe
+
+- Add a second Antigravity account with a different Google identity — both
+  accounts appear in Settings and the popup.
+- Re-running Add account with an already-stored Google account updates the
+  existing managed directory by normalized email; no second entry is created.
+
+### 10.4 Usage display
+
+- Paid tier (`g1-pro-tier` / `g1-ultra-tier`): four bars grouped under **Gemini
+  Models** {Five Hour, Weekly} and **Claude and GPT models** {Five Hour, Weekly};
+  plan badge reads **Pro**.
+- Free tier (`free-tier`, "Antigravity Starter Quota"): two bars — **Gemini
+  Models** {Weekly} and **Claude and GPT models** {Weekly}; no 5-hour bucket
+  exists; plan badge reads **Free**.
+- Each group renders as one rounded container card: the group name as a header
+  with its usage sections stacked inside, no per-window card and no dividers
+  inside the container.
+- Panel headline shows the two 5-hour bars (paid tier). On the free tier, with no
+  5-hour bucket, the panel falls back to the two weekly bars.
+- Each bucket reset follows the YapCap-wide `reset_time_format` preference.
+
+### 10.5 Free-account project id
+
+- The quota call must send the `cloudaicompanionProject` discovered by
+  `loadCodeAssist`. Verify a **free** account shows real grouped weekly usage, not
+  a flat single `All Models` group at 0% used / 100% remaining (which is what a
+  missing project id degrades to). Paid accounts return the correct shape either
+  way.
+
+### 10.6 Tier transitions
+
+- Upgrade a free-tier account to a paid tier (or downgrade). On the next refresh
+  cycle the 5-hour bars appear or disappear and the plan badge flips **Free** ↔
+  **Pro**, without restarting YapCap.
+
+### 10.7 Token refresh and re-auth
+
+- Set `expires_at` to one minute in the past with a valid `refresh_token`. Verify
+  silent refresh on the next cycle and updated `expires_at` in `tokens.json` (the
+  refresh response returns no new refresh token, so the stored one is kept).
+- Replace `refresh_token` with junk. Verify `ActionRequired` badge ("Login") on
+  the account, plus a per-account re-auth icon in Settings.
+- Per-account re-auth: click the re-auth icon → complete OAuth with the same
+  Google account → usage refreshes immediately.
+- Per-account re-auth with a different Google account → rejected with error, the
+  existing account left unchanged.
+
+### 10.8 Rate limiting and transient errors
+
+- HTTP 429 with a `Retry-After` header → `RateLimited`; the stale snapshot stays
+  visible and no re-auth badge appears. 5xx, network errors, and timeouts are
+  transient in the same way.
+- A response with empty `groups` preserves the prior snapshot (`NoUsageData`)
+  rather than clearing usage.
+
+### 10.9 Remove account
+
+- Remove from Settings — only the YapCap-owned account directory is deleted. Host
+  `~/.config/Antigravity` files are not touched.
+- If it was the last Antigravity account, the provider returns to the Login
+  required empty state.
+
+---
+
+## 11. Copilot
+
+### 11.1 Add account
 
 - Settings -> Copilot -> Add account starts GitHub device flow.
 - Browser opens `https://github.com/login/device`; entering the displayed user code completes successfully.
 - Cancel during polling leaves account storage and selected accounts unchanged.
 - Adding the same GitHub account a second time refreshes the existing entry; no duplicate row appears.
 
-### 10.2 Login hint
+### 11.2 Login hint
 
 - The shared "Sign in to your browser as the account you want to add" private-window hint is visible at the add-account point.
 
-### 10.3 Multi-account add
+### 11.3 Multi-account add
 
 - Add a second GitHub account using private browsing or a different browser session.
 - The second account creates a separate `copilot-<github-user-id>/` directory.
 - Both accounts are visible in Settings.
 
-### 10.4 Free tier display
+### 11.4 Free tier display
 
 - Free account popup renders Chat and Completions windows.
 - Completions is the headline percentage.
@@ -290,7 +445,7 @@ In Settings → General, cycle through all four panel icon styles and verify the
 - Reset time follows `quota_reset_date_utc` (falling back to `quota_reset_date`).
 - No cost card is shown for the Free account.
 
-### 10.5 Paid tier display
+### 11.5 Paid tier display
 
 - Paid account popup renders one **Credits** window (token-based accounts).
 - A dollar cost card shows used and included credits, e.g. `$28.00 / $70.00`.
@@ -302,20 +457,27 @@ In Settings → General, cycle through all four panel icon styles and verify the
 - An unknown SKU with no recognizable entitlement range falls back to **Plan**.
 - Reset time follows `quota_reset_date_utc` (falling back to `quota_reset_date`).
 
-### 10.6 Mixed bar counts
+### 11.6 Mixed bar counts
 
 - Select a Free account and a paid account side by side.
 - Panel shows a two-bar Free group beside a one-bar paid group.
 - The one-bar paid group remains vertically centered; the Free group keeps two bars.
 
-### 10.7 Overage rendering
+### 11.7 Overage rendering
 
 - Run with `YAPCAP_DEMO=1`.
 - Verify the `morgan-pro` Copilot account shows `+42 over plan` under the Credits bar.
 
-### 10.8 `YAPCAP_DEMO`
+### 11.8 `YAPCAP_DEMO`
 
 - Run with `YAPCAP_DEMO=1`.
+- Verify all eight provider tabs appear with demo accounts (Codex seeds two).
+- Verify the Codex accounts are `pro@example.com` on Pro and `free@example.com`
+  on Free, with the Pro account marked **Active**.
+- Verify two Antigravity demo accounts with `Show all accounts` on:
+  `pro@example.com` on the Pro tier with grouped **Gemini Models** and **Claude and
+  GPT models** cards (Five Hour then Weekly within each group), and
+  `free@example.com` on the Free tier with weekly-only bars.
 - Verify `casey-free` and `morgan-pro` Copilot accounts are both present.
 - Verify `casey-free` shows Chat and Completions windows in the new Free shape
   and no cost card.
@@ -323,40 +485,83 @@ In Settings → General, cycle through all four panel icon styles and verify the
   and `+42 over plan`.
 - Verify both accounts are selected and Copilot `Show all accounts` is on.
 
-### 10.9 Re-auth flow
+### 11.9 Re-auth flow
 
 - Revoke the YapCap GitHub App token at `github.com/settings/applications`.
 - Trigger refresh and verify account badges flip to `Re-auth needed`.
 - Verify the re-auth icon appears in Settings.
 - Re-auth with the same GitHub account and verify the account refreshes successfully.
 - Re-auth with a different GitHub account and verify YapCap rejects it with a different-account error without replacing the stored account.
-- Verify an existing Copilot account row offers **Restore from OpenCode**. Restore
-  with a matching GitHub identity and verify the same managed account id is
-  updated without a duplicate; a mismatched identity must be rejected without
-  changing existing storage.
 
-### 10.10 Transient errors
+### 11.10 Transient errors
 
 - Disable network during refresh.
 - Verify stale snapshot remains visible with the "No internet connection" message.
 - Reconnect and click **Refresh now**; fresh data should restore.
 
-### 10.11 Account removal
+### 11.11 Account removal
 
 - Remove a Copilot account from Settings.
 - Verify only the matching `copilot-<github-user-id>/` directory is deleted.
 - Verify no host GitHub config is touched.
 
-### 10.12 Native + Flatpak parity
+### 11.12 Native + Flatpak parity
 
 - Repeat add, refresh, re-auth, and remove in Native and Flatpak builds.
 - Under Flatpak, verify device flow opens the browser via the OpenURI portal.
 
 ---
 
-## 11. Kimi for Coding
+## 12. Minimax
 
-### 11.1 Add account and API-key input
+### 12.1 Detection and add account
+
+- With no managed account, `~/.mmx/` detects Minimax and shows its provider tab
+  and detected-provider setup action. Without that marker, Minimax remains
+  available in Settings and the provider picker.
+- Settings → Minimax → Add account opens the API-key and optional-label form
+  without launching a browser.
+- Cancel the form and verify no managed account directory is created.
+- Saving an empty API key fails without creating an account. Saving a non-empty
+  test key creates one selected account under native
+  `~/.local/state/yapcap/minimax-accounts/<id>/` or Flatpak
+  `~/.var/app/io.github.TopiCsarno.YapCap/data/yapcap/minimax-accounts/<id>/`.
+- Verify the account directory is owner-only (`0700`), `api_key.txt` is `0600`,
+  and the API key is absent from COSMIC config and logs.
+
+### 12.2 Usage display and errors
+
+- A successful refresh shows the available model five-hour and weekly windows,
+  with used/left percentages, reset times, and pace markers when timing data is
+  available.
+- When absolute end timestamps are missing or expired, verify the provider uses
+  the returned remaining-time countdowns for reset labels.
+- A 401 or 403 response shows Login required without deleting the account. A
+  429 response shows rate-limited state and honors a numeric `Retry-After`.
+- A network or HTTP 5xx failure preserves the previous snapshot as stale. An
+  API error payload or response with no usable quota windows shows an error
+  without replacing the previous snapshot.
+
+### 12.3 Multi-account, active hint, and removal
+
+- Add a second Minimax account. Duplicate labels are allowed and create distinct
+  account ids.
+- Verify single-account and **Show all accounts** selection follows the shared
+  four-account cap.
+- Start YapCap with a non-empty `MINIMAX_API_KEY` and an account whose
+  `api_key_source` is `env:MINIMAX_API_KEY`; verify that row receives the Active
+  badge. Without both conditions, no Minimax row is marked Active from the
+  environment.
+- Minimax exposes no in-place reauthentication action. Replacing an invalid key
+  requires removing the account and adding it again.
+- Remove an account and verify only its YapCap-owned directory is deleted.
+- Run with `YAPCAP_DEMO=1` and verify the Minimax card shows token usage windows.
+
+---
+
+## 13. Kimi for Coding
+
+### 13.1 Add account and API-key input
 
 - Settings → Kimi → Add account opens the API-key form without a browser flow.
 - The API-key field is masked by default. Enter a test-only key, use the reveal
@@ -373,7 +578,7 @@ In Settings → General, cycle through all four panel icon styles and verify the
   `~/.var/app/io.github.TopiCsarno.YapCap/data/yapcap/kimi-accounts/<id>/`, and
   the key is absent from COSMIC configuration and logs.
 
-### 11.2 Usage display and errors
+### 13.2 Usage display and errors
 
 - A successful refresh shows **Weekly** and **Rate Limit (300m)** windows when
   both are present, with used percentages and reset times.
@@ -386,7 +591,7 @@ In Settings → General, cycle through all four panel icon styles and verify the
   usage continues from YapCap storage or `KIMI_API_KEY`; the OpenCode file is
   not read or synchronized during refresh.
 
-### 11.3 Multi-account selection
+### 13.3 Multi-account selection
 
 - Add a second Kimi account with a different label. Verify both accounts appear
   in Settings and the popup.
@@ -396,7 +601,7 @@ In Settings → General, cycle through all four panel icon styles and verify the
 - Select four accounts, add another, and verify the fifth account is stored
   but remains unselected until an existing selection is changed.
 
-### 11.4 Reauthentication
+### 13.4 Reauthentication
 
 - Click the re-authenticate action for an existing Kimi account. Verify the
   target account id and label remain in the form.
@@ -406,7 +611,7 @@ In Settings → General, cycle through all four panel icon styles and verify the
 - Verify reauthentication leaves exactly one managed account and does not
   create a second generated Kimi account or directory.
 
-### 11.5 Account removal and demo coverage
+### 13.5 Account removal and demo coverage
 
 - Remove a Kimi account from Settings. Verify only the YapCap-owned Kimi account
   directory is deleted and the provider returns to Login required when empty.
@@ -416,19 +621,19 @@ In Settings → General, cycle through all four panel icon styles and verify the
 
 ---
 
-## 12. Multi-account
+## 14. Multi-account
 
 - Add a second account for any provider.
 - `Show all accounts` toggle appears only when the provider has more than one account.
 - `Show all accounts` off — single active account column in popup.
-- `Show all accounts` on — one panel usage-bar group per selected account; the popup keeps its fixed width and pages through selected accounts using the full-width account pager.
+- `Show all accounts` on — one column per selected account side by side. Popup width expands by 420 px per additional column.
 - Panel bars expand horizontally: one two-bar group per selected account.
 - Unloaded accounts show 0% fill in panel until their snapshot arrives.
 - Switching the active account in single-account mode triggers a refresh for only that provider, not a global refresh.
 
 ---
 
-## 13. Stale / error states
+## 15. Stale / error states
 
 - Kill network (`nmcli networking off`). Trigger a refresh. Verify "No internet connection. Showing cached data; information is not up to date." message. Cached usage data still visible. Re-enable network, verify Live badge returns.
 - Wait 11 minutes without refreshing (or set refresh interval to max and advance clock). Verify account badge switches from Live to Stale. Status line appends "(stale)".
@@ -437,45 +642,59 @@ In Settings → General, cycle through all four panel icon styles and verify the
 
 ---
 
-## 14. Provider enable/disable
+## 16. Provider enable/disable
 
 - Disable a provider via its settings toggle — provider tab disappears from popup nav.
 - All provider-specific settings below the toggle are dimmed and non-interactive when disabled.
 - Re-enable — tab reappears and a refresh is triggered.
-- Fresh install with `auto_init_pending`: all providers enabled even with no accounts.
+- On a fresh config, all provider enablement values start as `Auto`: only
+  detected providers and providers with YapCap accounts are visible.
+- Upgrade an existing config containing legacy `<provider>_enabled` booleans.
+  Restart twice and verify each legacy value is migrated once to the equivalent
+  explicit `<provider>_enablement` value, preserves its visible/hidden state,
+  and does not change again on the second start.
 
 ---
 
-## 15. Popup sizing
+## 17. Popup sizing
 
-- Popup width is 420 px for every provider and route, regardless of selected account count.
-- Multi-account provider: a pager sits above one full-width account detail; previous/next buttons cycle accounts (wrapping at both ends), the active account name (or `Account N`) and `current of total` position are centered, and paging does not change the config selection.
-- Multi-account provider paging a taller account resizes the popup height without clipping; switching provider tabs resets the pager to the first account.
-- Provider nav tabs stay compact with two balanced rows at eight providers; labels stay readable and the selected tab keeps its accent border.
-- Settings category navigation wraps into two balanced rows with all nine categories visible and clickable.
-- OpenCode Go's provider tab shows the compact **5 Hour** and **Weekly** summary bars; opening its detail view also shows **Monthly**.
-- Switching between provider tabs or routes updates the popup height immediately.
+- One enabled provider: the provider navigation row is hidden entirely and the
+  popup is shorter by one row height plus its chrome gap.
+- Two or three enabled providers: tabs share the full row width equally, with no
+  empty slots.
+- Four or more enabled providers: tabs wrap into rows of four; partial rows keep
+  four equal-width slots and the popup grows by one tab-row height per extra row.
+- Body heights are measured at the width the body actually renders in, so text
+  that wraps at a narrower multi-account width is fully included (no clipping).
+- Single-account provider: popup is 420 px wide.
+- Two-account provider: popup is 840 px wide.
+- Switching from a two-account tab to a one-account tab shrinks popup immediately.
+- Switching from provider view to Settings shrinks to settings width.
 - Content taller than 1080 px: body scrolls, header/nav/footer stay fixed.
+- Header, nav, and footer stay centred at 420 px even in wide multi-account popup.
 
 ---
 
-## 16. Accounts removed from filesystem
+## 18. Accounts removed from filesystem
 
 - Manually delete a provider account directory from the YapCap data tree (`~/.local/state/yapcap/<provider>-accounts/` native, or `~/.var/app/io.github.TopiCsarno.YapCap/data/yapcap/<provider>-accounts/` Flatpak). Trigger a refresh. Verify the provider surfaces "Login required" or empty state rather than showing a stale snapshot indefinitely.
 
 ---
 
-## 17. Config state file manipulation
+## 19. Config state file manipulation
 
 - Delete old cached snapshots (native `~/.cache/yapcap/snapshots.json`, Flatpak `~/.var/app/io.github.TopiCsarno.YapCap/cache/yapcap/snapshots.json`). Restart. Verify runtime comes from shared COSMIC runtime state, not the old file.
-- Delete the COSMIC config dir (`just clear-config`). Restart. Verify defaults apply: all providers enabled, refresh interval 300s, relative reset time, used amount format.
-- Leave an older `~/.config/cosmic/io.github.TopiCsarno.YapCap/v501/` config in place. Restart the current build and verify `v502` defaults are used instead.
+- Delete the COSMIC config dir (`just clear-config`). Restart. Verify defaults
+  apply: all provider enablement values are `Auto`, refresh interval is 300s,
+  reset time is relative, and usage amount is used.
+- Leave an older `~/.config/cosmic/io.github.TopiCsarno.YapCap/v503/` config in
+  place. Restart the current build and verify `v600` defaults are used instead.
 - Manually edit config to add a non-existent account id to `selected_codex_account_ids`. Restart. Verify graceful fallback to first valid account or Login Required — no crash.
 - Set `refresh_interval_seconds = 5` in config. Verify it is clamped to 10s at runtime (not 5s).
 
 ---
 
-## 18. Multi-process runtime sync
+## 20. Multi-process runtime sync
 
 Use a COSMIC panel configured on two displays so two YapCap applet processes run
 at the same time. For native builds, watch
@@ -504,7 +723,7 @@ Expected diagnostic log patterns for this section:
 
 ---
 
-## 19. Logging
+## 21. Logging
 
 - Native: verify `~/.local/state/yapcap/logs/yapcap.log`. Flatpak: verify `~/.var/app/io.github.TopiCsarno.YapCap/data/yapcap/logs/yapcap.log`. Each is written during a normal session for that build.
 - Verify no bearer tokens, access tokens, cookie values, or refresh tokens appear in the log.
@@ -512,125 +731,16 @@ Expected diagnostic log patterns for this section:
 
 ---
 
-## 20. Flatpak-specific
+## 22. Flatpak-specific
 
 - Install via `just flatpak-install`. YapCap appears in COSMIC applet list.
 - Install from the COSMIC Store. YapCap appears in the COSMIC panel applet picker after installation, uses the `io.github.TopiCsarno.YapCap` Flatpak id, appears under the applet category/filter, and shows "Place on desktop" rather than "Open".
-- COSMIC Store details page shows developer `Tamás Csarnó`, version `0.5.2`, description paragraphs without manual line-break wrapping, and screenshots in this order: detail popup, Codex zoom, Claude Code zoom, Cursor zoom, Gemini zoom, Copilot zoom.
+- COSMIC Store details page shows developer `Tamás Csarnó`, version `0.6.0`, description paragraphs without manual line-break wrapping, and screenshots in this order: hero, Codex zoom, Claude Code zoom, Cursor zoom, Antigravity zoom, Gemini zoom, Copilot zoom, Minimax zoom, Kimi zoom.
 - About section shows "Flatpak" dist label.
-- OAuth flows (Codex, Claude, Gemini, Copilot) open the system browser correctly from inside the sandbox.
+- OAuth flows (Codex, Claude, Antigravity, Gemini, Copilot) open the system browser correctly from inside the sandbox.
 - COSMIC dark/light theme and accent colour updates are observed immediately through the settings config watcher.
 - Cursor add-account: Flatpak sandbox can read `~/.config/Cursor/User/globalStorage/state.vscdb` through the read-only home permission. Scan succeeds and account is stored.
 - Flatpak permissions include `--filesystem=home:ro`, not writable home or `--filesystem=host`.
 - Account state for the Flatpak build lives under `~/.var/app/io.github.TopiCsarno.YapCap/data/yapcap/` (not `~/.local/state/yapcap/`).
 - `just flatpak-run` launches the installed Flatpak version.
 - Native install (`just install`) About section shows "Native".
-
----
-
-## 21. OpenCode discovery and OpenCode Go
-
-### 21.1 Discovery boundaries
-
-- Test with no OpenCode installation and no `~/.local/share/opencode/auth.json`.
-  YapCap starts normally, shows the normal manual/native login controls, and does
-  not require or attempt to launch an `opencode` executable.
-- With an OpenCode installation but no relevant provider entry, add and
-  reauthenticate forms remain usable manually and no account is created at
-  startup. Repeat with a malformed file and an unknown credential type.
-- Startup and opening settings may reread OpenCode only to refresh import
-  availability. Verify this does not create accounts, import credentials, or
-  write any YapCap/OpenCode credential data. Full credential discovery and
-  validation occurs only after adding, reauthenticating, or explicitly restoring
-  an existing account; periodic refresh and changing provider tabs do not import
-  or synchronize the file.
-- For fixtures only, set `YAPCAP_OPENCODE_AUTH_PATH` to a temporary auth file;
-  do not use a production key. The normal default remains
-  `~/.local/share/opencode/auth.json`.
-
-### 21.2 API-key prefill and form behavior
-
-- Put test-only `api` credentials for `kimi-for-coding`, `minimax`, and
-  `opencode-go` in a fixture. Open each provider's Add account form and verify
-  the key is prefilled, masked by default, and marked as imported from OpenCode.
-- Edit the prefilled key or clear it. Verify the imported hint/provenance clears,
-  the edited value remains the value that would be saved, and reveal/hide toggles
-  never expose the key unless explicitly requested.
-- Cancel each form and verify no account, key file, config value, or external
-  OpenCode file is created or changed. Save a test-only value and verify it is
-  copied to YapCap private storage only.
-- For Minimax and Kimi, add a second labeled account, switch selection with
-  **Show all accounts** off and on, reauthenticate each existing account, and
-  delete each account. Verify labels, selected ids, private key files, and the
-  normal four-account selection cap remain correct.
-
-### 21.3 OAuth compatibility and native login priority
-
-- Codex: use the normal **Sign in with ChatGPT** browser flow and verify it
-  remains the primary add-account action. With a fixture containing a valid
-  `openai` OAuth record, use **Import from OpenCode** for a new account and
-  **Restore from OpenCode** only on an existing action-required row. Verify the
-  confirmed credential creates or updates the intended managed account. An
-  `openai` API key is not offered as Codex subscription authentication.
-- Copilot: complete the native GitHub device flow and verify it remains primary.
-  With a fixture containing a valid `github-copilot` OAuth record, use the
-  explicit **Import from OpenCode** action for adding and **Restore from
-  OpenCode** on an existing managed row. Verify the OAuth `refresh` value is
-  validated with GitHub identity and becomes the stored Copilot API token; the
-  OAuth `access` value is not used for the API request. A GitHub Enterprise
-  credential is declined; YapCap supports github.com only.
-- Cancel imports and submit invalid, incomplete, or wrong-provider credentials.
-  Verify existing accounts and stored tokens remain unchanged. Claude, Gemini,
-  and Cursor forms remain unchanged: Anthropic/Google API keys and unconfirmed
-  Cursor sources are not imported from OpenCode.
-
-### 21.4 OpenCode Go auth and usage
-
-- Add an OpenCode Go account with a manually entered test key. Verify the API-key
-  field is masked/revealable, the account is stored privately, and the account is
-  selected in single-account mode. Add multiple labeled accounts, switch the
-  selected account, enable **Show all accounts**, and verify the normal selection
-  cap and per-account refresh behavior.
-- Add or reauthenticate with an `opencode-go` API-key fixture. Verify the field is
-  editable and clearing it prevents saving. Reauthentication preserves the
-  target account identity and does not create a second account.
-- Stub or fixture `GET https://opencode.ai/zen/go/v1/usage` with Bearer
-  authentication and valid server percentages/reset timestamps. Verify the popup
-  shows **5 Hour**, **Weekly**, and **Monthly** windows in that order.
-- Return HTTP 401 and verify authentication-required state without deleting the
-  account. Return HTTP 403 and verify entitlement-required messaging without
-  recommending reauthentication as a cure. Return HTTP 429 with and without
-  `Retry-After` and verify normal rate-limit backoff.
-- Disable the network or return a transient failure after a successful refresh.
-  Verify the last successful three-window snapshot remains visible as stale and
-  the account is not deleted. Restore connectivity and verify fresh data returns.
-- Reauthenticate and delete OpenCode Go accounts. Verify deletion removes only
-  YapCap's managed directory, updates selection, and never touches OpenCode.
-
-### 21.5 Copy isolation, paths, and security
-
-- Save a Kimi, Minimax, Codex, Copilot, or OpenCode Go credential, then change or
-  delete OpenCode `auth.json`. Refresh the saved YapCap account and verify usage
-  still comes from YapCap storage. Delete the YapCap account and verify the
-  OpenCode file is byte-for-byte unchanged.
-- Repeat with native and Flatpak builds. Native discovery uses the host default
-  path; Flatpak discovery uses the mounted host home even when sandbox `HOME`
-  points into `~/.var/app/`. Verify no OpenCode executable is needed in either
-  build.
-- Inspect logs, COSMIC config, and managed account metadata. Verify they contain
-  no API keys, OAuth access/refresh tokens, auth-file contents, bearer headers,
-  pasted codes, or secret paths. Verify API keys exist only in private YapCap
-  account storage with owner-only permissions.
-- Attempt to replace a managed account directory or key file with a symlink to an
-  external path. Verify the operation is rejected and the external file remains
-  unchanged. Verify no OpenCode path is persisted as an account root.
-- Restrict an existing managed account directory or credential file incorrectly,
-  then refresh or save the account. On Unix, verify the directory is repaired to
-  `0700` and each managed credential file to `0600` before its contents are written.
-
-### 21.6 Zen limitation
-
-- Verify product/help text does not show a Zen balance, confuse local usage
-  percentages with remaining credits, recommend console/cookie/private-RPC
-  scraping, or cite an unsupported balance endpoint. It must state that Zen
-  balance support is deferred until upstream provides a supported public API.

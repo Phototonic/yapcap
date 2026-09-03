@@ -2,14 +2,14 @@ mod flows;
 mod legacy;
 
 pub(crate) use flows::{
-    ClaudeLoginFlow, CodexLoginFlow, CopilotLoginFlow, GeminiLoginFlow, KimiLoginFlow,
-    MinimaxLoginFlow, OpenCodeGoLoginFlow,
+    AntigravityLoginFlow, ClaudeLoginFlow, CodexLoginFlow, CopilotLoginFlow, GeminiLoginFlow,
+    KimiLoginFlow, MinimaxLoginFlow, OpenCodeGoLoginFlow,
 };
 
 use super::{
-    AppModel, ClaudeLoginEvent, CodexLoginEvent, Config, CopilotLoginEvent, GeminiLoginEvent,
-    Handle, KimiLoginEvent, Message, MinimaxLoginEvent, OpenCodeGoLoginEvent, ProviderId, Task,
-    runtime,
+    AntigravityLoginEvent, AppModel, ClaudeLoginEvent, CodexLoginEvent, Config, CopilotLoginEvent,
+    GeminiLoginEvent, Handle, KimiLoginEvent, Message, MinimaxLoginEvent, OpenCodeGoLoginEvent,
+    ProviderId, Task, runtime,
 };
 use crate::shared_state::RefreshRequestReason;
 
@@ -141,7 +141,8 @@ fn apply_login_success(
         "login flow succeeded"
     );
     app.write_config(|new_config| apply(new_config));
-    runtime::reconcile_provider(&app.config, &mut app.state, provider);
+    runtime::reconcile_provider(&app.config, &app.detection, &mut app.state, provider);
+    runtime::mark_account_reauthenticated(&mut app.state, provider, &account_id);
     app.sync_panel_suggested_bounds();
     app.request_provider_refresh(provider, RefreshRequestReason::AccountAction)
 }
@@ -224,6 +225,7 @@ pub(crate) enum LoginEventKind {
     Copilot(CopilotLoginEvent),
     Kimi(KimiLoginEvent),
     Minimax(MinimaxLoginEvent),
+    Antigravity(AntigravityLoginEvent),
     OpenCodeGo(OpenCodeGoLoginEvent),
 }
 

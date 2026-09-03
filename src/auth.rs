@@ -31,14 +31,6 @@ pub fn account_id_from_id_token(id_token: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-pub fn user_id_from_token(token: &str) -> Option<String> {
-    let json = jwt_payload(token)?;
-    json.get("https://api.openai.com/auth")?
-        .get("chatgpt_user_id")?
-        .as_str()
-        .map(str::to_string)
-}
-
 pub fn jwt_expiration(token: &str) -> Option<DateTime<Utc>> {
     let json = jwt_payload(token)?;
     let exp = json.get("exp")?.as_i64()?;

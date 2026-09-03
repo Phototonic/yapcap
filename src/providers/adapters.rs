@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MPL-2.0
 
+mod antigravity_adapter;
 mod claude_adapter;
 mod codex_adapter;
 mod copilot_adapter;
@@ -26,6 +27,7 @@ pub(super) fn adapter(provider: ProviderId) -> &'static dyn ProviderAdapter {
         ProviderId::Copilot => &COPILOT_ADAPTER,
         ProviderId::Kimi => &KIMI_ADAPTER,
         ProviderId::Minimax => &MINIMAX_ADAPTER,
+        ProviderId::Antigravity => &ANTIGRAVITY_ADAPTER,
         ProviderId::OpenCodeGo => &OPENCODE_GO_ADAPTER,
     }
 }
@@ -37,8 +39,23 @@ static GEMINI_ADAPTER: gemini_adapter::GeminiAdapter = gemini_adapter::GeminiAda
 static COPILOT_ADAPTER: copilot_adapter::CopilotAdapter = copilot_adapter::CopilotAdapter;
 static KIMI_ADAPTER: kimi_adapter::KimiAdapter = kimi_adapter::KimiAdapter;
 static MINIMAX_ADAPTER: minimax_adapter::MinimaxAdapter = minimax_adapter::MinimaxAdapter;
+static ANTIGRAVITY_ADAPTER: antigravity_adapter::AntigravityAdapter =
+    antigravity_adapter::AntigravityAdapter;
 static OPENCODE_GO_ADAPTER: opencode_go_adapter::OpenCodeGoAdapter =
     opencode_go_adapter::OpenCodeGoAdapter;
+
+pub(super) fn opencode_go_system_active_account_id(
+    managed_accounts: &[crate::config::ManagedOpenCodeGoAccountConfig],
+) -> Option<String> {
+    let key = std::env::var("OPENCODE_GO_API_KEY").ok()?;
+    if key.is_empty() {
+        return None;
+    }
+    managed_accounts
+        .iter()
+        .find(|account| account.api_key_source == "env:OPENCODE_GO_API_KEY")
+        .map(|account| account.id.clone())
+}
 
 pub(super) fn reconcile_provider_account_descriptors(
     provider: ProviderId,
@@ -55,9 +72,7 @@ pub(super) fn reconcile_provider_account_descriptors(
         .cloned()
         .collect();
 
-    if !config.show_all_accounts(provider) {
-        selected_ids.truncate(1);
-    }
+    selected_ids.truncate(1);
 
     if selected_ids.is_empty() && valid_ids.len() == 1 {
         selected_ids = valid_ids.first().cloned().into_iter().collect();
@@ -102,7 +117,6 @@ pub(super) fn reconcile_provider_account_descriptors(
     }
 
     if let Some(provider_state) = state.provider_mut(provider) {
-        provider_state.enabled = config.provider_enabled(provider);
         provider_state.account_status = account_status(&selected_ids, accounts.len());
         provider_state.error = match provider_state.account_status {
             AccountSelectionStatus::LoginRequired => Some("Login required".to_string()),
@@ -197,21 +211,4 @@ pub(super) fn kimi_system_active_account_id(
                 .map(|account| account.id.clone())
         }
     })
-}
-
-pub(super) fn opencode_go_system_active_account_id(
-    managed_accounts: &[crate::config::ManagedOpenCodeGoAccountConfig],
-) -> Option<String> {
-    std::env::var("OPENCODE_GO_API_KEY")
-        .ok()
-        .and_then(|api_key| {
-            if api_key.is_empty() {
-                None
-            } else {
-                managed_accounts
-                    .iter()
-                    .find(|account| account.api_key_source == "env:OPENCODE_GO_API_KEY")
-                    .map(|account| account.id.clone())
-            }
-        })
 }

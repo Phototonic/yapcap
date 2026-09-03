@@ -1,6 +1,5 @@
 // SPDX-License-Identifier: MPL-2.0
 
-use crate::account_selection::MAX_MULTI_ACCOUNT_SELECTION;
 use crate::model::{
     AccountSelectionStatus, AppState, ProviderAccountRuntimeState, ProviderId, ProviderRuntimeState,
 };
@@ -63,7 +62,7 @@ impl AppState {
     ) -> Vec<&ProviderAccountRuntimeState> {
         self.selected_accounts(provider)
             .into_iter()
-            .take(MAX_MULTI_ACCOUNT_SELECTION)
+            .take(1)
             .collect()
     }
 

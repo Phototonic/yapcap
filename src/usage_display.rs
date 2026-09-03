@@ -13,6 +13,13 @@ pub struct UsagePace {
     pub delta_percent: f32,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct UsageMeter {
+    pub fill_percent: f32,
+    pub marker_percent: Option<f32>,
+    pub tooltip: String,
+}
+
 #[must_use]
 pub fn displayed_percent(window: &UsageWindow, now: DateTime<Utc>) -> f32 {
     if is_elapsed(window, now) {
@@ -54,6 +61,23 @@ pub fn pace_label(pace: UsagePace) -> String {
         } else {
             fl!("pace-room", percent = percent.as_str())
         }
+    }
+}
+
+#[must_use]
+pub fn usage_meter(
+    window: &UsageWindow,
+    now: DateTime<Utc>,
+    format: UsageAmountFormat,
+) -> UsageMeter {
+    let pace = pace(window, now);
+    UsageMeter {
+        fill_percent: displayed_amount_percent(window, now, format),
+        marker_percent: pace.map(|pace| match format {
+            UsageAmountFormat::Used => pace.expected_percent,
+            UsageAmountFormat::Left => 100.0 - pace.expected_percent,
+        }),
+        tooltip: pace.map_or_else(|| usage_amount_label(window, now, format), pace_label),
     }
 }
 
@@ -190,6 +214,7 @@ mod tests {
             reset_at,
             window_seconds: None,
             reset_description: None,
+            group: None,
         }
     }
 
@@ -204,6 +229,7 @@ mod tests {
             reset_at: Some(reset_at),
             window_seconds: Some(window_seconds),
             reset_description: None,
+            group: None,
         }
     }
 
@@ -303,6 +329,30 @@ mod tests {
             strip_isolation_marks(&pace_label(pace(&usage, now).unwrap())),
             "19% room"
         );
+    }
+
+    #[test]
+    fn usage_meter_standardizes_marker_and_tooltip() {
+        let now = Utc.with_ymd_and_hms(2026, 4, 3, 0, 0, 0).unwrap();
+        let reset_at = Utc.with_ymd_and_hms(2026, 4, 8, 0, 0, 0).unwrap();
+        let usage = paced_window(reset_at, 7 * 24 * 60 * 60, 50.0);
+
+        let meter = usage_meter(&usage, now, UsageAmountFormat::Used);
+
+        assert_eq!(meter.fill_percent, 50.0);
+        assert!((meter.marker_percent.unwrap() - 28.571).abs() < 0.01);
+        assert_eq!(strip_isolation_marks(&meter.tooltip), "21% ahead");
+    }
+
+    #[test]
+    fn usage_meter_always_has_hover_text() {
+        let now = Utc.with_ymd_and_hms(2026, 4, 3, 0, 0, 0).unwrap();
+        let usage = window(None, 25.0);
+
+        let meter = usage_meter(&usage, now, UsageAmountFormat::Used);
+
+        assert_eq!(meter.marker_percent, None);
+        assert_eq!(strip_isolation_marks(&meter.tooltip), "25.0% used");
     }
 
     #[test]

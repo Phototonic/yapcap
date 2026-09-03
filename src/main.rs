@@ -9,10 +9,12 @@ mod currency_format;
 #[cfg(debug_assertions)]
 mod debug_env;
 mod demo_env;
+mod detection;
 mod error;
 mod i18n;
 mod logging;
 mod model;
+mod provider_enablement;
 mod providers;
 mod refresh_owner;
 mod runtime;
@@ -27,9 +29,9 @@ fn main() -> cosmic::iced::Result {
     i18n::init(&requested_languages);
 
     let default_level = if cfg!(debug_assertions) {
-        "warn,yapcap=debug"
+        "warn,cosmic::theme=off,yapcap=debug"
     } else {
-        "warn,yapcap=info"
+        "warn,cosmic::theme=off,yapcap=info"
     };
     let _log_guard = logging::init(default_level).ok();
 

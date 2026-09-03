@@ -1,12 +1,11 @@
 use super::{
     AccountSelectionStatus, AppModel, Config, CosmicConfigEntry, Id, Message, PagerDirection,
-    PanelIconStyle, PopupRoute, ProviderId, ProviderRefreshResult, ResetTimeFormat, SettingsRoute,
-    Size, Task, UpdateStatus, UsageAmountFormat, app_popup, applet_button_size, cosmic_config,
-    demo_env, destroy_popup, format_retry_delay, popup_size_limits_with_max_width,
-    popup_size_tuple, popup_view, refresh_provider_account_statuses_task, registry, resize_popup,
-    runtime, select_provider, update_retry_delay, update_retry_task,
+    PanelIconStyle, PopupRoute, ProviderId, ProviderRefreshResult, ResetTimeFormat, Size, Task,
+    UpdateStatus, UsageAmountFormat, app_popup, demo_env, destroy_popup, format_retry_delay,
+    panel_button_size, popup_size_limits_with_max_width, popup_size_tuple, popup_view,
+    refresh_provider_account_statuses_task, registry, resize_popup, runtime, select_provider,
+    update_retry_delay, update_retry_task,
 };
-use crate::account_selection::provider_show_all_account_selection;
 use crate::config::APP_ID;
 use crate::shared_state::{self, ProviderRefreshRequest, RefreshRequestReason};
 use chrono::Utc;
@@ -137,22 +136,30 @@ impl AppModel {
     }
 
     pub(super) fn popup_size_for_route(&self, route: &PopupRoute) -> Size {
+        if self.provider_picker_open && matches!(route, PopupRoute::ProviderDetail) {
+            return popup_view::popup_provider_picker_size();
+        }
         if let Some(size) = self.measured_popup_size_for_route(route) {
             return size;
         }
         match route {
-            PopupRoute::ProviderDetail => {
-                popup_view::popup_session_size(&self.state, self.selected_provider)
-            }
-            PopupRoute::Settings(_) => popup_view::popup_settings_size(&self.state),
+            PopupRoute::ProviderDetail => popup_view::popup_session_size_for_page(
+                &self.state,
+                self.selected_provider,
+                self.detail_account_page,
+            ),
+            PopupRoute::Settings
+            | PopupRoute::ManageProviders
+            | PopupRoute::ManageAccounts(_)
+            | PopupRoute::About => popup_view::popup_settings_size(&self.state),
         }
     }
 
     fn measured_popup_size_for_route(&self, route: &PopupRoute) -> Option<Size> {
         match route {
-            PopupRoute::ProviderDetail => self
+            PopupRoute::ProviderDetail if popup_view::popup_empty_state_active(&self.state) => self
                 .popup_body_measurements
-                .provider_height(&self.state)
+                .empty_state_height()
                 .map(|height| {
                     popup_view::popup_session_size_with_body_height(
                         &self.state,
@@ -160,40 +167,63 @@ impl AppModel {
                         height,
                     )
                 }),
-            PopupRoute::Settings(_) => self
+            PopupRoute::ProviderDetail => self
                 .popup_body_measurements
-                .settings_height()
+                .provider(self.selected_provider)
+                .map(|height| {
+                    popup_view::popup_session_size_with_body_height(
+                        &self.state,
+                        self.selected_provider,
+                        height,
+                    )
+                }),
+            route => self
+                .popup_body_measurements
+                .route_height(*route)
                 .map(popup_view::popup_settings_size_with_body_height),
         }
     }
 
     pub(super) fn sync_panel_suggested_bounds(&mut self) {
-        let n_accounts = self
-            .state
-            .display_selected_account_count(self.selected_provider);
-        let (w, h) = applet_button_size(&self.core, self.config.panel_icon_style, n_accounts);
+        let (w, h) = panel_button_size(
+            &self.core,
+            &self.state,
+            self.config.panel_icon_style,
+            self.selected_provider,
+        );
         self.core.applet.suggested_bounds = Some(Size::new(w, h));
     }
 
     pub(super) fn page_provider_account(&mut self, direction: PagerDirection) -> Task<Message> {
-        let count = self
-            .state
-            .display_selected_accounts(self.selected_provider)
-            .len();
-        if count > 1 {
-            self.detail_account_page = match direction {
+        let accounts = self.state.accounts_for(self.selected_provider);
+        if accounts.len() > 1 {
+            let account_page = match direction {
                 PagerDirection::Previous => {
-                    popup_view::account_page_previous(self.detail_account_page, count)
+                    popup_view::account_page_previous(self.detail_account_page, accounts.len())
                 }
                 PagerDirection::Next => {
-                    popup_view::account_page_next(self.detail_account_page, count)
+                    popup_view::account_page_next(self.detail_account_page, accounts.len())
                 }
             };
-            if let Some(resize) = self.resize_popup_to_provider(self.selected_provider) {
-                return resize;
-            }
+            let account_id = accounts[account_page].account_id.clone();
+            return self.toggle_account_selection(self.selected_provider, &account_id);
         }
         Task::none()
+    }
+
+    pub(super) fn page_provider_viewport(
+        &mut self,
+        direction: PagerDirection,
+    ) -> Option<Task<Message>> {
+        let max_offset = popup_view::provider_viewport_max_offset_for(&self.state);
+        let previous = self.provider_viewport_offset;
+        self.provider_viewport_offset = match direction {
+            PagerDirection::Previous => previous.saturating_sub(1),
+            PagerDirection::Next => previous.saturating_add(1).min(max_offset),
+        };
+        (previous != self.provider_viewport_offset)
+            .then(|| self.resize_popup_to_provider(self.selected_provider))
+            .flatten()
     }
 
     pub(super) fn select_provider_tab(&mut self, provider: ProviderId) -> Task<Message> {
@@ -266,7 +296,11 @@ impl AppModel {
         &mut self,
         provider: ProviderId,
     ) -> Option<Task<Message>> {
-        let new_size = popup_view::popup_session_size(&self.state, provider);
+        let new_size = popup_view::popup_session_size_for_page(
+            &self.state,
+            provider,
+            self.detail_account_page,
+        );
         self.resize_popup_to_size(new_size)
     }
 
@@ -297,7 +331,7 @@ impl AppModel {
         }
 
         let popup_size = self.popup_size_for_route(&self.popup_route.clone());
-        let max_width = popup_view::POPUP_COLUMN_WIDTH;
+        let max_width = popup_view::popup_max_width(&self.state);
         self.popup_size = Some(popup_size);
         tracing::info!(
             process_id = %self.process_info.id,
@@ -307,6 +341,7 @@ impl AppModel {
         );
         cosmic::task::message(cosmic::Action::Cosmic(cosmic::app::Action::Surface(
             app_popup::<Self>(
+                |_| Default::default(),
                 move |state| {
                     let new_id = Id::unique();
                     state.popup.replace(new_id);
@@ -330,11 +365,14 @@ impl AppModel {
     pub(super) fn write_config(&mut self, f: impl FnOnce(&mut Config)) {
         let mut new_config = self.config.clone();
         f(&mut new_config);
+        if new_config == self.config {
+            return;
+        }
         if demo_env::is_active() {
             self.config = new_config;
             return;
         }
-        let ctx = match cosmic_config::Config::new(
+        let ctx = match crate::config::cosmic_config_context(
             <Self as cosmic::Application>::APP_ID,
             Config::VERSION,
         ) {
@@ -350,7 +388,9 @@ impl AppModel {
                 return;
             }
         };
-        if let Err(error) = new_config.write_entry(&ctx) {
+        if let Err(error) =
+            crate::config::write_changed_config_entries(&ctx, &self.config, &new_config)
+        {
             tracing::error!(
                 pid = self.process_info.pid,
                 process_id = %self.process_info.id,
@@ -368,7 +408,10 @@ impl AppModel {
         provider: ProviderId,
         enabled: bool,
     ) -> Task<Message> {
-        let previous = self.config.provider_enabled(provider);
+        let previous = self
+            .state
+            .provider(provider)
+            .is_some_and(|entry| entry.enabled);
         if let Some(entry) = self.state.provider_mut(provider) {
             entry.enabled = enabled;
         }
@@ -386,7 +429,7 @@ impl AppModel {
             selected_provider = self.selected_provider.label(),
             "provider enabled setting changed"
         );
-        runtime::reconcile_provider(&self.config, &mut self.state, provider);
+        runtime::reconcile_provider(&self.config, &self.detection, &mut self.state, provider);
         self.sync_panel_suggested_bounds();
         if enabled
             && self
@@ -457,39 +500,6 @@ impl AppModel {
         Task::none()
     }
 
-    pub(super) fn set_show_all_accounts(
-        &mut self,
-        provider: ProviderId,
-        show_all: bool,
-    ) -> Task<Message> {
-        let previous = self.config.show_all_accounts(provider);
-        self.write_config(|c| {
-            c.set_provider_show_all(provider, show_all);
-            if show_all {
-                *c.selected_account_ids_mut(provider) =
-                    provider_show_all_account_selection(c, provider);
-            }
-        });
-        tracing::info!(
-            process_id = %self.process_info.id,
-            provider = provider.label(),
-            previous,
-            show_all,
-            selected_account_count = self.config.selected_account_ids(provider).len(),
-            "show all accounts setting changed"
-        );
-        runtime::reconcile_provider(&self.config, &mut self.state, provider);
-        if self
-            .state
-            .provider(provider)
-            .is_some_and(|entry| entry.account_status == AccountSelectionStatus::Ready)
-        {
-            return self.request_provider_refresh(provider, RefreshRequestReason::AccountAction);
-        }
-        self.persist_runtime_if_owner("show_all_accounts_changed");
-        Task::none()
-    }
-
     pub(super) fn on_host_cli_auth_changed(&mut self) {
         if demo_env::is_active() {
             return;
@@ -499,11 +509,20 @@ impl AppModel {
             owner_status = self.owner_status(),
             "host CLI auth change detected"
         );
+        let detection = crate::detection::startup_snapshot(crate::config::host_user_home_dir());
+        let detection_changed = detection != self.detection;
+        if detection_changed {
+            tracing::info!(
+                process_id = %self.process_info.id,
+                detected_providers = ?detection.detected_providers(),
+                "provider detection changed"
+            );
+            self.detection = detection;
+        }
+
         let previous_state = self.state.clone();
-        runtime::reconcile_provider(&self.config, &mut self.state, ProviderId::Codex);
-        runtime::reconcile_provider(&self.config, &mut self.state, ProviderId::Claude);
-        runtime::reconcile_provider(&self.config, &mut self.state, ProviderId::Gemini);
-        if self.state == previous_state {
+        runtime::reconcile_state(&self.config, &self.detection, &mut self.state);
+        if !detection_changed && self.state == previous_state {
             tracing::info!(
                 process_id = %self.process_info.id,
                 owner_status = self.owner_status(),
@@ -511,6 +530,7 @@ impl AppModel {
             );
             return;
         }
+        self.selected_provider = select_provider(self.config.selected_provider, &self.state);
         tracing::info!(
             process_id = %self.process_info.id,
             owner_status = self.owner_status(),
@@ -532,13 +552,13 @@ impl AppModel {
             owner_status = self.owner_status(),
             changed_keys = %keys.join(","),
             selected_provider = config.selected_provider.label(),
-            enabled_provider_count = enabled_provider_count(&config),
+            enabled_provider_count = enabled_provider_count(&self.state),
             selected_account_count = selected_account_count(&config),
             managed_account_count = managed_account_count(&config),
             "config watcher update applied"
         );
         self.config = config;
-        runtime::reconcile_state(&self.config, &mut self.state);
+        runtime::reconcile_state(&self.config, &self.detection, &mut self.state);
         demo_env::apply(&self.config, &mut self.state);
         self.selected_provider = select_provider(self.config.selected_provider, &self.state);
         self.persist_runtime_if_owner("external_config_update");
@@ -550,7 +570,7 @@ impl AppModel {
         shared_runtime: crate::shared_state::SharedRuntimeState,
     ) {
         let mut next_state = shared_runtime.app_state;
-        runtime::reconcile_shared_state(&self.config, &mut next_state);
+        runtime::reconcile_shared_state(&self.config, &self.detection, &mut next_state);
         demo_env::apply(&self.config, &mut next_state);
         if self.state == next_state {
             return;
@@ -584,7 +604,16 @@ impl AppModel {
         self.write_config(|new_config| {
             registry::toggle_account_selection(provider, new_config, account_id);
         });
-        runtime::reconcile_provider(&self.config, &mut self.state, provider);
+        runtime::reconcile_provider(&self.config, &self.detection, &mut self.state, provider);
+        demo_env::apply(&self.config, &mut self.state);
+        if provider == self.selected_provider {
+            self.detail_account_page = self
+                .state
+                .accounts_for(provider)
+                .iter()
+                .position(|account| account.account_id == account_id)
+                .unwrap_or(0);
+        }
         let is_selected = self
             .state
             .provider(provider)
@@ -608,12 +637,21 @@ impl AppModel {
             "account selection changed"
         );
         self.sync_panel_suggested_bounds();
-        if is_selected {
+        let refresh = if is_selected {
             self.request_provider_refresh(provider, RefreshRequestReason::AccountAction)
         } else {
             self.persist_runtime_if_owner("account_selection_changed");
             Task::none()
+        };
+        if provider == self.selected_provider
+            && matches!(self.popup_route, PopupRoute::ProviderDetail)
+        {
+            self.popup_body_measurements.clear_provider(provider);
+            if let Some(resize) = self.resize_popup_to_provider(provider) {
+                return Task::batch(vec![resize, refresh]);
+            }
         }
+        refresh
     }
 
     pub(super) fn delete_account(
@@ -634,17 +672,20 @@ impl AppModel {
 pub(super) fn popup_route_label(route: PopupRoute) -> &'static str {
     match route {
         PopupRoute::ProviderDetail => "provider_detail",
-        PopupRoute::Settings(SettingsRoute::General) => "settings_general",
-        PopupRoute::Settings(SettingsRoute::Provider(ProviderId::Codex)) => "settings_codex",
-        PopupRoute::Settings(SettingsRoute::Provider(ProviderId::Claude)) => "settings_claude",
-        PopupRoute::Settings(SettingsRoute::Provider(ProviderId::Cursor)) => "settings_cursor",
-        PopupRoute::Settings(SettingsRoute::Provider(ProviderId::Gemini)) => "settings_gemini",
-        PopupRoute::Settings(SettingsRoute::Provider(ProviderId::Copilot)) => "settings_copilot",
-        PopupRoute::Settings(SettingsRoute::Provider(ProviderId::Minimax)) => "settings_minimax",
-        PopupRoute::Settings(SettingsRoute::Provider(ProviderId::Kimi)) => "settings_kimi",
-        PopupRoute::Settings(SettingsRoute::Provider(ProviderId::OpenCodeGo)) => {
-            "settings_opencode_go"
-        }
+        PopupRoute::Settings => "settings",
+        PopupRoute::ManageProviders => "manage_providers",
+        PopupRoute::ManageAccounts(provider) => match provider {
+            ProviderId::Codex => "manage_accounts_codex",
+            ProviderId::Claude => "manage_accounts_claude",
+            ProviderId::Cursor => "manage_accounts_cursor",
+            ProviderId::Gemini => "manage_accounts_gemini",
+            ProviderId::Copilot => "manage_accounts_copilot",
+            ProviderId::Minimax => "manage_accounts_minimax",
+            ProviderId::Kimi => "manage_accounts_kimi",
+            ProviderId::Antigravity => "manage_accounts_antigravity",
+            ProviderId::OpenCodeGo => "manage_accounts_opencode_go",
+        },
+        PopupRoute::About => "about",
     }
 }
 
@@ -654,15 +695,16 @@ pub(super) fn popup_route_provider_label(
 ) -> &'static str {
     match route {
         PopupRoute::ProviderDetail => selected_provider.label(),
-        PopupRoute::Settings(SettingsRoute::General) => "none",
-        PopupRoute::Settings(SettingsRoute::Provider(provider)) => provider.label(),
+        PopupRoute::Settings | PopupRoute::ManageProviders | PopupRoute::About => "none",
+        PopupRoute::ManageAccounts(provider) => provider.label(),
     }
 }
 
-fn enabled_provider_count(config: &Config) -> usize {
-    ProviderId::ALL
-        .into_iter()
-        .filter(|provider| config.provider_enabled(*provider))
+fn enabled_provider_count(state: &crate::model::AppState) -> usize {
+    state
+        .providers
+        .iter()
+        .filter(|provider| provider.enabled)
         .count()
 }
 
@@ -680,4 +722,5 @@ fn managed_account_count(config: &Config) -> usize {
         + config.gemini_managed_accounts.len()
         + config.copilot_managed_accounts.len()
         + config.minimax_managed_accounts.len()
+        + config.antigravity_managed_accounts.len()
 }

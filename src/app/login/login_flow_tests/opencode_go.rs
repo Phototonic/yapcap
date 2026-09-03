@@ -41,23 +41,18 @@ fn opencode_go_saved_login_persists_selection_and_reconciles_runtime() {
 }
 
 #[test]
-fn opencode_go_saved_login_adds_new_account_to_show_all_selection_under_cap() {
+fn opencode_go_saved_login_selects_new_account() {
     let (_env, _root) = isolated_xdg("opencode-go-show-all-under-cap");
     let mut app = test_app();
     app.config.opencode_go_managed_accounts = vec![opencode_go_account("go-existing", "Existing")];
     app.config.selected_opencode_go_account_ids = vec!["go-existing".to_string()];
-    app.config
-        .set_provider_show_all(ProviderId::OpenCodeGo, true);
     app.opencode_go_login = Some(OpenCodeGoLoginState::new("go-new".to_string()));
     let _ = OpenCodeGoLoginFlow::on_event(
         &mut app,
         OpenCodeGoLoginEvent::ApiKeyChanged("new-key".to_string()),
     );
     let _ = OpenCodeGoLoginFlow::on_event(&mut app, OpenCodeGoLoginEvent::Saved);
-    assert_eq!(
-        app.config.selected_opencode_go_account_ids,
-        ["go-existing", "go-new"]
-    );
+    assert_eq!(app.config.selected_opencode_go_account_ids, ["go-new"]);
     assert!(
         app.config
             .opencode_go_managed_accounts
@@ -67,7 +62,7 @@ fn opencode_go_saved_login_adds_new_account_to_show_all_selection_under_cap() {
 }
 
 #[test]
-fn opencode_go_saved_login_keeps_new_account_unselected_at_show_all_cap() {
+fn opencode_go_saved_login_replaces_existing_selection() {
     let (_env, _root) = isolated_xdg("opencode-go-show-all-at-cap");
     let mut app = test_app();
     app.config.opencode_go_managed_accounts = (1..=4)
@@ -75,20 +70,13 @@ fn opencode_go_saved_login_keeps_new_account_unselected_at_show_all_cap() {
         .collect();
     app.config.selected_opencode_go_account_ids =
         (1..=4).map(|index| format!("go-{index}")).collect();
-    app.config
-        .set_provider_show_all(ProviderId::OpenCodeGo, true);
     app.opencode_go_login = Some(OpenCodeGoLoginState::new("go-new".to_string()));
     let _ = OpenCodeGoLoginFlow::on_event(
         &mut app,
         OpenCodeGoLoginEvent::ApiKeyChanged("new-key".to_string()),
     );
     let _ = OpenCodeGoLoginFlow::on_event(&mut app, OpenCodeGoLoginEvent::Saved);
-    assert_eq!(app.config.selected_opencode_go_account_ids.len(), 4);
-    assert!(
-        !app.config
-            .selected_opencode_go_account_ids
-            .contains(&"go-new".to_string())
-    );
+    assert_eq!(app.config.selected_opencode_go_account_ids, ["go-new"]);
     assert!(
         app.config
             .opencode_go_managed_accounts

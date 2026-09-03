@@ -40,6 +40,8 @@ pub struct ProviderAccountMetadata {
     pub gemini_last_tier_id: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub gemini_last_cloudaicompanion_project: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub antigravity_last_tier_id: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -144,6 +146,7 @@ impl ProviderAccountStorage {
             updated_at: now,
             gemini_last_tier_id: None,
             gemini_last_cloudaicompanion_project: None,
+            antigravity_last_tier_id: None,
         };
 
         self.write_json_file(&account_id, METADATA_FILE, &metadata)?;
@@ -353,6 +356,7 @@ impl ProviderAccountStorage {
             ProviderId::Copilot => "copilot",
             ProviderId::Minimax => "minimax",
             ProviderId::Kimi => "kimi",
+            ProviderId::Antigravity => "antigravity",
             ProviderId::OpenCodeGo => "opencode_go",
         };
         let millis = Utc::now().timestamp_millis();

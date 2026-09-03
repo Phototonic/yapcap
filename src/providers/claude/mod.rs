@@ -371,6 +371,7 @@ fn normalize_window(
         reset_at,
         window_seconds: Some(window_seconds),
         reset_description: reset_at.map(|dt| dt.to_rfc3339()),
+        group: None,
     }))
 }
 

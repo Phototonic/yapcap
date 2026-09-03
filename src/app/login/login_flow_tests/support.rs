@@ -1,7 +1,7 @@
 use crate::app::AppModel;
 use crate::config::{
-    Config, ManagedClaudeAccountConfig, ManagedCodexAccountConfig, ManagedCopilotAccountConfig,
-    ManagedGeminiAccountConfig,
+    Config, ManagedAntigravityAccountConfig, ManagedClaudeAccountConfig, ManagedCodexAccountConfig,
+    ManagedCopilotAccountConfig, ManagedGeminiAccountConfig,
 };
 use crate::model::ProviderId;
 use crate::providers::cursor::CursorScanState;
@@ -15,9 +15,12 @@ pub(super) fn test_app() -> AppModel {
         popup: None,
         config: Config::default(),
         state: crate::model::AppState::empty(),
+        detection: crate::detection::DetectionSnapshot::default(),
         selected_provider: ProviderId::Codex,
         detail_account_page: 0,
+        provider_viewport_offset: 0,
         popup_route: crate::app::PopupRoute::ProviderDetail,
+        provider_picker_open: false,
         update_status: crate::updates::UpdateStatus::Unchecked,
         launch_mode: crate::app::LaunchMode::Standalone,
         popup_size: None,
@@ -31,7 +34,6 @@ pub(super) fn test_app() -> AppModel {
             lock_path,
         },
         refresh_owner: None,
-        opencode_import_availability: Default::default(),
         codex_login: None,
         codex_login_handle: None,
         claude_login: None,
@@ -46,6 +48,8 @@ pub(super) fn test_app() -> AppModel {
         minimax_login_handle: None,
         kimi_login: None,
         kimi_login_handle: None,
+        antigravity_login: None,
+        antigravity_login_handle: None,
         opencode_go_login: None,
         opencode_go_login_handle: None,
     }
@@ -99,6 +103,20 @@ pub(super) fn gemini_account(id: &str) -> ManagedGeminiAccountConfig {
         hd: None,
         last_tier_id: None,
         last_cloudaicompanion_project: None,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        last_authenticated_at: None,
+    }
+}
+
+pub(super) fn antigravity_account(id: &str) -> ManagedAntigravityAccountConfig {
+    ManagedAntigravityAccountConfig {
+        id: id.to_string(),
+        label: id.to_string(),
+        account_root: PathBuf::from("/tmp/yapcap/antigravity"),
+        email: format!("{id}@example.com"),
+        sub: id.to_string(),
+        last_tier_id: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
         last_authenticated_at: None,

@@ -1,19 +1,18 @@
 use super::applet::{
     AppletBarLayout, applet_bar_layout, applet_bar_width, applet_button_size,
-    applet_percent_cell_alignment, applet_percent_cell_width, applet_percent_text, select_provider,
-    selected_provider_all_bar_layouts,
+    applet_fallback_button_size, applet_percent_cell_alignment, applet_percent_cell_width,
+    applet_percent_text, panel_fallback_active, select_provider, selected_provider_all_bar_layouts,
 };
 use super::popup_view::{
-    POPUP_COLUMN_WIDTH, PROVIDER_TAB_ROW_HEIGHT, account_page_next, account_page_previous,
-    clamp_account_page, longest_provider_label_glyphs, pager_account_label, popup_session_size,
-    popup_session_size_with_body_height, popup_settings_size, provider_nav_height,
-    provider_tab_bar_area_height, provider_tab_card_inner_width, provider_tab_content_height,
-    provider_tab_row_sizes, settings_category_row_sizes, settings_nav_height, tab_percents,
+    POPUP_COLUMN_WIDTH, account_page_next, account_page_previous, clamp_account_page,
+    pager_account_label, popup_session_size, popup_session_size_for_page, popup_settings_size,
+    provider_viewport, provider_viewport_navigation_visible,
 };
+use super::refresh::should_refresh_account_statuses;
 use super::{
     APPLET_ACCOUNT_GAP, APPLET_ICON_GAP, APPLET_PERCENT_ACCOUNT_GAP, AppModel, AppState, Config,
-    LaunchMode, Message, PagerDirection, PanelIconStyle, PopupBodyMeasurements, PopupRoute,
-    ProviderId, Size, UsageAmountFormat, automatic_refresh_poll_interval, format_retry_delay,
+    LaunchMode, Message, PanelIconStyle, PopupBodyMeasurements, PopupRoute, ProviderId, Size,
+    UsageAmountFormat, automatic_refresh_poll_interval, format_retry_delay,
     popup_size_limits_with_max_width, popup_size_tuple, update_retry_delay,
 };
 use crate::account_storage::{NewProviderAccount, ProviderAccountStorage, ProviderAccountTokens};
@@ -96,7 +95,8 @@ fn non_owner_tick_does_not_run_automatic_refresh() {
 fn owner_tick_skips_disabled_provider() {
     let owner = refresh_owner("owner-disabled");
     let mut app = test_app(Some(owner));
-    app.config.cursor_enabled = false;
+    app.config.cursor_enablement = crate::config::ProviderEnablement::Disabled;
+    app.state.provider_mut(ProviderId::Cursor).unwrap().enabled = false;
     ready_selected_provider(&mut app.state, ProviderId::Cursor);
 
     let _task = app.handle_message(Message::Tick);
@@ -124,9 +124,64 @@ fn non_owner_refresh_now_writes_shared_control_requests_without_refreshing() {
 }
 
 #[test]
+fn provider_viewport_moves_one_provider_without_changing_the_selected_provider() {
+    let mut app = test_app(None);
+    for provider in ProviderId::ALL {
+        app.state.provider_mut(provider).unwrap().enabled = true;
+    }
+
+    let _ = app.handle_message(Message::PageProviderViewport(super::PagerDirection::Next));
+
+    assert_eq!(app.provider_viewport_offset, 1);
+    assert_eq!(app.selected_provider, ProviderId::Codex);
+
+    let _ = app.handle_message(Message::PageProviderViewport(
+        super::PagerDirection::Previous,
+    ));
+
+    assert_eq!(app.provider_viewport_offset, 0);
+}
+
+#[test]
+fn provider_viewport_stops_at_each_end_without_wrapping() {
+    let mut app = test_app(None);
+    for provider in ProviderId::ALL {
+        app.state.provider_mut(provider).unwrap().enabled = true;
+    }
+
+    for _ in 0..ProviderId::ALL.len() {
+        let _ = app.handle_message(Message::PageProviderViewport(super::PagerDirection::Next));
+    }
+
+    assert_eq!(app.provider_viewport_offset, ProviderId::ALL.len() - 6);
+    assert_eq!(app.selected_provider, ProviderId::Codex);
+
+    let _ = app.handle_message(Message::PageProviderViewport(
+        super::PagerDirection::Previous,
+    ));
+
+    assert_eq!(app.provider_viewport_offset, ProviderId::ALL.len() - 7);
+}
+
+#[test]
+fn selecting_a_provider_preserves_the_viewport_offset() {
+    let mut app = test_app(None);
+    for provider in ProviderId::ALL {
+        app.state.provider_mut(provider).unwrap().enabled = true;
+    }
+    app.provider_viewport_offset = 2;
+
+    let _ = app.handle_message(Message::SelectProvider(ProviderId::Gemini));
+
+    assert_eq!(app.selected_provider, ProviderId::Gemini);
+    assert_eq!(app.provider_viewport_offset, 2);
+}
+
+#[test]
 fn refresh_now_excludes_disabled_providers_from_requests() {
     let mut app = test_app(None);
-    app.config.claude_enabled = false;
+    app.config.claude_enablement = crate::config::ProviderEnablement::Disabled;
+    app.state.provider_mut(ProviderId::Claude).unwrap().enabled = false;
 
     let _task = app.handle_message(Message::RefreshNow);
 
@@ -174,6 +229,7 @@ fn owner_ignores_duplicate_request_for_refreshing_provider() {
 
 #[test]
 fn owner_consumes_request_for_not_ready_provider() {
+    let _env = crate::test_support::test_env();
     let owner = refresh_owner("owner-not-ready-request");
     let mut app = test_app(Some(owner));
 
@@ -282,6 +338,7 @@ fn shared_runtime_metadata_notification_does_not_apply_partial_document() {
 #[test]
 fn shared_runtime_update_preserves_refreshing_provider() {
     let mut app = test_app(None);
+    app.config.codex_enablement = crate::config::ProviderEnablement::Enabled;
     let mut shared_state = app.state.clone();
     shared_state
         .provider_mut(ProviderId::Codex)
@@ -346,21 +403,98 @@ fn provider_refresh_completion_consumes_shared_control_request() {
 fn config_update_applies_selected_provider_without_changing_popup_route() {
     let mut app = test_app(None);
     app.popup = Some(cosmic::iced::window::Id::unique());
-    app.popup_route = PopupRoute::Settings(super::SettingsRoute::General);
+    app.popup_route = PopupRoute::Settings;
     let mut config = app.config.clone();
     config.selected_provider = ProviderId::Claude;
+    config.claude_enablement = crate::config::ProviderEnablement::Enabled;
 
     let _task = app.handle_message(Message::UpdateConfig(
         Box::new(config),
-        vec!["selected_provider"],
+        vec!["selected_provider", "claude_enablement"],
     ));
 
     assert_eq!(app.selected_provider, ProviderId::Claude);
+    assert_eq!(app.popup_route, PopupRoute::Settings);
+    assert!(app.popup.is_some());
+}
+
+#[test]
+fn provider_management_routes_are_explicit_and_account_scoped() {
+    let mut app = test_app(None);
+
+    let _task = app.handle_message(Message::NavigateTo(PopupRoute::ManageProviders));
+    assert_eq!(app.popup_route, PopupRoute::ManageProviders);
+
+    let _task = app.handle_message(Message::NavigateTo(PopupRoute::ManageAccounts(
+        ProviderId::Copilot,
+    )));
     assert_eq!(
         app.popup_route,
-        PopupRoute::Settings(super::SettingsRoute::General)
+        PopupRoute::ManageAccounts(ProviderId::Copilot)
     );
-    assert!(app.popup.is_some());
+}
+
+#[test]
+fn about_route_returns_to_provider_detail() {
+    let mut app = test_app(None);
+
+    let _task = app.handle_message(Message::NavigateTo(PopupRoute::About));
+    assert_eq!(app.popup_route, PopupRoute::About);
+
+    let _task = app.handle_message(Message::NavigateTo(PopupRoute::ProviderDetail));
+    assert_eq!(app.popup_route, PopupRoute::ProviderDetail);
+}
+
+#[test]
+fn global_settings_messages_preserve_each_configuration_control() {
+    let mut app = test_app(None);
+
+    let _task = app.handle_message(Message::SetRefreshInterval(900));
+    let _task = app.handle_message(Message::SetPanelIconStyle(PanelIconStyle::PercentOnly));
+    let _task = app.handle_message(Message::SetResetTimeFormat(
+        crate::config::ResetTimeFormat::Absolute,
+    ));
+    let _task = app.handle_message(Message::SetUsageAmountFormat(UsageAmountFormat::Left));
+
+    assert_eq!(app.config.refresh_interval_seconds, 900);
+    assert_eq!(app.config.panel_icon_style, PanelIconStyle::PercentOnly);
+    assert_eq!(
+        app.config.reset_time_format,
+        crate::config::ResetTimeFormat::Absolute
+    );
+    assert_eq!(app.config.usage_amount_format, UsageAmountFormat::Left);
+}
+
+#[test]
+fn update_check_messages_keep_current_error_and_available_states() {
+    let mut app = test_app(None);
+
+    let _task = app.handle_message(Message::UpdateChecked {
+        status: UpdateStatus::NoUpdate,
+        attempt: 0,
+    });
+    assert_eq!(app.update_status, UpdateStatus::NoUpdate);
+
+    let available = UpdateStatus::UpdateAvailable {
+        version: "9.9.9".to_string(),
+        url: "https://example.invalid/release".to_string(),
+    };
+    let _task = app.handle_message(Message::UpdateChecked {
+        status: available.clone(),
+        attempt: 0,
+    });
+    assert_eq!(app.update_status, available);
+
+    let _task = app.handle_message(Message::UpdateChecked {
+        status: UpdateStatus::Error("offline".to_string()),
+        attempt: 0,
+    });
+    assert!(
+        matches!(&app.update_status, UpdateStatus::Error(reason) if reason.contains("offline"))
+    );
+
+    let _task = app.handle_message(Message::CheckUpdates);
+    assert_eq!(app.update_status, UpdateStatus::Unchecked);
 }
 
 #[test]
@@ -379,16 +513,8 @@ fn partial_config_update_preserves_locally_written_account() {
 }
 
 #[test]
-fn quit_requests_runtime_exit() {
-    let mut app = test_app(None);
-
-    let task = app.handle_message(Message::Quit);
-
-    assert_eq!(task.units(), 1);
-}
-
-#[test]
 fn selecting_stale_enabled_provider_writes_provider_selected_request() {
+    let _env = crate::test_support::test_env();
     let mut app = test_app(None);
     ready_selected_provider(&mut app.state, ProviderId::Claude);
     selected_account_without_usage(&mut app.state, ProviderId::Claude);
@@ -407,7 +533,7 @@ fn selecting_stale_enabled_provider_writes_provider_selected_request() {
 #[test]
 fn selecting_disabled_provider_does_not_request_refresh() {
     let mut app = test_app(None);
-    app.config.cursor_enabled = false;
+    app.config.cursor_enablement = crate::config::ProviderEnablement::Disabled;
     if let Some(cursor) = app.state.provider_mut(ProviderId::Cursor) {
         cursor.enabled = false;
     }
@@ -422,7 +548,7 @@ fn selecting_provider_preserves_local_popup_state() {
     let mut app = test_app(None);
     let popup = cosmic::iced::window::Id::unique();
     app.popup = Some(popup);
-    app.popup_route = PopupRoute::Settings(super::SettingsRoute::Provider(ProviderId::Codex));
+    app.popup_route = PopupRoute::ManageAccounts(ProviderId::Codex);
     ready_selected_provider(&mut app.state, ProviderId::Gemini);
     selected_account_without_usage(&mut app.state, ProviderId::Gemini);
 
@@ -431,42 +557,13 @@ fn selecting_provider_preserves_local_popup_state() {
     assert_eq!(app.popup, Some(popup));
     assert_eq!(
         app.popup_route,
-        PopupRoute::Settings(super::SettingsRoute::Provider(ProviderId::Codex))
+        PopupRoute::ManageAccounts(ProviderId::Codex)
     );
-}
-
-#[test]
-fn account_pager_cycles_without_touching_config_selection() {
-    let mut app = test_app(None);
-    {
-        let codex = app.state.provider_mut(ProviderId::Codex).unwrap();
-        codex.selected_account_ids = vec!["a".to_string(), "b".to_string()];
-    }
-    app.config.selected_codex_account_ids = vec!["a".to_string(), "b".to_string()];
-    for id in ["a", "b"] {
-        let account = ProviderAccountRuntimeState::empty(ProviderId::Codex, id, id);
-        app.state.upsert_account(account);
-    }
-
-    let _ = app.handle_message(Message::PageProviderAccount(PagerDirection::Next));
-    assert_eq!(app.detail_account_page, 1);
-    let _ = app.handle_message(Message::PageProviderAccount(PagerDirection::Next));
-    assert_eq!(app.detail_account_page, 0);
-    let _ = app.handle_message(Message::PageProviderAccount(PagerDirection::Previous));
-    assert_eq!(app.detail_account_page, 1);
-    assert_eq!(
-        app.config.selected_codex_account_ids,
-        ["a".to_string(), "b".to_string()]
-    );
-
-    ready_selected_provider(&mut app.state, ProviderId::Claude);
-    selected_account_without_usage(&mut app.state, ProviderId::Claude);
-    let _ = app.handle_message(Message::SelectProvider(ProviderId::Claude));
-    assert_eq!(app.detail_account_page, 0);
 }
 
 #[test]
 fn non_owner_account_selection_requests_owner_refresh_without_running_it() {
+    let _env = crate::test_support::test_env();
     let mut app = test_app(None);
     app.config.copilot_managed_accounts = vec![copilot_account("copilot-1", "octocat")];
     runtime_reconcile_provider(&app.config, &mut app.state, ProviderId::Copilot);
@@ -516,7 +613,55 @@ fn owner_account_selection_runs_requested_refresh() {
 }
 
 #[test]
+fn demo_codex_account_selection_keeps_account_rows() {
+    let mut env = crate::test_support::test_env();
+    env.set("YAPCAP_DEMO", "1");
+    let mut app = test_app(None);
+    crate::demo_env::apply_config(&mut app.config);
+    crate::demo_env::apply(&app.config, &mut app.state);
+
+    let task = app.handle_message(Message::ToggleAccountSelection(
+        ProviderId::Codex,
+        "yapcap-demo:codex-free".to_string(),
+    ));
+
+    assert_eq!(task.units(), 0);
+    assert_eq!(
+        app.config.selected_account_ids(ProviderId::Codex),
+        ["yapcap-demo:codex-free"]
+    );
+    assert_eq!(app.state.accounts_for(ProviderId::Codex).len(), 2);
+    assert_eq!(
+        app.state
+            .provider(ProviderId::Codex)
+            .unwrap()
+            .selected_account_ids,
+        ["yapcap-demo:codex-free"]
+    );
+
+    let task = app.handle_message(Message::ToggleAccountSelection(
+        ProviderId::Codex,
+        "yapcap-demo:codex-free".to_string(),
+    ));
+
+    assert_eq!(task.units(), 0);
+    assert_eq!(
+        app.config.selected_account_ids(ProviderId::Codex),
+        ["yapcap-demo:codex-free"]
+    );
+    assert_eq!(app.state.accounts_for(ProviderId::Codex).len(), 2);
+    assert_eq!(
+        app.state
+            .provider(ProviderId::Codex)
+            .unwrap()
+            .selected_account_ids,
+        ["yapcap-demo:codex-free"]
+    );
+}
+
+#[test]
 fn non_owner_provider_disable_reconciles_locally_without_publishing_runtime() {
+    let _env = crate::test_support::test_env();
     let mut app = test_app(None);
     app.config.copilot_managed_accounts = vec![copilot_account("copilot-1", "octocat")];
     app.config.selected_copilot_account_ids = vec!["copilot-1".to_string()];
@@ -525,7 +670,10 @@ fn non_owner_provider_disable_reconciles_locally_without_publishing_runtime() {
     let task = app.handle_message(Message::SetProviderEnabled(ProviderId::Copilot, false));
 
     assert_eq!(task.units(), 0);
-    assert!(!app.config.provider_enabled(ProviderId::Copilot));
+    assert_eq!(
+        app.config.provider_enablement(ProviderId::Copilot),
+        crate::config::ProviderEnablement::Disabled
+    );
     assert!(!app.state.provider(ProviderId::Copilot).unwrap().enabled);
     assert!(app.shared_control.requests.is_empty());
 }
@@ -650,8 +798,8 @@ fn applet_button_size_percent_styles_ignore_current_percent_digits() {
         selected_provider_all_bar_layouts(&wide_state, ProviderId::Codex, UsageAmountFormat::Used)
             .len();
 
-    assert_eq!(short_n, 2);
-    assert_eq!(wide_n, 2);
+    assert_eq!(short_n, 1);
+    assert_eq!(wide_n, 1);
     assert_eq!(
         applet_button_size(&core, PanelIconStyle::PercentOnly, short_n),
         applet_button_size(&core, PanelIconStyle::PercentOnly, wide_n)
@@ -663,163 +811,229 @@ fn applet_button_size_percent_styles_ignore_current_percent_digits() {
 }
 
 #[test]
+fn panel_fallback_is_active_when_no_provider_has_accounts() {
+    let state = AppState::empty();
+
+    assert!(panel_fallback_active(&state));
+}
+
+#[test]
+fn panel_fallback_clears_when_an_enabled_provider_has_an_account() {
+    let mut state = AppState::empty();
+    state.upsert_account(ProviderAccountRuntimeState::empty(
+        ProviderId::Codex,
+        "codex-1",
+        "Codex",
+    ));
+
+    assert!(!panel_fallback_active(&state));
+}
+
+#[test]
+fn panel_fallback_stays_active_when_only_disabled_providers_have_accounts() {
+    let mut state = AppState::empty();
+    state.upsert_provider(ProviderRuntimeState::disabled(ProviderId::Codex));
+    state.upsert_account(ProviderAccountRuntimeState::empty(
+        ProviderId::Codex,
+        "codex-1",
+        "Codex",
+    ));
+
+    assert!(panel_fallback_active(&state));
+}
+
+#[test]
+fn panel_fallback_stays_active_when_all_providers_are_disabled() {
+    let mut state = AppState::empty();
+    for provider in &mut state.providers {
+        provider.enabled = false;
+    }
+
+    assert!(panel_fallback_active(&state));
+}
+
+#[test]
+fn applet_fallback_button_size_is_icon_only() {
+    let core = cosmic::Core::default();
+    let (suggested_w, suggested_h) = core.applet.suggested_size(false);
+    let (major_padding, minor_padding) = core.applet.suggested_padding(false);
+    let (horizontal_padding, vertical_padding) = if core.applet.is_horizontal() {
+        (major_padding, minor_padding)
+    } else {
+        (minor_padding, major_padding)
+    };
+    let icon_px = suggested_w.min(suggested_h);
+
+    let (width, height) = applet_fallback_button_size(&core);
+
+    assert_eq!(
+        width,
+        f32::from(icon_px) + f32::from(2 * horizontal_padding)
+    );
+    assert_eq!(height, f32::from(suggested_h + 2 * vertical_padding));
+    let (bars_width, bars_height) = applet_button_size(&core, PanelIconStyle::LogoAndBars, 1);
+    assert!(width < bars_width);
+    assert_eq!(height, bars_height);
+}
+
+#[test]
 fn applet_percent_groups_are_capped_to_four_selected_accounts() {
     let state = state_with_selected_account_percents(&[1.0, 2.0, 3.0, 4.0, 5.0]);
 
     let percents =
         selected_provider_all_bar_layouts(&state, ProviderId::Codex, UsageAmountFormat::Used);
 
-    assert_eq!(percents.len(), 4);
-    assert_eq!(percents.last().map(|layout| layout.primary), Some(4.0));
+    assert_eq!(percents.len(), 1);
+    assert_eq!(percents.last().map(|layout| layout.primary), Some(1.0));
 }
 
 #[test]
-fn popup_width_stays_compact_for_any_selected_account_count() {
-    for count in 1..=4 {
-        let state = state_with_selected_accounts(count);
+fn popup_session_width_is_capped_to_four_selected_accounts() {
+    let state = state_with_selected_account_percents(&[1.0, 2.0, 3.0, 4.0, 5.0]);
 
-        assert_eq!(
-            popup_session_size(&state, ProviderId::Codex).width,
-            POPUP_COLUMN_WIDTH,
-        );
-        assert_eq!(
-            popup_session_size_with_body_height(&state, ProviderId::Codex, 300.0).width,
-            POPUP_COLUMN_WIDTH,
-        );
-    }
+    let size = popup_session_size(&state, ProviderId::Codex);
+
+    assert_eq!(size.width, POPUP_COLUMN_WIDTH);
 }
 
 #[test]
-fn popup_height_adds_pager_for_multi_account_providers() {
-    let one = popup_session_size(&state_with_selected_accounts(1), ProviderId::Codex).height;
-    let two = popup_session_size(&state_with_selected_accounts(2), ProviderId::Codex).height;
-    let three = popup_session_size(&state_with_selected_accounts(3), ProviderId::Codex).height;
-    let four = popup_session_size(&state_with_selected_accounts(4), ProviderId::Codex).height;
-
-    assert!(two > one);
-    assert_eq!(two, three);
-    assert_eq!(three, four);
-}
-
-#[test]
-fn account_page_cycles_and_wraps_and_clamps() {
-    assert_eq!(account_page_next(0, 3), 1);
-    assert_eq!(account_page_next(2, 3), 0);
+fn account_pager_wraps_and_clamps() {
+    assert_eq!(account_page_next(1, 2), 0);
+    assert_eq!(account_page_previous(0, 2), 1);
     assert_eq!(account_page_next(0, 0), 0);
-    assert_eq!(account_page_previous(0, 3), 2);
-    assert_eq!(account_page_previous(2, 3), 1);
     assert_eq!(account_page_previous(0, 0), 0);
-    assert_eq!(clamp_account_page(5, 3), 2);
-    assert_eq!(clamp_account_page(1, 3), 1);
-    assert_eq!(clamp_account_page(4, 0), 0);
+    assert_eq!(clamp_account_page(3, 2), 1);
+    assert_eq!(clamp_account_page(0, 0), 0);
 }
 
 #[test]
-fn pager_label_uses_runtime_label_or_numbered_fallback() {
-    let strip = |text: String| text.replace(['\u{2068}', '\u{2069}'], "");
-    assert_eq!(pager_account_label(0, "pro@example.com"), "pro@example.com");
-    assert_eq!(strip(pager_account_label(2, "")), "Account 3");
-    assert_eq!(strip(pager_account_label(0, "  ")), "Account 1");
+fn account_pager_uses_a_fallback_label() {
+    assert!(pager_account_label(1, "").contains('2'));
+    assert!(pager_account_label(1, "  ").contains('2'));
+    assert_eq!(pager_account_label(1, "Personal"), "Personal");
 }
 
 #[test]
-fn opencode_go_tab_shows_first_two_summary_bars() {
-    let state = single_account_state(ProviderId::OpenCodeGo, &[25.0, 50.0, 80.0]);
-    let provider = state.provider(ProviderId::OpenCodeGo).unwrap();
-
-    assert_eq!(tab_percents(&state, provider), vec![25.0, 50.0]);
-}
-
-#[test]
-fn legacy_snapshot_provider_tab_shows_first_two_summary_bars() {
-    let mut state = AppState::empty();
-    let legacy = snapshot_with_percents(ProviderId::OpenCodeGo, &[45.5, 30.0, 15.0]);
-    state
-        .provider_mut(ProviderId::OpenCodeGo)
+fn popup_size_uses_the_active_account_page() {
+    let mut state = state_with_selected_account_percents(&[10.0, 20.0]);
+    state.provider_accounts[1]
+        .snapshot
+        .as_mut()
         .unwrap()
-        .legacy_display_snapshot = Some(legacy);
-    let provider = state.provider(ProviderId::OpenCodeGo).unwrap();
+        .windows
+        .push(UsageWindow {
+            label: "Weekly".to_string(),
+            used_percent: 30.0,
+            reset_at: None,
+            window_seconds: None,
+            reset_description: None,
+            group: None,
+        });
 
-    assert_eq!(tab_percents(&state, provider), vec![45.5, 30.0]);
+    let first = popup_session_size_for_page(&state, ProviderId::Codex, 0);
+    let second = popup_session_size_for_page(&state, ProviderId::Codex, 1);
+
+    assert!(second.height > first.height);
+    assert_eq!(first.width, POPUP_COLUMN_WIDTH);
+    assert_eq!(second.width, POPUP_COLUMN_WIDTH);
 }
 
 #[test]
-fn provider_tab_bar_area_reserves_two_full_girth_slots() {
-    assert_eq!(provider_tab_bar_area_height(), 2.0 * 4.0 + 3.0);
-}
+fn account_pager_selects_the_next_account_and_resizes_for_it() {
+    let mut app = test_app(None);
+    app.selected_provider = ProviderId::Copilot;
+    app.config.copilot_managed_accounts = vec![
+        copilot_account("copilot-1", "first"),
+        copilot_account("copilot-2", "second"),
+    ];
+    app.config.selected_copilot_account_ids = vec!["copilot-1".to_string()];
+    runtime_reconcile_provider(&app.config, &mut app.state, ProviderId::Copilot);
+    app.state.provider_accounts[1].snapshot = Some(UsageSnapshot {
+        provider: ProviderId::Copilot,
+        source: "test".to_string(),
+        updated_at: Utc::now(),
+        headline: UsageHeadline(0),
+        windows: vec![UsageWindow {
+            label: "Weekly".to_string(),
+            used_percent: 30.0,
+            reset_at: None,
+            window_seconds: None,
+            reset_description: None,
+            group: None,
+        }],
+        provider_cost: None,
+        extra_usage: None,
+        identity: ProviderIdentity::default(),
+    });
+    app.popup_body_measurements.copilot = Some(1.0);
 
-#[test]
-fn provider_tab_single_line_content_fits_fixed_row_height() {
-    assert!(
-        provider_tab_content_height() < PROVIDER_TAB_ROW_HEIGHT,
-        "one-line label and reserved two-bar area ({}) must fit the {}px tab row",
-        provider_tab_content_height(),
-        PROVIDER_TAB_ROW_HEIGHT,
+    let _ = app.page_provider_account(super::PagerDirection::Next);
+
+    assert_eq!(app.detail_account_page, 1);
+    assert_eq!(app.config.selected_copilot_account_ids, ["copilot-2"]);
+    assert_eq!(
+        app.state
+            .provider(ProviderId::Copilot)
+            .unwrap()
+            .selected_account_ids,
+        ["copilot-2"]
+    );
+    assert_eq!(
+        app.shared_control.requests[0].reason,
+        RefreshRequestReason::AccountAction
+    );
+    assert_eq!(app.popup_body_measurements.copilot, None);
+    assert_eq!(
+        app.popup_size_for_route(&PopupRoute::ProviderDetail),
+        popup_session_size_for_page(&app.state, ProviderId::Copilot, 1)
     );
 }
 
 #[test]
-fn provider_tab_single_line_width_fits_longest_provider_label() {
-    const CONSERVATIVE_GLYPH_WIDTH_AT_SIZE_10: f32 = 6.0;
-    let label_width = longest_provider_label_glyphs() * CONSERVATIVE_GLYPH_WIDTH_AT_SIZE_10;
+fn popup_size_caps_an_oversized_active_page() {
+    let mut state = state_with_selected_account_percents(&[10.0]);
+    let windows = &mut state.provider_accounts[0]
+        .snapshot
+        .as_mut()
+        .unwrap()
+        .windows;
+    for index in 0..20 {
+        windows.push(UsageWindow {
+            label: format!("Window {index}"),
+            used_percent: 10.0,
+            reset_at: None,
+            window_seconds: None,
+            reset_description: None,
+            group: None,
+        });
+    }
 
-    assert!(
-        label_width < provider_tab_card_inner_width(),
-        "longest one-line label ({label_width}px) must fit the {}px card inner width",
-        provider_tab_card_inner_width(),
+    assert_eq!(
+        popup_session_size_for_page(&state, ProviderId::Codex, 0).height,
+        1080.0
     );
 }
 
 #[test]
-fn single_window_provider_tab_shows_one_bar() {
-    let state = single_account_state(ProviderId::Minimax, &[40.0]);
-    let provider = state.provider(ProviderId::Minimax).unwrap();
+fn provider_viewport_shifts_one_icon_and_stops_at_the_end() {
+    let providers = ProviderId::ALL.to_vec();
 
-    assert_eq!(tab_percents(&state, provider), vec![40.0]);
+    assert_eq!(provider_viewport(&providers, 0), &providers[..6]);
+    assert_eq!(provider_viewport(&providers, 1), &providers[1..7]);
+    assert_eq!(
+        provider_viewport(&providers, 99),
+        &providers[providers.len() - 6..]
+    );
 }
 
 #[test]
-fn multi_account_tab_bars_are_prioritized_and_bounded() {
-    let state = state_with_selected_account_percents(&[10.0, 20.0, 30.0, 40.0]);
-    let provider = state.provider(ProviderId::Codex).unwrap();
-
-    assert_eq!(tab_percents(&state, provider), vec![10.0, 20.0]);
+fn provider_viewport_navigation_requires_six_enabled_providers() {
+    assert!(!provider_viewport_navigation_visible(5));
+    assert!(provider_viewport_navigation_visible(6));
 }
 
 #[test]
-fn settings_category_rows_wrap_current_and_future_categories() {
-    assert_eq!(settings_category_row_sizes(0), Vec::<usize>::new());
-    assert_eq!(settings_category_row_sizes(4), vec![4]);
-    assert_eq!(settings_category_row_sizes(9), vec![5, 4]);
-    assert_eq!(settings_category_row_sizes(10), vec![5, 5]);
-    assert_eq!(settings_category_row_sizes(11), vec![4, 4, 3]);
-}
-
-#[test]
-fn settings_nav_height_grows_per_category_row() {
-    let one_row = settings_nav_height(4);
-    let two_rows = settings_nav_height(9);
-
-    assert!(one_row > 0.0);
-    assert!((two_rows - (2.0 * one_row + 8.0)).abs() < f32::EPSILON);
-}
-
-fn state_with_selected_accounts(count: usize) -> AppState {
-    state_with_selected_account_percents(&vec![0.0; count])
-}
-
-fn single_account_state(provider: ProviderId, percents: &[f32]) -> AppState {
-    let mut state = AppState::empty();
-    let account_id = format!("{provider:?}-1");
-    state.provider_mut(provider).unwrap().selected_account_ids = vec![account_id.clone()];
-    let mut account = ProviderAccountRuntimeState::empty(provider, account_id, provider.label());
-    account.snapshot = Some(snapshot_with_percents(provider, percents));
-    state.upsert_account(account);
-    state
-}
-
-#[test]
-fn popup_provider_tabs_share_tallest_provider_height() {
+fn popup_height_fits_the_selected_provider() {
     let state = state_with_provider_window_counts(&[
         (ProviderId::Codex, 1, false),
         (ProviderId::Claude, 3, true),
@@ -830,8 +1044,38 @@ fn popup_provider_tabs_share_tallest_provider_height() {
     let claude = popup_session_size(&state, ProviderId::Claude);
     let cursor = popup_session_size(&state, ProviderId::Cursor);
 
-    assert_eq!(codex.height, claude.height);
-    assert_eq!(claude.height, cursor.height);
+    assert!(claude.height > codex.height);
+    assert!(claude.height > cursor.height);
+}
+
+#[test]
+fn popup_provider_viewport_does_not_change_popup_height() {
+    let mut state = state_with_provider_window_counts(&[(ProviderId::Codex, 1, false)]);
+    for provider in ProviderId::ALL {
+        state.provider_mut(provider).unwrap().enabled = false;
+    }
+    for provider in [
+        ProviderId::Codex,
+        ProviderId::Claude,
+        ProviderId::Cursor,
+        ProviderId::Gemini,
+    ] {
+        state.provider_mut(provider).unwrap().enabled = true;
+    }
+
+    let four_enabled = popup_session_size(&state, ProviderId::Codex);
+
+    for provider in [
+        ProviderId::Minimax,
+        ProviderId::Kimi,
+        ProviderId::Antigravity,
+        ProviderId::OpenCodeGo,
+    ] {
+        state.provider_mut(provider).unwrap().enabled = true;
+    }
+    let nine_enabled = popup_session_size(&state, ProviderId::Codex);
+
+    assert_eq!(nine_enabled.height, four_enabled.height);
 }
 
 #[test]
@@ -856,82 +1100,6 @@ fn popup_provider_height_is_independent_from_settings_height() {
 
     assert!(settings.height > provider.height);
     assert_eq!(provider.width, POPUP_COLUMN_WIDTH);
-}
-
-#[test]
-fn provider_tab_row_sizes_are_empty_with_no_enabled_providers() {
-    assert_eq!(provider_tab_row_sizes(0), Vec::<usize>::new());
-}
-
-#[test]
-fn provider_tab_row_sizes_fit_within_one_row_up_to_four() {
-    assert_eq!(provider_tab_row_sizes(1), vec![1]);
-    assert_eq!(provider_tab_row_sizes(2), vec![2]);
-    assert_eq!(provider_tab_row_sizes(3), vec![3]);
-    assert_eq!(provider_tab_row_sizes(4), vec![4]);
-}
-
-#[test]
-fn provider_tab_row_sizes_balance_across_rows() {
-    assert_eq!(provider_tab_row_sizes(5), vec![3, 2]);
-    assert_eq!(provider_tab_row_sizes(6), vec![3, 3]);
-    assert_eq!(provider_tab_row_sizes(7), vec![4, 3]);
-    assert_eq!(provider_tab_row_sizes(8), vec![4, 4]);
-    assert_eq!(provider_tab_row_sizes(9), vec![3, 3, 3]);
-}
-
-#[test]
-fn provider_nav_height_stays_flat_within_one_tab_row() {
-    assert_eq!(
-        provider_nav_height(&state_with_enabled_provider_count(1)),
-        provider_nav_height(&state_with_enabled_provider_count(4)),
-    );
-}
-
-#[test]
-fn provider_nav_height_is_compact_and_two_rows_at_eight_providers() {
-    let one_row = provider_nav_height(&state_with_enabled_provider_count(1));
-    let eight_tabs = provider_nav_height(&state_with_enabled_provider_count(8));
-
-    assert!((64.0..=72.0).contains(&one_row));
-    assert!((eight_tabs - (2.0 * one_row + 8.0)).abs() < f32::EPSILON);
-}
-
-#[test]
-fn popup_provider_height_adds_nav_rows_for_extra_tab_rows() {
-    let four_tabs = state_with_enabled_provider_count(4);
-    let eight_tabs = state_with_enabled_provider_count(8);
-
-    let nav_growth = provider_nav_height(&eight_tabs) - provider_nav_height(&four_tabs);
-    let popup_growth = popup_session_size_with_body_height(&eight_tabs, ProviderId::Codex, 300.0)
-        .height
-        - popup_session_size_with_body_height(&four_tabs, ProviderId::Codex, 300.0).height;
-
-    assert!(nav_growth > 0.0);
-    assert_eq!(popup_growth, nav_growth);
-}
-
-#[test]
-fn popup_settings_height_ignores_provider_tab_rows() {
-    let four_tabs = state_with_enabled_provider_count(4);
-    let eight_tabs = state_with_enabled_provider_count(8);
-
-    assert_eq!(
-        popup_settings_size(&four_tabs).height,
-        popup_settings_size(&eight_tabs).height,
-    );
-}
-
-fn state_with_enabled_provider_count(count: usize) -> AppState {
-    let providers: Vec<(ProviderId, usize, bool)> = ProviderId::ALL
-        .into_iter()
-        .map(|provider| (provider, 1, false))
-        .collect();
-    let mut state = state_with_provider_window_counts(&providers);
-    for (index, provider) in ProviderId::ALL.into_iter().enumerate() {
-        state.provider_mut(provider).unwrap().enabled = index < count;
-    }
-    state
 }
 
 #[test]
@@ -975,6 +1143,7 @@ fn selected_provider_all_percents_uses_first_panel_window() {
                 reset_at: None,
                 window_seconds: None,
                 reset_description: None,
+                group: None,
             },
             UsageWindow {
                 label: "Weekly".to_string(),
@@ -982,6 +1151,7 @@ fn selected_provider_all_percents_uses_first_panel_window() {
                 reset_at: None,
                 window_seconds: None,
                 reset_description: None,
+                group: None,
             },
         ],
         provider_cost: None,
@@ -1027,6 +1197,7 @@ fn applet_bar_layout_preserves_single_bar_shape() {
             reset_at: None,
             window_seconds: None,
             reset_description: None,
+            group: None,
         }],
         provider_cost: None,
         extra_usage: None,
@@ -1063,13 +1234,7 @@ fn selected_provider_all_bar_layouts_keeps_mixed_copilot_account_shapes() {
     let layouts =
         selected_provider_all_bar_layouts(&state, ProviderId::Copilot, UsageAmountFormat::Used);
 
-    assert_eq!(
-        layouts,
-        vec![
-            AppletBarLayout::two_bar(30.0, 80.0),
-            AppletBarLayout::single_bar(100.0)
-        ]
-    );
+    assert_eq!(layouts, vec![AppletBarLayout::two_bar(30.0, 80.0)]);
 }
 
 fn state_with_selected_account_percents(percents: &[f32]) -> AppState {
@@ -1099,6 +1264,7 @@ fn state_with_selected_account_percents(percents: &[f32]) -> AppState {
                 reset_at: None,
                 window_seconds: None,
                 reset_description: None,
+                group: None,
             }],
             provider_cost: None,
             extra_usage: None,
@@ -1117,9 +1283,12 @@ pub(super) fn test_app(refresh_owner: Option<RefreshOwner>) -> AppModel {
         popup: None,
         config: Config::default(),
         state: AppState::empty(),
+        detection: crate::detection::DetectionSnapshot::default(),
         selected_provider: ProviderId::Codex,
         detail_account_page: 0,
+        provider_viewport_offset: 0,
         popup_route: PopupRoute::ProviderDetail,
+        provider_picker_open: false,
         update_status: UpdateStatus::Unchecked,
         launch_mode: LaunchMode::Standalone,
         popup_size: None,
@@ -1133,7 +1302,6 @@ pub(super) fn test_app(refresh_owner: Option<RefreshOwner>) -> AppModel {
             lock_path,
         },
         refresh_owner,
-        opencode_import_availability: Default::default(),
         codex_login: None,
         codex_login_handle: None,
         claude_login: None,
@@ -1148,8 +1316,18 @@ pub(super) fn test_app(refresh_owner: Option<RefreshOwner>) -> AppModel {
         minimax_login_handle: None,
         kimi_login: None,
         kimi_login_handle: None,
+        antigravity_login: None,
+        antigravity_login_handle: None,
         opencode_go_login: None,
         opencode_go_login_handle: None,
+    }
+}
+
+#[test]
+fn test_app_starts_with_nothing_detected() {
+    let app = test_app(None);
+    for provider in ProviderId::ALL {
+        assert!(!app.detection.detected(provider));
     }
 }
 
@@ -1166,7 +1344,12 @@ fn selected_account_without_usage(state: &mut AppState, provider: ProviderId) {
 }
 
 fn runtime_reconcile_provider(config: &Config, state: &mut AppState, provider: ProviderId) {
-    crate::runtime::reconcile_provider(config, state, provider);
+    crate::runtime::reconcile_provider(
+        config,
+        &crate::detection::DetectionSnapshot::default(),
+        state,
+        provider,
+    );
 }
 
 fn control_request(provider: ProviderId) -> SharedControlState {
@@ -1275,15 +1458,57 @@ fn kimi_account(id: &str) -> ManagedKimiAccountConfig {
     }
 }
 
-fn opencode_go_account(id: &str) -> crate::config::ManagedOpenCodeGoAccountConfig {
-    crate::config::ManagedOpenCodeGoAccountConfig {
+fn antigravity_account(id: &str) -> crate::config::ManagedAntigravityAccountConfig {
+    crate::config::ManagedAntigravityAccountConfig {
         id: id.to_string(),
         label: id.to_string(),
-        api_key_source: "env:OPENCODE_GO_API_KEY".to_string(),
+        account_root: PathBuf::from("/tmp/yapcap/antigravity"),
+        email: format!("{id}@example.com"),
+        sub: id.to_string(),
+        last_tier_id: None,
         created_at: Utc::now(),
         updated_at: Utc::now(),
         last_authenticated_at: None,
     }
+}
+
+#[test]
+fn cursor_status_refresh_skipped_without_accounts() {
+    let _env = crate::test_support::test_env();
+    let config = Config::default();
+
+    assert_eq!(
+        config.cursor_enablement,
+        crate::config::ProviderEnablement::Auto
+    );
+    assert!(!should_refresh_account_statuses(
+        &AppState::empty(),
+        ProviderId::Cursor
+    ));
+}
+
+#[test]
+fn cursor_status_refresh_runs_with_accounts() {
+    let _env = crate::test_support::test_env();
+    seed_account_storage(
+        crate::config::paths().cursor_accounts_dir,
+        ProviderId::Cursor,
+        "one",
+        "one@example.com",
+    );
+    let mut config = Config::default();
+    config
+        .cursor_managed_accounts
+        .push(cursor_account("one", "one@example.com"));
+
+    let mut state = AppState::empty();
+    state.provider_mut(ProviderId::Cursor).unwrap().enabled = true;
+    state.upsert_account(ProviderAccountRuntimeState::empty(
+        ProviderId::Cursor,
+        "cursor".to_string(),
+        "Cursor".to_string(),
+    ));
+    assert!(should_refresh_account_statuses(&state, ProviderId::Cursor));
 }
 
 fn seed_account_storage(dir: PathBuf, provider: ProviderId, id: &str, email: &str) {
@@ -1368,6 +1593,7 @@ fn delete_account_requests_refresh_for_all_providers() {
                 "cursor-managed:remove".to_string()
             }
             ProviderId::Gemini => {
+                app.config.gemini_enablement = crate::config::ProviderEnablement::Enabled;
                 app.config
                     .gemini_managed_accounts
                     .push(gemini_account(keep_id));
@@ -1405,16 +1631,17 @@ fn delete_account_requests_refresh_for_all_providers() {
                 app.config.selected_kimi_account_ids = vec![keep_id.to_string()];
                 "remove".to_string()
             }
-            ProviderId::OpenCodeGo => {
+            ProviderId::Antigravity => {
                 app.config
-                    .opencode_go_managed_accounts
-                    .push(opencode_go_account(keep_id));
+                    .antigravity_managed_accounts
+                    .push(antigravity_account(keep_id));
                 app.config
-                    .opencode_go_managed_accounts
-                    .push(opencode_go_account("remove"));
-                app.config.selected_opencode_go_account_ids = vec![keep_id.to_string()];
+                    .antigravity_managed_accounts
+                    .push(antigravity_account("remove"));
+                app.config.selected_antigravity_account_ids = vec![keep_id.to_string()];
                 "remove".to_string()
             }
+            ProviderId::OpenCodeGo => continue,
         };
 
         let _task = app.delete_account(provider, &remove_account_id);
@@ -1485,6 +1712,7 @@ fn snapshot_with_windows(
                 reset_at: None,
                 window_seconds: None,
                 reset_description: None,
+                group: None,
             })
             .collect(),
         provider_cost: None,
@@ -1515,6 +1743,7 @@ fn snapshot_with_percents(provider: ProviderId, percents: &[f32]) -> UsageSnapsh
                 reset_at: None,
                 window_seconds: None,
                 reset_description: None,
+                group: None,
             })
             .collect(),
         provider_cost: None,

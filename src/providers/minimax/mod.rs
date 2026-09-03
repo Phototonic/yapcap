@@ -8,7 +8,7 @@ pub mod storage;
 use crate::config::{Config, ManagedMinimaxAccountConfig};
 use crate::error::MinimaxError;
 use crate::model::{ProviderId, UsageSnapshot};
-use chrono::Utc;
+use chrono::{DateTime, Duration, Utc};
 use serde::Deserialize;
 
 pub use account::discover_accounts;
@@ -34,6 +34,12 @@ struct MinimaxModelRemains {
     current_weekly_usage_count: Option<i64>,
     current_interval_remaining_percent: Option<i64>,
     current_weekly_remaining_percent: Option<i64>,
+    start_time: Option<i64>,
+    end_time: Option<i64>,
+    remains_time: Option<i64>,
+    weekly_start_time: Option<i64>,
+    weekly_end_time: Option<i64>,
+    weekly_remains_time: Option<i64>,
     model_name: Option<String>,
 }
 
@@ -114,7 +120,6 @@ pub fn parse(body: &str, updated_at: chrono::DateTime<Utc>) -> Result<UsageSnaps
     let response: MinimaxTokenPlanResponse =
         serde_json::from_str(body).map_err(MinimaxError::DecodeUsage)?;
 
-    // Check for API error in base_resp first
     if let Some(base_resp) = &response.base_resp
         && let (Some(status_code), Some(status_msg)) =
             (&base_resp.status_code, &base_resp.status_msg)
@@ -140,7 +145,6 @@ pub fn parse(body: &str, updated_at: chrono::DateTime<Utc>) -> Result<UsageSnaps
             .clone()
             .unwrap_or_else(|| "unknown".to_string());
 
-        // Handle 5-hour window (interval)
         if let Some(remaining_percent) = model.current_interval_remaining_percent {
             let used_percent = (100.0 - remaining_percent as f32).clamp(0.0, 100.0);
             let label = if let (Some(total), Some(used)) = (
@@ -158,13 +162,13 @@ pub fn parse(body: &str, updated_at: chrono::DateTime<Utc>) -> Result<UsageSnaps
             windows.push(crate::model::UsageWindow {
                 label,
                 used_percent,
-                reset_at: None,
-                window_seconds: Some(5 * 3600),
+                reset_at: reset_at(updated_at, model.end_time, model.remains_time),
+                window_seconds: Some(window_seconds(model.start_time, model.end_time, 5 * 3600)),
                 reset_description: Some("Resets every 5 hours".to_string()),
+                group: None,
             });
         }
 
-        // Handle weekly window
         if let Some(remaining_percent) = model.current_weekly_remaining_percent {
             let used_percent = (100.0 - remaining_percent as f32).clamp(0.0, 100.0);
             let label = if let (Some(total), Some(used)) = (
@@ -182,9 +186,14 @@ pub fn parse(body: &str, updated_at: chrono::DateTime<Utc>) -> Result<UsageSnaps
             windows.push(crate::model::UsageWindow {
                 label,
                 used_percent,
-                reset_at: None,
-                window_seconds: Some(7 * 24 * 3600),
+                reset_at: reset_at(updated_at, model.weekly_end_time, model.weekly_remains_time),
+                window_seconds: Some(window_seconds(
+                    model.weekly_start_time,
+                    model.weekly_end_time,
+                    7 * 24 * 3600,
+                )),
                 reset_description: Some("Resets weekly".to_string()),
+                group: None,
             });
         }
     }
@@ -210,6 +219,33 @@ pub fn parse(body: &str, updated_at: chrono::DateTime<Utc>) -> Result<UsageSnaps
     })
 }
 
+fn reset_at(
+    updated_at: DateTime<Utc>,
+    end_time_millis: Option<i64>,
+    remains_millis: Option<i64>,
+) -> Option<DateTime<Utc>> {
+    end_time_millis
+        .and_then(DateTime::from_timestamp_millis)
+        .filter(|reset_at| *reset_at > updated_at)
+        .or_else(|| {
+            remains_millis
+                .filter(|millis| *millis > 0)
+                .map(|millis| updated_at + Duration::milliseconds(millis))
+        })
+}
+
+fn window_seconds(
+    start_time_millis: Option<i64>,
+    end_time_millis: Option<i64>,
+    fallback: i64,
+) -> i64 {
+    let reported = start_time_millis
+        .zip(end_time_millis)
+        .map(|(start, end)| (end - start) / 1000)
+        .filter(|seconds| *seconds > 0);
+    reported.unwrap_or(fallback)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -217,12 +253,35 @@ mod tests {
 
     #[test]
     fn parse_token_plan_response() {
-        let body = r#"{"model_remains": [{"current_interval_total_count": 1000, "current_interval_usage_count": 500, "current_weekly_total_count": 10000, "current_weekly_usage_count": 8000, "model_name": "general", "current_interval_remaining_percent": 50, "current_weekly_remaining_percent": 20}], "base_resp": {"status_code": 0, "status_msg": "success"}}"#;
-        let result = parse(body, Utc::now()).unwrap();
+        let body = r#"{"model_remains": [{"current_interval_total_count": 1000, "current_interval_usage_count": 500, "current_weekly_total_count": 10000, "current_weekly_usage_count": 8000, "model_name": "general", "current_interval_remaining_percent": 50, "current_weekly_remaining_percent": 20, "remains_time": 7200000, "weekly_remains_time": 259200000}], "base_resp": {"status_code": 0, "status_msg": "success"}}"#;
+        let updated_at = Utc::now();
+        let result = parse(body, updated_at).unwrap();
         assert_eq!(result.provider, ProviderId::Minimax);
         assert_eq!(result.windows.len(), 2);
         assert_eq!(result.windows[0].label, "general (5h): 500/1000");
         assert_eq!(result.windows[1].label, "general (Weekly): 2000/10000");
+        assert_eq!(
+            result.windows[0].reset_at,
+            Some(updated_at + chrono::Duration::hours(2))
+        );
+        assert_eq!(
+            result.windows[1].reset_at,
+            Some(updated_at + chrono::Duration::days(3))
+        );
+    }
+
+    #[test]
+    fn parse_prefers_reported_window_timestamps() {
+        let body = r#"{"model_remains": [{"model_name": "general", "current_interval_remaining_percent": 50, "start_time": 1787500800000, "end_time": 1787518800000, "remains_time": 1000}], "base_resp": {"status_code": 0, "status_msg": "success"}}"#;
+        let updated_at = DateTime::from_timestamp_millis(1_787_500_800_000).unwrap();
+
+        let result = parse(body, updated_at).unwrap();
+
+        assert_eq!(
+            result.windows[0].reset_at,
+            DateTime::from_timestamp_millis(1_787_518_800_000)
+        );
+        assert_eq!(result.windows[0].window_seconds, Some(5 * 3600));
     }
 
     #[test]

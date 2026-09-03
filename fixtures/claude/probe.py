@@ -27,7 +27,7 @@ from urllib.request import Request, urlopen
 
 CLIENT_ID = "9d1c250a-e61b-44d9-88ed-5944d1962f5e"
 USER_AGENT = "claude-code/2.0.32"
-TOKEN_URL = "https://console.anthropic.com/v1/oauth/token"
+TOKEN_URL = "https://claude.ai/v1/oauth/token"
 USAGE_URL = "https://api.anthropic.com/api/oauth/usage"
 BETA_HEADER = "oauth-2025-04-20"
 

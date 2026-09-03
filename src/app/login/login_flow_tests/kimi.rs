@@ -36,12 +36,11 @@ fn kimi_saved_login_persists_selection_and_reconciles_runtime() {
 }
 
 #[test]
-fn kimi_saved_login_adds_new_account_to_show_all_selection_under_cap() {
+fn kimi_saved_login_selects_new_account() {
     let (_env, _root) = isolated_xdg("kimi-show-all-under-cap");
     let mut app = test_app();
     app.config.kimi_managed_accounts = vec![kimi_account("kimi-existing", "Existing")];
     app.config.selected_kimi_account_ids = vec!["kimi-existing".to_string()];
-    app.config.set_provider_show_all(ProviderId::Kimi, true);
     app.kimi_login = Some(KimiLoginState::new("kimi-new".to_string()));
     let _ = KimiLoginFlow::on_event(
         &mut app,
@@ -50,10 +49,7 @@ fn kimi_saved_login_adds_new_account_to_show_all_selection_under_cap() {
 
     let _ = KimiLoginFlow::on_event(&mut app, KimiLoginEvent::Saved);
 
-    assert_eq!(
-        app.config.selected_kimi_account_ids,
-        ["kimi-existing", "kimi-new"]
-    );
+    assert_eq!(app.config.selected_kimi_account_ids, ["kimi-new"]);
     assert!(
         app.config
             .kimi_managed_accounts
@@ -63,14 +59,13 @@ fn kimi_saved_login_adds_new_account_to_show_all_selection_under_cap() {
 }
 
 #[test]
-fn kimi_saved_login_keeps_new_account_unselected_at_show_all_cap() {
+fn kimi_saved_login_replaces_existing_selection() {
     let (_env, _root) = isolated_xdg("kimi-show-all-at-cap");
     let mut app = test_app();
     app.config.kimi_managed_accounts = (1..=4)
         .map(|index| kimi_account(&format!("kimi-{index}"), &format!("Account {index}")))
         .collect();
     app.config.selected_kimi_account_ids = (1..=4).map(|index| format!("kimi-{index}")).collect();
-    app.config.set_provider_show_all(ProviderId::Kimi, true);
     app.kimi_login = Some(KimiLoginState::new("kimi-new".to_string()));
     let _ = KimiLoginFlow::on_event(
         &mut app,
@@ -79,12 +74,7 @@ fn kimi_saved_login_keeps_new_account_unselected_at_show_all_cap() {
 
     let _ = KimiLoginFlow::on_event(&mut app, KimiLoginEvent::Saved);
 
-    assert_eq!(app.config.selected_kimi_account_ids.len(), 4);
-    assert!(
-        !app.config
-            .selected_kimi_account_ids
-            .contains(&"kimi-new".to_string())
-    );
+    assert_eq!(app.config.selected_kimi_account_ids, ["kimi-new"]);
     assert!(
         app.config
             .kimi_managed_accounts

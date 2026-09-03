@@ -10,16 +10,21 @@
 - Before committing, run `just check` and `cargo test` and `cargo fmt`, then fix all warnings, errors, and failures.
 - Do not add agent or AI attribution to commit messages (no `Co-Authored-By: Claude` or similar).
 
-## Agent skills
+Issues are tracked as local markdown files under `issues/`.
 
-### Issue tracker
+This is a single-context repo. `docs/spec.md` is the current product/domain spec; ADRs may be added under `docs/adr/`.
 
-Issues are tracked as local markdown files under `issues/`. See `docs/agents/issue-tracker.md`.
+@docs/RTK.md
 
-### Triage labels
+## graphify
 
-The repo uses the default triage label vocabulary. See `docs/agents/triage-labels.md`.
+This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
 
-### Domain docs
+When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
 
-This is a single-context repo. `docs/spec.md` is the current product/domain spec; ADRs may be added under `docs/adr/`. See `docs/agents/domain.md`.
+Rules:
+- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
+- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
+- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
+- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
+- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).

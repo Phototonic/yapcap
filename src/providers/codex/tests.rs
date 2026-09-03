@@ -60,6 +60,49 @@ fn usage_body() -> String {
     )
 }
 
+fn usage_response(
+    primary_window: Option<CodexWindow>,
+    secondary_window: Option<CodexWindow>,
+) -> CodexUsageResponse {
+    CodexUsageResponse {
+        account_id: None,
+        email: None,
+        plan_type: None,
+        rate_limit: Some(CodexRateLimit {
+            primary_window,
+            secondary_window,
+        }),
+        credits: None,
+    }
+}
+
+fn window(limit_window_seconds: Option<i64>) -> CodexWindow {
+    CodexWindow {
+        used_percent: 0.0,
+        limit_window_seconds,
+        reset_at: Utc::now().timestamp(),
+    }
+}
+
+#[test]
+fn codex_window_labels_prefer_duration_and_fall_back_to_position() {
+    let primary = normalize_oauth(usage_response(Some(window(Some(604_800))), None)).unwrap();
+    assert_eq!(primary.windows[0].label, "Weekly");
+
+    let secondary = normalize_oauth(usage_response(None, Some(window(Some(18_000))))).unwrap();
+    assert_eq!(secondary.windows[0].label, "Session");
+
+    let tolerance = normalize_oauth(usage_response(Some(window(Some(18_059))), None)).unwrap();
+    assert_eq!(tolerance.windows[0].label, "Session");
+
+    let missing_duration = normalize_oauth(usage_response(Some(window(None)), None)).unwrap();
+    assert_eq!(missing_duration.windows[0].label, "Session");
+
+    let unknown_duration =
+        normalize_oauth(usage_response(None, Some(window(Some(86_400))))).unwrap();
+    assert_eq!(unknown_duration.windows[0].label, "Weekly");
+}
+
 fn token_body(access_token: &str, refresh_token: &str) -> String {
     format!(
         r#"{{
@@ -249,11 +292,19 @@ async fn permanent_refresh_failure_does_not_call_usage() {
 #[test]
 fn system_active_account_id_matches_provider_account_id() {
     use crate::config::ManagedCodexAccountConfig;
+    use base64::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
     use chrono::Utc;
     use std::io::Write;
     use tempfile::NamedTempFile;
 
-    let id_token = "eyJhbGciOiJSUzI1NiJ9.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOiB7ImNoYXRncHRfdXNlcl9pZCI6ICJ1c2VyLWFiYy0xMjMifX0.fakesig";
+    let payload = r#"{
+        "https://api.openai.com/auth": {
+            "chatgpt_account_id": "acct-123",
+            "chatgpt_user_id": "user-abc-123"
+        }
+    }"#;
+    let id_token = format!("header.{}.fakesig", URL_SAFE_NO_PAD.encode(payload));
     let auth_json = format!(r#"{{"tokens":{{"id_token":"{id_token}"}}}}"#);
     let mut tmp = NamedTempFile::new().unwrap();
     tmp.write_all(auth_json.as_bytes()).unwrap();
@@ -263,7 +314,7 @@ fn system_active_account_id_matches_provider_account_id() {
         label: "Test".to_string(),
         codex_home: std::path::PathBuf::from("/tmp"),
         email: Some("user@example.com".to_string()),
-        provider_account_id: Some("user-abc-123".to_string()),
+        provider_account_id: Some("acct-123".to_string()),
         created_at: Utc::now(),
         updated_at: Utc::now(),
         last_authenticated_at: None,

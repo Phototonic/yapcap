@@ -47,6 +47,9 @@ pub fn provider_icon_handle(provider: ProviderId, variant: ProviderIconVariant) 
         (ProviderId::Kimi, ProviderIconVariant::Reversed) => {
             include_bytes!("../../resources/providers/kimi-reversed.svg")
         }
+        (ProviderId::Antigravity, _) => {
+            include_bytes!("../../resources/providers/antigravity-color.svg")
+        }
         (ProviderId::OpenCodeGo, ProviderIconVariant::Default) => {
             include_bytes!("../../resources/providers/opencode-go.svg")
         }
@@ -56,6 +59,10 @@ pub fn provider_icon_handle(provider: ProviderId, variant: ProviderIconVariant) 
     };
 
     icon::from_svg_bytes(bytes)
+}
+
+pub fn app_icon_handle() -> Handle {
+    icon::from_svg_bytes(include_bytes!("../../resources/icon.svg"))
 }
 
 pub fn provider_icon_variant() -> ProviderIconVariant {

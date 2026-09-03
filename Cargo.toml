@@ -1,9 +1,9 @@
 [package]
 name = "yapcap"
-version = "0.5.2"
+version = "0.6.0"
 edition = "2024"
 license = "MPL-2.0"
-description = "COSMIC panel applet for Codex, Claude Code, Cursor, Gemini, Minimax, GitHub Copilot, and Kimi for Coding usage"
+description = "COSMIC panel applet for Codex, Claude Code, Cursor, Antigravity, Gemini, Minimax, GitHub Copilot, and Kimi for Coding usage"
 repository = "https://github.com/TopiCsarno/yapcap"
 
 [package.metadata.deb]
@@ -15,20 +15,22 @@ priority = "optional"
 assets = [
     ["target/release/yapcap", "usr/bin/", "755"],
     ["resources/app.desktop", "usr/share/applications/io.github.TopiCsarno.YapCap.desktop", "644"],
+    ["resources/app.metainfo.xml", "usr/share/metainfo/io.github.TopiCsarno.YapCap.metainfo.xml", "644"],
     ["resources/icon.svg", "usr/share/icons/hicolor/scalable/apps/io.github.TopiCsarno.YapCap.svg", "644"],
     ["README.md", "usr/share/doc/yapcap/README.md", "644"],
 ]
 extended-description = """
 YapCap is a native COSMIC panel applet that surfaces local usage limits for \
-Codex, Claude Code, Cursor, Gemini, Minimax, GitHub Copilot, and Kimi for Coding from accounts added in YapCap.
+Codex, Claude Code, Cursor, Antigravity, Gemini, Minimax, GitHub Copilot, and Kimi for Coding from accounts added in YapCap.
 """
 
 [package.metadata.generate-rpm]
-summary = "COSMIC panel applet for Codex, Claude Code, and Cursor usage"
+summary = "COSMIC panel applet for AI coding usage tracking"
 license = "MPL-2.0"
 assets = [
     { source = "target/release/yapcap", dest = "/usr/bin/yapcap", mode = "755" },
     { source = "resources/app.desktop", dest = "/usr/share/applications/io.github.TopiCsarno.YapCap.desktop", mode = "644" },
+    { source = "resources/app.metainfo.xml", dest = "/usr/share/metainfo/io.github.TopiCsarno.YapCap.metainfo.xml", mode = "644" },
     { source = "resources/icon.svg", dest = "/usr/share/icons/hicolor/scalable/apps/io.github.TopiCsarno.YapCap.svg", mode = "644" },
     { source = "README.md", dest = "/usr/share/doc/yapcap/README.md", mode = "644", doc = true },
 ]

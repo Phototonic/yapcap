@@ -45,6 +45,7 @@ pub(crate) async fn refresh_access_token_at(
     if !status.is_success() {
         return Err(CodexError::RefreshHttp {
             status: status.as_u16(),
+            details: String::new(),
         });
     }
 

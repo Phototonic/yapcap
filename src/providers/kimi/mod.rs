@@ -15,6 +15,7 @@ pub use storage::load_api_key;
 
 const KIMI_API_URL: &str = "https://api.kimi.com/coding/v1/usages";
 const KIMI_API_KEY_ENV: &str = "KIMI_API_KEY";
+const WEEK_SECONDS: i64 = 7 * 24 * 3600;
 
 #[derive(Debug, Deserialize)]
 struct KimiUsageResponse {
@@ -123,7 +124,7 @@ pub fn parse(body: &str, updated_at: DateTime<Utc>) -> Result<UsageSnapshot, Kim
         windows.push(window(
             "Weekly".to_string(),
             used_percent,
-            None,
+            Some(WEEK_SECONDS),
             usage.reset_time.as_deref(),
         ));
     }
@@ -208,6 +209,7 @@ fn window(
         reset_description: reset_at.map(|value| value.to_rfc3339()),
         reset_at,
         window_seconds,
+        group: None,
     }
 }
 
@@ -240,6 +242,7 @@ mod tests {
         assert_eq!(snapshot.windows[0].label, "Weekly");
         assert_eq!(snapshot.windows[0].used_percent, 40.0);
         assert!(snapshot.windows[0].reset_at.is_some());
+        assert_eq!(snapshot.windows[0].window_seconds, Some(7 * 24 * 3600));
         assert_eq!(snapshot.windows[1].label, "Rate Limit (300m)");
         assert!((snapshot.windows[1].used_percent - 15.0).abs() < 0.001);
         assert_eq!(snapshot.windows[1].window_seconds, Some(18_000));

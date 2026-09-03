@@ -21,7 +21,7 @@ pub(super) fn delete_account(
     }
 
     log_account_deleted(&app.process_info.id, provider, account_id);
-    runtime::reconcile_provider(&app.config, &mut app.state, provider);
+    runtime::reconcile_provider(&app.config, &app.detection, &mut app.state, provider);
     app.persist_runtime_if_owner("account_deleted");
 
     if app
@@ -42,6 +42,7 @@ pub(super) fn start_login(app: &mut AppModel, provider: ProviderId) -> Task<Mess
         ProviderId::Copilot => login::start_login::<login::CopilotLoginFlow>(app),
         ProviderId::Minimax => login::start_login::<login::MinimaxLoginFlow>(app),
         ProviderId::Kimi => login::start_login::<login::KimiLoginFlow>(app),
+        ProviderId::Antigravity => login::start_login::<login::AntigravityLoginFlow>(app),
         ProviderId::OpenCodeGo => login::start_login::<login::OpenCodeGoLoginFlow>(app),
         ProviderId::Cursor => Task::none(),
     }
@@ -79,6 +80,7 @@ pub(super) fn cancel_login(app: &mut AppModel, provider: ProviderId) {
         ProviderId::Copilot => login::cancel_login::<login::CopilotLoginFlow>(app),
         ProviderId::Minimax => login::cancel_login::<login::MinimaxLoginFlow>(app),
         ProviderId::Kimi => login::cancel_login::<login::KimiLoginFlow>(app),
+        ProviderId::Antigravity => login::cancel_login::<login::AntigravityLoginFlow>(app),
         ProviderId::OpenCodeGo => login::cancel_login::<login::OpenCodeGoLoginFlow>(app),
         ProviderId::Cursor => {}
     }
@@ -96,6 +98,9 @@ pub(super) fn reauthenticate(
         ProviderId::Copilot => login::reauthenticate::<login::CopilotLoginFlow>(app, account_id),
         ProviderId::Minimax => login::reauthenticate::<login::MinimaxLoginFlow>(app, account_id),
         ProviderId::Kimi => login::reauthenticate::<login::KimiLoginFlow>(app, account_id),
+        ProviderId::Antigravity => {
+            login::reauthenticate::<login::AntigravityLoginFlow>(app, account_id)
+        }
         ProviderId::OpenCodeGo => {
             login::reauthenticate::<login::OpenCodeGoLoginFlow>(app, account_id)
         }
@@ -121,6 +126,7 @@ pub(super) fn sync_metadata_after_refresh(app: &mut AppModel, provider: Provider
         | ProviderId::Copilot
         | ProviderId::Minimax
         | ProviderId::Kimi
+        | ProviderId::Antigravity
         | ProviderId::OpenCodeGo => {}
     }
 }
@@ -196,31 +202,6 @@ mod tests {
             let task = delete_account(&mut app, provider, "does-not-exist");
             assert_eq!(task.units(), 0, "{provider:?} should not schedule work");
         }
-    }
-
-    #[test]
-    fn import_from_opencode_ignores_unsupported_providers() {
-        let mut app = test_app();
-
-        let task = import_from_opencode(&mut app, ProviderId::Claude, None);
-
-        assert_eq!(task.units(), 0);
-        assert!(app.claude_login.is_none());
-    }
-
-    #[test]
-    fn restore_from_opencode_requires_a_known_account() {
-        let mut app = test_app();
-
-        let task = restore_from_opencode(&mut app, ProviderId::Codex, "codex-missing".to_string());
-
-        assert_eq!(task.units(), 0);
-        let login = app.codex_login.as_ref().unwrap();
-        assert_eq!(login.status, crate::app::CodexLoginStatus::Failed);
-        assert_eq!(
-            login.error.as_deref(),
-            Some("Codex account no longer exists")
-        );
     }
 
     #[test]

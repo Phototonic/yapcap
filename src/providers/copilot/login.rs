@@ -27,7 +27,6 @@ pub struct CopilotLoginState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CopilotLoginStatus {
     Running,
-    Succeeded,
     Failed,
 }
 

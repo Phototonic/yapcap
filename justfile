@@ -40,6 +40,10 @@ clear-config:
 clear-accounts:
     rm -rf ~/.local/state/yapcap
 
+# Clears native logs at ~/.local/state/yapcap/logs
+clear-logs:
+    rm -rf ~/.local/state/yapcap/logs
+
 # Removes vendored dependencies
 clean-vendor:
     rm -rf .cargo vendor vendor.tar
@@ -67,6 +71,10 @@ check-json: (check '--message-format=json')
 # Run the application for testing purposes
 run *args:
     env RUST_BACKTRACE=full cargo run --release {{args}}
+
+# Run the debug build with synthetic demo data
+run-demo *args:
+    env YAPCAP_DEMO=1 RUST_BACKTRACE=full cargo run {{args}}
 
 # Runs with empty HOME/XDG dirs so provider discovery finds nothing
 run-empty-discovery *args:
@@ -163,7 +171,7 @@ flatpak-install: flatpak-build
     set -euo pipefail
     branch="$(git symbolic-ref --quiet --short HEAD)"
     mkdir -p repo
-    flatpak build-export repo build-dir "$branch"
+    flatpak build-export --update-appstream repo build-dir "$branch"
     flatpak --user install --noninteractive --reinstall "$(pwd)/repo" "{{ appid }}//$branch"
     flatpak --user list --app --columns=application,branch | while IFS=$'\t' read -r app installed_branch; do
       if [[ "$app" == "{{ appid }}" && "$installed_branch" != "$branch" ]]; then
@@ -181,7 +189,7 @@ flatpak-install-only:
         exit 1
     fi
     mkdir -p repo
-    flatpak build-export repo build-dir "$branch"
+    flatpak build-export --update-appstream repo build-dir "$branch"
     flatpak --user install --noninteractive --reinstall "$(pwd)/repo" "{{ appid }}//$branch"
     flatpak --user list --app --columns=application,branch | while IFS=$'\t' read -r app installed_branch; do
       if [[ "$app" == "{{ appid }}" && "$installed_branch" != "$branch" ]]; then

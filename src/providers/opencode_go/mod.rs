@@ -149,6 +149,7 @@ fn push_window(
         reset_description: reset_at.map(|value| value.to_rfc3339()),
         reset_at,
         window_seconds,
+        group: None,
     });
 }
 

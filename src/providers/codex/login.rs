@@ -33,7 +33,6 @@ pub struct CodexLoginState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodexLoginStatus {
     Running,
-    Succeeded,
     Failed,
 }
 

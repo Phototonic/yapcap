@@ -72,9 +72,7 @@ def _pick_tokens_file(
         raise FileNotFoundError(msg)
     if len(hits) > 1:
         ids = [p.parent.name for p in hits]
-        raise OSError(
-            f"multiple Codex accounts {ids}; pass --account <directory-name>"
-        )
+        raise OSError(f"multiple Codex accounts {ids}; pass --account <directory-name>")
     return hits[0]
 
 
@@ -120,7 +118,9 @@ def _headers_to_dict(msg: Any) -> dict[str, str]:
 def _save(out_dir: Path, name: str, record: dict[str, Any]) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     path = out_dir / name
-    path.write_text(json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    path.write_text(
+        json.dumps(record, indent=2, sort_keys=True) + "\n", encoding="utf-8"
+    )
     return path
 
 
@@ -250,7 +250,9 @@ def main() -> int:
     out_dir: Path = args.out_dir
 
     if args.token_only and args.usage_only:
-        print("error: use at most one of --token-only and --usage-only", file=sys.stderr)
+        print(
+            "error: use at most one of --token-only and --usage-only", file=sys.stderr
+        )
         return 2
 
     refresh: str | None = None
@@ -280,13 +282,9 @@ def main() -> int:
             print(f"error: {e}", file=sys.stderr)
             return 1
 
-    refresh = (
-        _env("CODEX_REFRESH_TOKEN", "YAPCAP_CODEX_REFRESH_TOKEN") or refresh
-    )
+    refresh = _env("CODEX_REFRESH_TOKEN", "YAPCAP_CODEX_REFRESH_TOKEN") or refresh
     access = _env("CODEX_ACCESS_TOKEN", "YAPCAP_CODEX_ACCESS_TOKEN") or access
-    chatgpt_id = (
-        _env("CHATGPT_ACCOUNT_ID", "YAPCAP_CHATGPT_ACCOUNT_ID") or chatgpt_id
-    )
+    chatgpt_id = _env("CHATGPT_ACCOUNT_ID", "YAPCAP_CHATGPT_ACCOUNT_ID") or chatgpt_id
 
     rec: dict[str, Any] | None = None
 

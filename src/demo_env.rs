@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: MPL-2.0
 
 use crate::config::{
-    Config, ManagedClaudeAccountConfig, ManagedCodexAccountConfig, ManagedCopilotAccountConfig,
-    ManagedCursorAccountConfig, ManagedGeminiAccountConfig, ManagedKimiAccountConfig,
-    ManagedMinimaxAccountConfig, ManagedOpenCodeGoAccountConfig, ProviderVisibilityMode, paths,
+    Config, ManagedAntigravityAccountConfig, ManagedClaudeAccountConfig, ManagedCodexAccountConfig,
+    ManagedCopilotAccountConfig, ManagedCursorAccountConfig, ManagedGeminiAccountConfig,
+    ManagedKimiAccountConfig, ManagedMinimaxAccountConfig, ManagedOpenCodeGoAccountConfig,
+    ProviderEnablement, ProviderVisibilityMode, paths,
 };
 use crate::model::{
     AccountSelectionStatus, AppState, AuthState, ExtraUsageState, ProviderAccountRuntimeState,
@@ -16,9 +17,8 @@ use std::sync::Once;
 
 const DEMO_ENV: &str = "YAPCAP_DEMO";
 const DEMO_ID_PREFIX: &str = "yapcap-demo:";
-const CODEX_PRIMARY_ID: &str = "yapcap-demo:codex-primary";
-const CODEX_SECONDARY_ID: &str = "yapcap-demo:codex-secondary";
 const CODEX_PRO_ID: &str = "yapcap-demo:codex-pro";
+const CODEX_FREE_ID: &str = "yapcap-demo:codex-free";
 const CLAUDE_PRIMARY_ID: &str = "yapcap-demo:claude-primary";
 const CLAUDE_MAX_ID: &str = "yapcap-demo:claude-max";
 const CURSOR_PRIMARY_ID: &str = "yapcap-demo:cursor-primary";
@@ -27,7 +27,9 @@ const COPILOT_FREE_ID: &str = "yapcap-demo:copilot-casey-free";
 const COPILOT_PRO_ID: &str = "yapcap-demo:copilot-morgan-pro";
 const MINIMAX_PRIMARY_ID: &str = "yapcap-demo:minimax-primary";
 const KIMI_PRIMARY_ID: &str = "yapcap-demo:kimi-primary";
-const OPENCODE_GO_PRIMARY_ID: &str = "yapcap-demo:opencode-go-primary";
+const ANTIGRAVITY_PRIMARY_ID: &str = "yapcap-demo:antigravity-primary";
+const ANTIGRAVITY_FREE_ID: &str = "yapcap-demo:antigravity-free";
+const OPENCODE_GO_ID: &str = "yapcap-demo:opencode-go";
 
 fn env_truthy() -> bool {
     std::env::var(DEMO_ENV).is_ok_and(|value| {
@@ -46,19 +48,24 @@ pub fn is_active() -> bool {
     std::env::var(DEMO_ENV).is_ok() && env_truthy()
 }
 
+pub fn detection_snapshot() -> crate::detection::DetectionSnapshot {
+    crate::detection::DetectionSnapshot::default()
+}
+
 pub fn apply_config(config: &mut Config) {
     if !is_active() {
         return;
     }
 
-    config.codex_enabled = true;
-    config.claude_enabled = true;
-    config.cursor_enabled = true;
-    config.gemini_enabled = true;
-    config.copilot_enabled = true;
-    config.minimax_enabled = true;
-    config.kimi_enabled = true;
-    config.opencode_go_enabled = true;
+    config.codex_enablement = ProviderEnablement::Enabled;
+    config.claude_enablement = ProviderEnablement::Enabled;
+    config.cursor_enablement = ProviderEnablement::Enabled;
+    config.gemini_enablement = ProviderEnablement::Enabled;
+    config.copilot_enablement = ProviderEnablement::Enabled;
+    config.minimax_enablement = ProviderEnablement::Enabled;
+    config.kimi_enablement = ProviderEnablement::Enabled;
+    config.antigravity_enablement = ProviderEnablement::Enabled;
+    config.opencode_go_enablement = ProviderEnablement::Enabled;
 
     config.codex_managed_accounts = demo_codex_accounts();
     config.claude_managed_accounts = demo_claude_accounts();
@@ -67,48 +74,20 @@ pub fn apply_config(config: &mut Config) {
     config.copilot_managed_accounts = demo_copilot_accounts();
     config.minimax_managed_accounts = demo_minimax_accounts();
     config.kimi_managed_accounts = demo_kimi_accounts();
+    config.antigravity_managed_accounts = demo_antigravity_accounts();
     config.opencode_go_managed_accounts = demo_opencode_go_accounts();
 
     config.provider_visibility_mode = ProviderVisibilityMode::UserManaged;
 
-    if config.selected_codex_account_ids.is_empty() {
-        config.selected_codex_account_ids = vec![
-            CODEX_PRIMARY_ID.to_string(),
-            CODEX_SECONDARY_ID.to_string(),
-            CODEX_PRO_ID.to_string(),
-        ];
-        config.set_provider_show_all(ProviderId::Codex, true);
-    }
-    if config.selected_claude_account_ids.is_empty() {
-        config.selected_claude_account_ids =
-            vec![CLAUDE_PRIMARY_ID.to_string(), CLAUDE_MAX_ID.to_string()];
-        config.set_provider_show_all(ProviderId::Claude, true);
-    }
-    if config.selected_cursor_account_ids.is_empty() {
-        config.selected_cursor_account_ids = vec![CURSOR_PRIMARY_ID.to_string()];
-        config.set_provider_show_all(ProviderId::Cursor, false);
-    }
-    if config.selected_gemini_account_ids.is_empty() {
-        config.selected_gemini_account_ids = vec![GEMINI_PRIMARY_ID.to_string()];
-        config.set_provider_show_all(ProviderId::Gemini, false);
-    }
-    if config.selected_copilot_account_ids.is_empty() {
-        config.selected_copilot_account_ids =
-            vec![COPILOT_FREE_ID.to_string(), COPILOT_PRO_ID.to_string()];
-        config.set_provider_show_all(ProviderId::Copilot, true);
-    }
-    if config.selected_minimax_account_ids.is_empty() {
-        config.selected_minimax_account_ids = vec![MINIMAX_PRIMARY_ID.to_string()];
-        config.set_provider_show_all(ProviderId::Minimax, false);
-    }
-    if config.selected_kimi_account_ids.is_empty() {
-        config.selected_kimi_account_ids = vec![KIMI_PRIMARY_ID.to_string()];
-        config.set_provider_show_all(ProviderId::Kimi, false);
-    }
-    if config.selected_opencode_go_account_ids.is_empty() {
-        config.selected_opencode_go_account_ids = vec![OPENCODE_GO_PRIMARY_ID.to_string()];
-        config.set_provider_show_all(ProviderId::OpenCodeGo, false);
-    }
+    config.selected_codex_account_ids = vec![CODEX_PRO_ID.to_string()];
+    config.selected_claude_account_ids = vec![CLAUDE_PRIMARY_ID.to_string()];
+    config.selected_cursor_account_ids = vec![CURSOR_PRIMARY_ID.to_string()];
+    config.selected_gemini_account_ids = vec![GEMINI_PRIMARY_ID.to_string()];
+    config.selected_copilot_account_ids = vec![COPILOT_FREE_ID.to_string()];
+    config.selected_minimax_account_ids = vec![MINIMAX_PRIMARY_ID.to_string()];
+    config.selected_kimi_account_ids = vec![KIMI_PRIMARY_ID.to_string()];
+    config.selected_antigravity_account_ids = vec![ANTIGRAVITY_PRIMARY_ID.to_string()];
+    config.selected_opencode_go_account_ids = vec![OPENCODE_GO_ID.to_string()];
 }
 
 pub fn strip_leaked_state(config: &mut Config) -> bool {
@@ -126,6 +105,10 @@ pub fn strip_leaked_state(config: &mut Config) -> bool {
     changed |= retain_len_changed(&mut config.minimax_managed_accounts, |account| &account.id);
     changed |= strip_ids(&mut config.selected_kimi_account_ids);
     changed |= retain_len_changed(&mut config.kimi_managed_accounts, |account| &account.id);
+    changed |= strip_ids(&mut config.selected_antigravity_account_ids);
+    changed |= retain_len_changed(&mut config.antigravity_managed_accounts, |account| {
+        &account.id
+    });
     changed |= strip_ids(&mut config.selected_opencode_go_account_ids);
     changed |= retain_len_changed(&mut config.opencode_go_managed_accounts, |account| {
         &account.id
@@ -151,7 +134,7 @@ pub fn apply(config: &Config, state: &mut AppState) {
     }
     state.provider_accounts.clear();
     for provider in ProviderId::ALL {
-        if !config.provider_enabled(provider) {
+        if !state.provider(provider).is_some_and(|entry| entry.enabled) {
             state.upsert_provider(ProviderRuntimeState::disabled(provider));
             continue;
         }
@@ -189,13 +172,14 @@ pub fn apply(config: &Config, state: &mut AppState) {
 
 fn demo_system_active_account_id(provider: ProviderId) -> Option<String> {
     let id = match provider {
-        ProviderId::Codex => CODEX_PRIMARY_ID,
+        ProviderId::Codex => CODEX_PRO_ID,
         ProviderId::Claude => CLAUDE_PRIMARY_ID,
         ProviderId::Cursor => CURSOR_PRIMARY_ID,
         ProviderId::Gemini => GEMINI_PRIMARY_ID,
         ProviderId::Copilot => return None,
         ProviderId::Minimax => return None,
         ProviderId::Kimi => return None,
+        ProviderId::Antigravity => return None,
         ProviderId::OpenCodeGo => return None,
     };
     Some(id.to_string())
@@ -209,6 +193,7 @@ fn demo_source(provider: ProviderId) -> String {
         ProviderId::Cursor => "Managed Account".to_string(),
         ProviderId::Minimax => "API Key".to_string(),
         ProviderId::Kimi => "API Key".to_string(),
+        ProviderId::Antigravity => "OAuth".to_string(),
         ProviderId::OpenCodeGo => "API Key".to_string(),
     }
 }
@@ -220,30 +205,6 @@ fn demo_runtime_accounts(provider: ProviderId) -> Vec<ProviderAccountRuntimeStat
             demo_account(
                 provider,
                 DemoAccount {
-                    account_id: CODEX_PRIMARY_ID,
-                    label: "plus-1@example.com",
-                    last_success_at: now - Duration::minutes(2),
-                    health: ProviderHealth::Ok,
-                    auth_state: AuthState::Ready,
-                    error: None,
-                    snapshot: snapshot_codex_primary(),
-                },
-            ),
-            demo_account(
-                provider,
-                DemoAccount {
-                    account_id: CODEX_SECONDARY_ID,
-                    label: "plus-2@example.com",
-                    last_success_at: now - Duration::minutes(6),
-                    health: ProviderHealth::Ok,
-                    auth_state: AuthState::Ready,
-                    error: None,
-                    snapshot: snapshot_codex_secondary(),
-                },
-            ),
-            demo_account(
-                provider,
-                DemoAccount {
                     account_id: CODEX_PRO_ID,
                     label: "pro@example.com",
                     last_success_at: now - Duration::minutes(1),
@@ -251,6 +212,18 @@ fn demo_runtime_accounts(provider: ProviderId) -> Vec<ProviderAccountRuntimeStat
                     auth_state: AuthState::Ready,
                     error: None,
                     snapshot: snapshot_codex_pro(),
+                },
+            ),
+            demo_account(
+                provider,
+                DemoAccount {
+                    account_id: CODEX_FREE_ID,
+                    label: "free@example.com",
+                    last_success_at: now - Duration::minutes(2),
+                    health: ProviderHealth::Ok,
+                    auth_state: AuthState::Ready,
+                    error: None,
+                    snapshot: snapshot_codex_free(),
                 },
             ),
         ],
@@ -309,7 +282,7 @@ fn demo_runtime_accounts(provider: ProviderId) -> Vec<ProviderAccountRuntimeStat
                 provider,
                 DemoAccount {
                     account_id: COPILOT_FREE_ID,
-                    label: "casey-free",
+                    label: "Copilot Free",
                     last_success_at: now - Duration::minutes(5),
                     health: ProviderHealth::Ok,
                     auth_state: AuthState::Ready,
@@ -321,7 +294,7 @@ fn demo_runtime_accounts(provider: ProviderId) -> Vec<ProviderAccountRuntimeStat
                 provider,
                 DemoAccount {
                     account_id: COPILOT_PRO_ID,
-                    label: "morgan-pro",
+                    label: "Copilot Pro+",
                     last_success_at: now - Duration::minutes(5),
                     health: ProviderHealth::Ok,
                     auth_state: AuthState::Ready,
@@ -334,7 +307,7 @@ fn demo_runtime_accounts(provider: ProviderId) -> Vec<ProviderAccountRuntimeStat
             provider,
             DemoAccount {
                 account_id: MINIMAX_PRIMARY_ID,
-                label: "jordan-minimax",
+                label: "MiniMax M2",
                 last_success_at: now - Duration::minutes(3),
                 health: ProviderHealth::Ok,
                 auth_state: AuthState::Ready,
@@ -346,7 +319,7 @@ fn demo_runtime_accounts(provider: ProviderId) -> Vec<ProviderAccountRuntimeStat
             provider,
             DemoAccount {
                 account_id: KIMI_PRIMARY_ID,
-                label: "jordan-kimi",
+                label: "Kimi Intermediate",
                 last_success_at: now - Duration::minutes(3),
                 health: ProviderHealth::Ok,
                 auth_state: AuthState::Ready,
@@ -354,16 +327,42 @@ fn demo_runtime_accounts(provider: ProviderId) -> Vec<ProviderAccountRuntimeStat
                 snapshot: snapshot_kimi_primary(),
             },
         )],
+        ProviderId::Antigravity => vec![
+            demo_account(
+                provider,
+                DemoAccount {
+                    account_id: ANTIGRAVITY_PRIMARY_ID,
+                    label: "pro@example.com",
+                    last_success_at: now - Duration::minutes(2),
+                    health: ProviderHealth::Ok,
+                    auth_state: AuthState::Ready,
+                    error: None,
+                    snapshot: snapshot_antigravity_primary(),
+                },
+            ),
+            demo_account(
+                provider,
+                DemoAccount {
+                    account_id: ANTIGRAVITY_FREE_ID,
+                    label: "free@example.com",
+                    last_success_at: now - Duration::minutes(4),
+                    health: ProviderHealth::Ok,
+                    auth_state: AuthState::Ready,
+                    error: None,
+                    snapshot: snapshot_antigravity_free(),
+                },
+            ),
+        ],
         ProviderId::OpenCodeGo => vec![demo_account(
             provider,
             DemoAccount {
-                account_id: OPENCODE_GO_PRIMARY_ID,
-                label: "jordan-opencode-go",
-                last_success_at: now - Duration::minutes(3),
+                account_id: OPENCODE_GO_ID,
+                label: "OpenCode Go",
+                last_success_at: now - Duration::minutes(2),
                 health: ProviderHealth::Ok,
                 auth_state: AuthState::Ready,
                 error: None,
-                snapshot: snapshot_opencode_go_primary(),
+                snapshot: snapshot_opencode_go(),
             },
         )],
     }
@@ -411,6 +410,7 @@ fn codex_demo_windows(
             reset_at: Some(session_end),
             window_seconds: Some(5 * 60 * 60),
             reset_description: None,
+            group: None,
         },
         UsageWindow {
             label: "Weekly".to_string(),
@@ -418,54 +418,9 @@ fn codex_demo_windows(
             reset_at: Some(weekly_end),
             window_seconds: Some(7 * 24 * 3600),
             reset_description: None,
+            group: None,
         },
     ]
-}
-
-fn snapshot_codex_primary() -> UsageSnapshot {
-    let now = Utc::now();
-    UsageSnapshot {
-        provider: ProviderId::Codex,
-        source: "OAuth".to_string(),
-        updated_at: now,
-        headline: UsageHeadline(0),
-        windows: codex_demo_windows(now, 29.0, 83.0, Duration::hours(2), Duration::days(1)),
-        provider_cost: Some(ProviderCost {
-            used: 320.0,
-            limit: None,
-            units: "credits".to_string(),
-        }),
-        extra_usage: None,
-        identity: ProviderIdentity {
-            email: Some("plus-1@example.com".to_string()),
-            account_id: Some("demo-acct-8f2a1c".to_string()),
-            plan: Some("plus".to_string()),
-            display_name: Some("Plus 1".to_string()),
-        },
-    }
-}
-
-fn snapshot_codex_secondary() -> UsageSnapshot {
-    let now = Utc::now();
-    UsageSnapshot {
-        provider: ProviderId::Codex,
-        source: "OAuth".to_string(),
-        updated_at: now,
-        headline: UsageHeadline(0),
-        windows: codex_demo_windows(now, 71.0, 46.0, Duration::minutes(47), Duration::days(3)),
-        provider_cost: Some(ProviderCost {
-            used: 85.0,
-            limit: None,
-            units: "credits".to_string(),
-        }),
-        extra_usage: None,
-        identity: ProviderIdentity {
-            email: Some("plus-2@example.com".to_string()),
-            account_id: Some("demo-acct-31be7d".to_string()),
-            plan: Some("plus".to_string()),
-            display_name: Some("Plus 2".to_string()),
-        },
-    }
 }
 
 fn snapshot_codex_pro() -> UsageSnapshot {
@@ -491,6 +446,25 @@ fn snapshot_codex_pro() -> UsageSnapshot {
     }
 }
 
+fn snapshot_codex_free() -> UsageSnapshot {
+    let now = Utc::now();
+    UsageSnapshot {
+        provider: ProviderId::Codex,
+        source: "OAuth".to_string(),
+        updated_at: now,
+        headline: UsageHeadline(0),
+        windows: codex_demo_windows(now, 29.0, 83.0, Duration::hours(2), Duration::days(1)),
+        provider_cost: None,
+        extra_usage: None,
+        identity: ProviderIdentity {
+            email: Some("free@example.com".to_string()),
+            account_id: Some("demo-acct-free8f2".to_string()),
+            plan: Some("free".to_string()),
+            display_name: Some("Free".to_string()),
+        },
+    }
+}
+
 fn snapshot_claude_primary() -> UsageSnapshot {
     let now = Utc::now();
     let s = now + Duration::hours(3);
@@ -502,6 +476,7 @@ fn snapshot_claude_primary() -> UsageSnapshot {
             reset_at: Some(s),
             window_seconds: Some(5 * 60 * 60),
             reset_description: None,
+            group: None,
         },
         UsageWindow {
             label: "Weekly".to_string(),
@@ -509,6 +484,7 @@ fn snapshot_claude_primary() -> UsageSnapshot {
             reset_at: Some(w),
             window_seconds: Some(7 * 24 * 3600),
             reset_description: None,
+            group: None,
         },
         UsageWindow {
             label: "Fable".to_string(),
@@ -516,6 +492,7 @@ fn snapshot_claude_primary() -> UsageSnapshot {
             reset_at: Some(w),
             window_seconds: Some(7 * 24 * 3600),
             reset_description: None,
+            group: None,
         },
     ];
     UsageSnapshot {
@@ -553,6 +530,7 @@ fn snapshot_claude_max() -> UsageSnapshot {
             reset_at: Some(s),
             window_seconds: Some(5 * 60 * 60),
             reset_description: None,
+            group: None,
         },
         UsageWindow {
             label: "Weekly".to_string(),
@@ -560,6 +538,7 @@ fn snapshot_claude_max() -> UsageSnapshot {
             reset_at: Some(w),
             window_seconds: Some(7 * 24 * 3600),
             reset_description: None,
+            group: None,
         },
         UsageWindow {
             label: "Sonnet".to_string(),
@@ -567,6 +546,7 @@ fn snapshot_claude_max() -> UsageSnapshot {
             reset_at: Some(w),
             window_seconds: Some(7 * 24 * 3600),
             reset_description: None,
+            group: None,
         },
         UsageWindow {
             label: "Opus".to_string(),
@@ -574,6 +554,7 @@ fn snapshot_claude_max() -> UsageSnapshot {
             reset_at: Some(w),
             window_seconds: Some(7 * 24 * 3600),
             reset_description: None,
+            group: None,
         },
         UsageWindow {
             label: "Cowork".to_string(),
@@ -581,6 +562,7 @@ fn snapshot_claude_max() -> UsageSnapshot {
             reset_at: Some(w),
             window_seconds: Some(7 * 24 * 3600),
             reset_description: None,
+            group: None,
         },
         UsageWindow {
             label: "Fable".to_string(),
@@ -588,6 +570,7 @@ fn snapshot_claude_max() -> UsageSnapshot {
             reset_at: Some(w),
             window_seconds: Some(7 * 24 * 3600),
             reset_description: None,
+            group: None,
         },
     ];
     UsageSnapshot {
@@ -615,22 +598,25 @@ fn snapshot_gemini_primary() -> UsageSnapshot {
             label: "Pro".to_string(),
             used_percent: 45.0,
             reset_at: Some(reset),
-            window_seconds: None,
+            window_seconds: Some(24 * 3600),
             reset_description: None,
+            group: None,
         },
         UsageWindow {
             label: "Flash".to_string(),
             used_percent: 20.0,
             reset_at: Some(reset),
-            window_seconds: None,
+            window_seconds: Some(24 * 3600),
             reset_description: None,
+            group: None,
         },
         UsageWindow {
             label: "Lite".to_string(),
             used_percent: 8.0,
             reset_at: Some(reset),
-            window_seconds: None,
+            window_seconds: Some(24 * 3600),
             reset_description: None,
+            group: None,
         },
     ];
     UsageSnapshot {
@@ -675,7 +661,7 @@ fn snapshot_cursor_primary() -> UsageSnapshot {
             email: Some("hobby@example.com".to_string()),
             account_id: None,
             plan: Some("pro".to_string()),
-            display_name: Some("Hobby".to_string()),
+            display_name: Some("Pro".to_string()),
         },
     }
 }
@@ -688,15 +674,17 @@ fn snapshot_copilot_free() -> UsageSnapshot {
             label: "chat".to_string(),
             used_percent: 30.0,
             reset_at: Some(reset),
-            window_seconds: None,
+            window_seconds: Some(30 * 24 * 3600),
             reset_description: Some(reset.to_rfc3339()),
+            group: None,
         },
         UsageWindow {
             label: "completions".to_string(),
             used_percent: 80.0,
             reset_at: Some(reset),
-            window_seconds: None,
+            window_seconds: Some(30 * 24 * 3600),
             reset_description: Some(reset.to_rfc3339()),
+            group: None,
         },
     ];
     UsageSnapshot {
@@ -711,7 +699,7 @@ fn snapshot_copilot_free() -> UsageSnapshot {
             email: None,
             account_id: Some("10101".to_string()),
             plan: Some("Free".to_string()),
-            display_name: Some("casey-free".to_string()),
+            display_name: Some("Copilot Free".to_string()),
         },
     }
 }
@@ -728,8 +716,9 @@ fn snapshot_copilot_pro() -> UsageSnapshot {
             label: "credits".to_string(),
             used_percent: 40.0,
             reset_at: Some(reset),
-            window_seconds: None,
+            window_seconds: Some(30 * 24 * 3600),
             reset_description: Some("+42 over plan".to_string()),
+            group: None,
         }],
         provider_cost: Some(ProviderCost {
             used: 28.0,
@@ -741,7 +730,7 @@ fn snapshot_copilot_pro() -> UsageSnapshot {
             email: None,
             account_id: Some("20202".to_string()),
             plan: Some("Pro+".to_string()),
-            display_name: Some("morgan-pro".to_string()),
+            display_name: Some("Copilot Pro+".to_string()),
         },
     }
 }
@@ -754,7 +743,7 @@ fn demo_minimax_accounts() -> Vec<ManagedMinimaxAccountConfig> {
     let now = demo_timestamp();
     vec![ManagedMinimaxAccountConfig {
         id: MINIMAX_PRIMARY_ID.to_string(),
-        label: "jordan-minimax".to_string(),
+        label: "MiniMax M2".to_string(),
         api_key_source: "demo".to_string(),
         created_at: now,
         updated_at: now,
@@ -766,7 +755,7 @@ fn demo_kimi_accounts() -> Vec<ManagedKimiAccountConfig> {
     let now = demo_timestamp();
     vec![ManagedKimiAccountConfig {
         id: KIMI_PRIMARY_ID.to_string(),
-        label: "jordan-kimi".to_string(),
+        label: "Kimi Intermediate".to_string(),
         api_key_source: "demo".to_string(),
         created_at: now,
         updated_at: now,
@@ -777,8 +766,8 @@ fn demo_kimi_accounts() -> Vec<ManagedKimiAccountConfig> {
 fn demo_opencode_go_accounts() -> Vec<ManagedOpenCodeGoAccountConfig> {
     let now = demo_timestamp();
     vec![ManagedOpenCodeGoAccountConfig {
-        id: OPENCODE_GO_PRIMARY_ID.to_string(),
-        label: "jordan-opencode-go".to_string(),
+        id: OPENCODE_GO_ID.to_string(),
+        label: "OpenCode Go".to_string(),
         api_key_source: "demo".to_string(),
         created_at: now,
         updated_at: now,
@@ -788,6 +777,8 @@ fn demo_opencode_go_accounts() -> Vec<ManagedOpenCodeGoAccountConfig> {
 
 fn snapshot_minimax_primary() -> UsageSnapshot {
     let now = Utc::now();
+    let interval_reset = now + Duration::hours(3);
+    let weekly_reset = now + Duration::days(4);
     UsageSnapshot {
         provider: ProviderId::Minimax,
         source: "API Key".to_string(),
@@ -797,16 +788,18 @@ fn snapshot_minimax_primary() -> UsageSnapshot {
             UsageWindow {
                 label: "MiniMax-M2 (5h): 640/1000".to_string(),
                 used_percent: 36.0,
-                reset_at: None,
+                reset_at: Some(interval_reset),
                 window_seconds: Some(5 * 3600),
                 reset_description: Some("Resets every 5 hours".to_string()),
+                group: None,
             },
             UsageWindow {
                 label: "MiniMax-M2 (Weekly): 3800/10000".to_string(),
                 used_percent: 62.0,
-                reset_at: None,
+                reset_at: Some(weekly_reset),
                 window_seconds: Some(7 * 24 * 3600),
                 reset_description: Some("Resets weekly".to_string()),
+                group: None,
             },
         ],
         provider_cost: None,
@@ -814,8 +807,8 @@ fn snapshot_minimax_primary() -> UsageSnapshot {
         identity: ProviderIdentity {
             email: None,
             account_id: None,
-            plan: Some("Minimax.io".to_string()),
-            display_name: Some("jordan-minimax".to_string()),
+            plan: Some("M2".to_string()),
+            display_name: Some("MiniMax M2".to_string()),
         },
     }
 }
@@ -834,8 +827,9 @@ fn snapshot_kimi_primary() -> UsageSnapshot {
                 label: "Weekly".to_string(),
                 used_percent: 38.0,
                 reset_at: Some(weekly_reset),
-                window_seconds: None,
+                window_seconds: Some(7 * 24 * 3600),
                 reset_description: Some(weekly_reset.to_rfc3339()),
+                group: None,
             },
             UsageWindow {
                 label: "Rate Limit (300m)".to_string(),
@@ -843,6 +837,7 @@ fn snapshot_kimi_primary() -> UsageSnapshot {
                 reset_at: Some(rate_limit_reset),
                 window_seconds: Some(300 * 60),
                 reset_description: Some(rate_limit_reset.to_rfc3339()),
+                group: None,
             },
         ],
         provider_cost: None,
@@ -850,17 +845,17 @@ fn snapshot_kimi_primary() -> UsageSnapshot {
         identity: ProviderIdentity {
             email: None,
             account_id: None,
-            plan: Some("LEVEL_INTERMEDIATE".to_string()),
-            display_name: Some("jordan-kimi".to_string()),
+            plan: Some("Intermediate".to_string()),
+            display_name: Some("Kimi Intermediate".to_string()),
         },
     }
 }
 
-fn snapshot_opencode_go_primary() -> UsageSnapshot {
+fn snapshot_opencode_go() -> UsageSnapshot {
     let now = Utc::now();
-    let rolling_reset = now + Duration::hours(3);
+    let five_hour_reset = now + Duration::hours(3);
     let weekly_reset = now + Duration::days(4);
-    let monthly_reset = now + Duration::days(12);
+    let monthly_reset = now + Duration::days(18);
     UsageSnapshot {
         provider: ProviderId::OpenCodeGo,
         source: "API Key".to_string(),
@@ -869,29 +864,37 @@ fn snapshot_opencode_go_primary() -> UsageSnapshot {
         windows: vec![
             UsageWindow {
                 label: "5 Hour".to_string(),
-                used_percent: 45.5,
-                reset_at: Some(rolling_reset),
-                window_seconds: Some(5 * 3600),
-                reset_description: Some(rolling_reset.to_rfc3339()),
+                used_percent: 24.0,
+                reset_at: Some(five_hour_reset),
+                window_seconds: Some(5 * 60 * 60),
+                reset_description: Some(five_hour_reset.to_rfc3339()),
+                group: None,
             },
             UsageWindow {
                 label: "Weekly".to_string(),
-                used_percent: 30.0,
+                used_percent: 47.0,
                 reset_at: Some(weekly_reset),
-                window_seconds: Some(7 * 24 * 3600),
+                window_seconds: Some(7 * 24 * 60 * 60),
                 reset_description: Some(weekly_reset.to_rfc3339()),
+                group: None,
             },
             UsageWindow {
                 label: "Monthly".to_string(),
-                used_percent: 15.0,
+                used_percent: 61.0,
                 reset_at: Some(monthly_reset),
-                window_seconds: Some(30 * 24 * 3600),
+                window_seconds: Some(30 * 24 * 60 * 60),
                 reset_description: Some(monthly_reset.to_rfc3339()),
+                group: None,
             },
         ],
         provider_cost: None,
         extra_usage: None,
-        identity: ProviderIdentity::default(),
+        identity: ProviderIdentity {
+            email: None,
+            account_id: None,
+            plan: Some("Go".to_string()),
+            display_name: Some("OpenCode Go".to_string()),
+        },
     }
 }
 
@@ -899,31 +902,21 @@ fn demo_codex_accounts() -> Vec<ManagedCodexAccountConfig> {
     let now = demo_timestamp();
     vec![
         ManagedCodexAccountConfig {
-            id: CODEX_PRIMARY_ID.to_string(),
-            label: "plus-1@example.com".to_string(),
-            codex_home: demo_root().join("codex-primary"),
-            email: Some("plus-1@example.com".to_string()),
-            provider_account_id: Some("demo-acct-8f2a1c".to_string()),
-            created_at: now,
-            updated_at: now,
-            last_authenticated_at: Some(now),
-        },
-        ManagedCodexAccountConfig {
-            id: CODEX_SECONDARY_ID.to_string(),
-            label: "plus-2@example.com".to_string(),
-            codex_home: demo_root().join("codex-secondary"),
-            email: Some("plus-2@example.com".to_string()),
-            provider_account_id: Some("demo-acct-31be7d".to_string()),
-            created_at: now,
-            updated_at: now,
-            last_authenticated_at: Some(now),
-        },
-        ManagedCodexAccountConfig {
             id: CODEX_PRO_ID.to_string(),
             label: "pro@example.com".to_string(),
             codex_home: demo_root().join("codex-pro"),
             email: Some("pro@example.com".to_string()),
             provider_account_id: Some("demo-acct-pro7a4".to_string()),
+            created_at: now,
+            updated_at: now,
+            last_authenticated_at: Some(now),
+        },
+        ManagedCodexAccountConfig {
+            id: CODEX_FREE_ID.to_string(),
+            label: "free@example.com".to_string(),
+            codex_home: demo_root().join("codex-free"),
+            email: Some("free@example.com".to_string()),
+            provider_account_id: Some("demo-acct-free8f2".to_string()),
             created_at: now,
             updated_at: now,
             last_authenticated_at: Some(now),
@@ -996,23 +989,135 @@ fn demo_copilot_accounts() -> Vec<ManagedCopilotAccountConfig> {
     vec![
         ManagedCopilotAccountConfig {
             id: COPILOT_FREE_ID.to_string(),
-            label: "casey-free".to_string(),
+            label: "Copilot Free".to_string(),
             github_user_id: 10101,
-            login: "casey-free".to_string(),
+            login: "copilot-free".to_string(),
             created_at: now,
             updated_at: now,
             last_authenticated_at: Some(now),
         },
         ManagedCopilotAccountConfig {
             id: COPILOT_PRO_ID.to_string(),
-            label: "morgan-pro".to_string(),
+            label: "Copilot Pro+".to_string(),
             github_user_id: 20202,
-            login: "morgan-pro".to_string(),
+            login: "copilot-pro".to_string(),
             created_at: now,
             updated_at: now,
             last_authenticated_at: Some(now),
         },
     ]
+}
+
+fn demo_antigravity_accounts() -> Vec<ManagedAntigravityAccountConfig> {
+    let now = demo_timestamp();
+    vec![
+        ManagedAntigravityAccountConfig {
+            id: ANTIGRAVITY_PRIMARY_ID.to_string(),
+            label: "pro@example.com".to_string(),
+            account_root: demo_root().join("antigravity-primary"),
+            email: "pro@example.com".to_string(),
+            sub: "demo-antigravity-pro-sub".to_string(),
+            last_tier_id: Some("g1-pro-tier".to_string()),
+            created_at: now,
+            updated_at: now,
+            last_authenticated_at: Some(now),
+        },
+        ManagedAntigravityAccountConfig {
+            id: ANTIGRAVITY_FREE_ID.to_string(),
+            label: "free@example.com".to_string(),
+            account_root: demo_root().join("antigravity-free"),
+            email: "free@example.com".to_string(),
+            sub: "demo-antigravity-free-sub".to_string(),
+            last_tier_id: Some("free-tier".to_string()),
+            created_at: now,
+            updated_at: now,
+            last_authenticated_at: Some(now),
+        },
+    ]
+}
+
+fn snapshot_antigravity_primary() -> UsageSnapshot {
+    let now = Utc::now();
+    let weekly = now + Duration::days(6);
+    let five_hour = now + Duration::hours(4);
+    let windows = vec![
+        UsageWindow {
+            label: "Five Hour Limit".to_string(),
+            used_percent: 44.0,
+            reset_at: Some(five_hour),
+            window_seconds: Some(5 * 3600),
+            reset_description: None,
+            group: Some("Gemini Models".to_string()),
+        },
+        UsageWindow {
+            label: "Weekly Limit".to_string(),
+            used_percent: 12.0,
+            reset_at: Some(weekly),
+            window_seconds: Some(7 * 24 * 3600),
+            reset_description: None,
+            group: Some("Gemini Models".to_string()),
+        },
+        UsageWindow {
+            label: "Five Hour Limit".to_string(),
+            used_percent: 0.0,
+            reset_at: Some(five_hour),
+            window_seconds: Some(5 * 3600),
+            reset_description: None,
+            group: Some("Claude and GPT models".to_string()),
+        },
+        UsageWindow {
+            label: "Weekly Limit".to_string(),
+            used_percent: 3.0,
+            reset_at: Some(weekly),
+            window_seconds: Some(7 * 24 * 3600),
+            reset_description: None,
+            group: Some("Claude and GPT models".to_string()),
+        },
+    ];
+    UsageSnapshot {
+        provider: ProviderId::Antigravity,
+        source: "OAuth".to_string(),
+        updated_at: now,
+        headline: UsageHeadline(1),
+        windows,
+        provider_cost: None,
+        extra_usage: None,
+        identity: ProviderIdentity {
+            email: Some("pro@example.com".to_string()),
+            account_id: None,
+            plan: Some(
+                crate::providers::antigravity::plan_label::plan_label("g1-pro-tier").to_string(),
+            ),
+            display_name: Some("Pro".to_string()),
+        },
+    }
+}
+
+fn snapshot_antigravity_free() -> UsageSnapshot {
+    let now = Utc::now();
+    let weekly = now + Duration::days(3);
+    UsageSnapshot {
+        provider: ProviderId::Antigravity,
+        source: "OAuth".to_string(),
+        updated_at: now,
+        headline: UsageHeadline(0),
+        windows: vec![UsageWindow {
+            label: "Weekly Limit".to_string(),
+            used_percent: 27.0,
+            reset_at: Some(weekly),
+            window_seconds: Some(7 * 24 * 3600),
+            reset_description: None,
+            group: Some("Free Tier".to_string()),
+        }],
+        provider_cost: None,
+        extra_usage: None,
+        identity: ProviderIdentity {
+            email: Some("free@example.com".to_string()),
+            account_id: None,
+            plan: Some("Free".to_string()),
+            display_name: Some("Free".to_string()),
+        },
+    }
 }
 
 fn demo_root() -> PathBuf {
@@ -1031,6 +1136,7 @@ fn window_cursor(
         reset_at: Some(reset_at),
         window_seconds: Some(window_seconds),
         reset_description: Some(reset_at.to_rfc3339()),
+        group: None,
     }
 }
 
@@ -1042,16 +1148,51 @@ mod tests {
     #[test]
     fn build_snapshots_valid() {
         for snapshot in [
-            snapshot_codex_primary(),
-            snapshot_codex_secondary(),
             snapshot_codex_pro(),
+            snapshot_codex_free(),
             snapshot_claude_primary(),
             snapshot_claude_max(),
             snapshot_gemini_primary(),
             snapshot_cursor_primary(),
+            snapshot_antigravity_primary(),
+            snapshot_antigravity_free(),
         ] {
             assert!(!snapshot.windows.is_empty());
             assert!(snapshot.identity.email.is_some());
+        }
+
+        for snapshot in [
+            snapshot_codex_pro(),
+            snapshot_codex_free(),
+            snapshot_claude_primary(),
+            snapshot_claude_max(),
+            snapshot_gemini_primary(),
+            snapshot_cursor_primary(),
+            snapshot_antigravity_primary(),
+            snapshot_antigravity_free(),
+            snapshot_copilot_free(),
+            snapshot_copilot_pro(),
+            snapshot_minimax_primary(),
+            snapshot_kimi_primary(),
+            snapshot_opencode_go(),
+        ] {
+            assert!(!snapshot.windows.is_empty());
+            for window in &snapshot.windows {
+                assert!(
+                    crate::usage_display::pace(window, snapshot.updated_at).is_some(),
+                    "{} {} demo window must support the standard pace meter",
+                    snapshot.provider.label(),
+                    window.label
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn demo_detection_snapshot_detects_nothing() {
+        let snapshot = detection_snapshot();
+        for provider in ProviderId::ALL {
+            assert!(!snapshot.detected(provider));
         }
     }
 
@@ -1067,33 +1208,149 @@ mod tests {
             std::env::remove_var(DEMO_ENV);
         }
 
-        assert_eq!(config.codex_managed_accounts.len(), 3);
+        assert_eq!(config.codex_managed_accounts.len(), 2);
         assert_eq!(config.claude_managed_accounts.len(), 2);
         assert_eq!(config.cursor_managed_accounts.len(), 1);
         assert_eq!(config.gemini_managed_accounts.len(), 1);
         assert_eq!(config.copilot_managed_accounts.len(), 2);
         assert_eq!(config.minimax_managed_accounts.len(), 1);
         assert_eq!(config.kimi_managed_accounts.len(), 1);
-        assert_eq!(config.selected_codex_account_ids.len(), 3);
-        assert_eq!(config.selected_claude_account_ids.len(), 2);
+        assert_eq!(config.antigravity_managed_accounts.len(), 2);
+        assert_eq!(config.opencode_go_managed_accounts.len(), 1);
+        assert_eq!(config.selected_codex_account_ids.len(), 1);
+        assert_eq!(config.selected_claude_account_ids.len(), 1);
         assert_eq!(config.selected_cursor_account_ids.len(), 1);
         assert_eq!(config.selected_gemini_account_ids.len(), 1);
-        assert_eq!(config.selected_copilot_account_ids.len(), 2);
+        assert_eq!(config.selected_copilot_account_ids.len(), 1);
         assert_eq!(config.selected_minimax_account_ids.len(), 1);
         assert_eq!(config.selected_kimi_account_ids.len(), 1);
-        assert!(config.copilot_enabled);
-        assert!(config.minimax_enabled);
-        assert!(config.kimi_enabled);
-        assert!(config.show_all_accounts(ProviderId::Codex));
-        assert!(config.show_all_accounts(ProviderId::Claude));
-        assert!(!config.show_all_accounts(ProviderId::Cursor));
-        assert!(!config.show_all_accounts(ProviderId::Gemini));
-        assert!(!config.show_all_accounts(ProviderId::Kimi));
-        assert!(config.show_all_accounts(ProviderId::Copilot));
+        assert_eq!(config.selected_antigravity_account_ids.len(), 1);
+        assert_eq!(config.selected_opencode_go_account_ids.len(), 1);
+        for provider in ProviderId::ALL {
+            assert_eq!(
+                config.provider_enablement(provider),
+                ProviderEnablement::Enabled
+            );
+        }
         assert_eq!(
             config.provider_visibility_mode,
             ProviderVisibilityMode::UserManaged
         );
+    }
+
+    #[test]
+    fn demo_replaces_existing_account_selections() {
+        let _guard = test_support::env_lock();
+        unsafe {
+            std::env::set_var(DEMO_ENV, "1");
+        }
+        let mut config = Config {
+            selected_codex_account_ids: vec!["real-codex".to_string()],
+            selected_claude_account_ids: vec!["real-claude".to_string()],
+            selected_cursor_account_ids: vec!["real-cursor".to_string()],
+            selected_gemini_account_ids: vec!["real-gemini".to_string()],
+            selected_copilot_account_ids: vec!["real-copilot".to_string()],
+            selected_minimax_account_ids: vec!["real-minimax".to_string()],
+            selected_kimi_account_ids: vec!["real-kimi".to_string()],
+            selected_antigravity_account_ids: vec!["real-antigravity".to_string()],
+            selected_opencode_go_account_ids: vec!["real-opencode-go".to_string()],
+            ..Config::default()
+        };
+        apply_config(&mut config);
+        unsafe {
+            std::env::remove_var(DEMO_ENV);
+        }
+
+        for provider in ProviderId::ALL {
+            let selected = config.selected_account_ids(provider);
+            assert!(
+                !selected.is_empty(),
+                "{} should have demo accounts selected",
+                provider.label()
+            );
+            let managed_ids: Vec<&String> = match provider {
+                ProviderId::Codex => config
+                    .codex_managed_accounts
+                    .iter()
+                    .map(|a| &a.id)
+                    .collect(),
+                ProviderId::Claude => config
+                    .claude_managed_accounts
+                    .iter()
+                    .map(|a| &a.id)
+                    .collect(),
+                ProviderId::Cursor => config
+                    .cursor_managed_accounts
+                    .iter()
+                    .map(|a| &a.id)
+                    .collect(),
+                ProviderId::Gemini => config
+                    .gemini_managed_accounts
+                    .iter()
+                    .map(|a| &a.id)
+                    .collect(),
+                ProviderId::Copilot => config
+                    .copilot_managed_accounts
+                    .iter()
+                    .map(|a| &a.id)
+                    .collect(),
+                ProviderId::Minimax => config
+                    .minimax_managed_accounts
+                    .iter()
+                    .map(|a| &a.id)
+                    .collect(),
+                ProviderId::Kimi => config.kimi_managed_accounts.iter().map(|a| &a.id).collect(),
+                ProviderId::Antigravity => config
+                    .antigravity_managed_accounts
+                    .iter()
+                    .map(|a| &a.id)
+                    .collect(),
+                ProviderId::OpenCodeGo => config
+                    .opencode_go_managed_accounts
+                    .iter()
+                    .map(|a| &a.id)
+                    .collect(),
+            };
+            for id in selected {
+                assert!(
+                    managed_ids.contains(&id),
+                    "{} selection {id} should reference a demo account",
+                    provider.label()
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn demo_enables_all_providers_with_accounts() {
+        let _guard = test_support::env_lock();
+        unsafe {
+            std::env::set_var(DEMO_ENV, "1");
+        }
+        let mut config = Config::default();
+        apply_config(&mut config);
+        let detection = detection_snapshot();
+        let mut state = crate::runtime::load_initial_state(&config, &detection, None);
+        apply(&config, &mut state);
+        unsafe {
+            std::env::remove_var(DEMO_ENV);
+        }
+
+        for provider in ProviderId::ALL {
+            assert!(
+                state.provider(provider).is_some_and(|entry| entry.enabled),
+                "{} should be enabled in demo mode",
+                provider.label()
+            );
+            assert!(
+                state
+                    .provider_accounts
+                    .iter()
+                    .any(|account| account.provider == provider),
+                "{} should have demo accounts",
+                provider.label()
+            );
+        }
     }
 
     #[test]
@@ -1114,7 +1371,7 @@ mod tests {
             state
                 .provider(ProviderId::Codex)
                 .and_then(|provider| provider.system_active_account_id.as_deref()),
-            Some(CODEX_PRIMARY_ID)
+            Some(CODEX_PRO_ID)
         );
         assert_eq!(
             state
@@ -1158,6 +1415,36 @@ mod tests {
     }
 
     #[test]
+    fn antigravity_demo_seeds_selected_pro_and_free_accounts() {
+        let _guard = test_support::env_lock();
+        unsafe {
+            std::env::set_var(DEMO_ENV, "1");
+        }
+        let mut config = Config::default();
+        apply_config(&mut config);
+        let mut state = AppState::empty();
+        apply(&config, &mut state);
+        unsafe {
+            std::env::remove_var(DEMO_ENV);
+        }
+
+        assert_eq!(
+            config.selected_antigravity_account_ids,
+            vec![ANTIGRAVITY_PRIMARY_ID.to_string()]
+        );
+        let free = state
+            .provider_accounts
+            .iter()
+            .find(|account| account.account_id == ANTIGRAVITY_FREE_ID)
+            .and_then(|account| account.snapshot.as_ref())
+            .expect("free Antigravity demo snapshot");
+        assert_eq!(free.identity.email.as_deref(), Some("free@example.com"));
+        assert_eq!(free.identity.plan.as_deref(), Some("Free"));
+        assert_eq!(free.windows.len(), 1);
+        assert_eq!(free.windows[0].label, "Weekly Limit");
+    }
+
+    #[test]
     fn copilot_demo_seeds_free_and_overage_pro_accounts() {
         let _guard = test_support::env_lock();
         unsafe {
@@ -1173,10 +1460,7 @@ mod tests {
 
         assert_eq!(
             config.selected_copilot_account_ids,
-            vec![
-                "yapcap-demo:copilot-casey-free".to_string(),
-                "yapcap-demo:copilot-morgan-pro".to_string()
-            ]
+            vec!["yapcap-demo:copilot-casey-free".to_string()]
         );
         assert_eq!(
             state
@@ -1194,7 +1478,7 @@ mod tests {
             })
             .and_then(|account| account.snapshot.as_ref())
             .expect("casey-free demo snapshot");
-        assert_eq!(casey.identity.display_name.as_deref(), Some("casey-free"));
+        assert_eq!(casey.identity.display_name.as_deref(), Some("Copilot Free"));
         assert_eq!(casey.identity.plan.as_deref(), Some("Free"));
         assert_eq!(casey.headline, UsageHeadline(1));
         assert_eq!(casey.windows.len(), 2);
@@ -1212,7 +1496,10 @@ mod tests {
             })
             .and_then(|account| account.snapshot.as_ref())
             .expect("morgan-pro demo snapshot");
-        assert_eq!(morgan.identity.display_name.as_deref(), Some("morgan-pro"));
+        assert_eq!(
+            morgan.identity.display_name.as_deref(),
+            Some("Copilot Pro+")
+        );
         assert_eq!(morgan.identity.plan.as_deref(), Some("Pro+"));
         assert_eq!(morgan.headline, UsageHeadline(0));
         assert_eq!(morgan.windows.len(), 1);
@@ -1255,7 +1542,7 @@ mod tests {
             .expect("minimax demo account");
         assert_eq!(account.health, ProviderHealth::Ok);
         let snapshot = account.snapshot.as_ref().expect("minimax demo snapshot");
-        assert_eq!(snapshot.identity.plan.as_deref(), Some("Minimax.io"));
+        assert_eq!(snapshot.identity.plan.as_deref(), Some("M2"));
         assert_eq!(snapshot.windows.len(), 2);
     }
 
@@ -1288,10 +1575,7 @@ mod tests {
         assert_eq!(account.health, ProviderHealth::Ok);
         let snapshot = account.snapshot.as_ref().expect("kimi demo snapshot");
         assert_eq!(snapshot.provider, ProviderId::Kimi);
-        assert_eq!(
-            snapshot.identity.plan.as_deref(),
-            Some("LEVEL_INTERMEDIATE")
-        );
+        assert_eq!(snapshot.identity.plan.as_deref(), Some("Intermediate"));
         assert_eq!(snapshot.windows.len(), 2);
         assert_eq!(snapshot.windows[0].label, "Weekly");
         assert!((snapshot.windows[0].used_percent - 38.0).abs() < 0.001);
@@ -1300,39 +1584,85 @@ mod tests {
     }
 
     #[test]
-    fn codex_demo_snapshots_have_believable_session_and_weekly() {
-        let primary = snapshot_codex_primary();
-        let secondary = snapshot_codex_secondary();
-        assert_eq!(primary.windows.len(), 2);
-        assert_eq!(secondary.windows.len(), 2);
-        assert!((primary.windows[0].used_percent - 29.0).abs() < f32::EPSILON);
-        assert!((primary.windows[1].used_percent - 83.0).abs() < f32::EPSILON);
-        assert!((secondary.windows[0].used_percent - 71.0).abs() < f32::EPSILON);
-        assert!((secondary.windows[1].used_percent - 46.0).abs() < f32::EPSILON);
+    fn opencode_go_demo_seeds_one_account_with_usage_windows() {
+        let _guard = test_support::env_lock();
+        unsafe {
+            std::env::set_var(DEMO_ENV, "1");
+        }
+        let mut config = Config::default();
+        apply_config(&mut config);
+        let mut state = AppState::empty();
+        apply(&config, &mut state);
+        unsafe {
+            std::env::remove_var(DEMO_ENV);
+        }
+
         assert_eq!(
-            primary.windows[0].reset_at.unwrap() - primary.updated_at,
+            config.selected_opencode_go_account_ids,
+            vec![OPENCODE_GO_ID.to_string()]
+        );
+        let account = state
+            .provider_accounts
+            .iter()
+            .find(|account| {
+                account.provider == ProviderId::OpenCodeGo && account.account_id == OPENCODE_GO_ID
+            })
+            .expect("OpenCode Go demo account");
+        assert_eq!(account.label, "OpenCode Go");
+        let snapshot = account
+            .snapshot
+            .as_ref()
+            .expect("OpenCode Go demo snapshot");
+        assert_eq!(snapshot.identity.plan.as_deref(), Some("Go"));
+        let labels: Vec<&str> = snapshot
+            .windows
+            .iter()
+            .map(|window| window.label.as_str())
+            .collect();
+        assert_eq!(labels, vec!["5 Hour", "Weekly", "Monthly"]);
+    }
+
+    #[test]
+    fn codex_demo_seeds_active_pro_and_free_accounts() {
+        let accounts = demo_runtime_accounts(ProviderId::Codex);
+        assert_eq!(accounts.len(), 2);
+        assert_eq!(accounts[0].account_id, CODEX_PRO_ID);
+        assert_eq!(accounts[1].account_id, CODEX_FREE_ID);
+        assert_eq!(
+            demo_system_active_account_id(ProviderId::Codex).as_deref(),
+            Some(CODEX_PRO_ID)
+        );
+        let pro = accounts[0].snapshot.as_ref().expect("pro demo snapshot");
+        let free = accounts[1].snapshot.as_ref().expect("free demo snapshot");
+        assert_eq!(pro.windows.len(), 2);
+        assert_eq!(free.windows.len(), 2);
+        assert_eq!(pro.identity.plan.as_deref(), Some("pro"));
+        assert_eq!(free.identity.plan.as_deref(), Some("free"));
+        assert!((pro.windows[0].used_percent - 12.0).abs() < f32::EPSILON);
+        assert!((pro.windows[1].used_percent - 38.0).abs() < f32::EPSILON);
+        assert!((free.windows[0].used_percent - 29.0).abs() < f32::EPSILON);
+        assert!((free.windows[1].used_percent - 83.0).abs() < f32::EPSILON);
+        assert_eq!(
+            pro.windows[0].reset_at.unwrap() - pro.updated_at,
+            Duration::hours(4)
+        );
+        assert_eq!(
+            pro.windows[1].reset_at.unwrap() - pro.updated_at,
+            Duration::days(5)
+        );
+        assert_eq!(
+            free.windows[0].reset_at.unwrap() - free.updated_at,
             Duration::hours(2)
         );
         assert_eq!(
-            primary.windows[1].reset_at.unwrap() - primary.updated_at,
+            free.windows[1].reset_at.unwrap() - free.updated_at,
             Duration::days(1)
         );
         assert_eq!(
-            secondary.windows[0].reset_at.unwrap() - secondary.updated_at,
-            Duration::minutes(47)
+            pro.provider_cost.as_ref().map(|cost| cost.used),
+            Some(540.0)
         );
-        assert_eq!(
-            secondary.windows[1].reset_at.unwrap() - secondary.updated_at,
-            Duration::days(3)
-        );
-        assert_eq!(
-            primary.provider_cost.as_ref().map(|cost| cost.used),
-            Some(320.0)
-        );
-        assert_eq!(
-            secondary.provider_cost.as_ref().map(|cost| cost.used),
-            Some(85.0)
-        );
+        assert!(free.provider_cost.is_none());
     }
 
     #[test]

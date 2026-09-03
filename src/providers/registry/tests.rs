@@ -1,6 +1,5 @@
 use super::*;
 use crate::config::Config;
-use crate::config::ProviderVisibilityMode;
 
 #[test]
 fn providers_expose_expected_capabilities() {
@@ -78,39 +77,6 @@ fn each_provider_resolves_accounts() {
 }
 
 #[test]
-fn initialize_provider_visibility_enables_provider_regardless_of_accounts() {
-    let mut config = Config {
-        cursor_enabled: false,
-        ..Config::default()
-    };
-    assert!(initialize_provider_visibility(
-        &mut config,
-        &[ProviderId::Cursor]
-    ));
-    assert!(config.cursor_enabled);
-    assert_eq!(
-        config.provider_visibility_mode,
-        ProviderVisibilityMode::AutoInitPending
-    );
-}
-
-#[test]
-fn initialize_provider_visibility_is_noop_after_initialization() {
-    let mut config = Config {
-        provider_visibility_mode: ProviderVisibilityMode::UserManaged,
-        ..Config::default()
-    };
-
-    assert!(!initialize_provider_visibility(
-        &mut config,
-        &[ProviderId::Codex, ProviderId::Claude, ProviderId::Cursor]
-    ));
-    assert!(config.codex_enabled);
-    assert!(config.claude_enabled);
-    assert!(config.cursor_enabled);
-}
-
-#[test]
 fn action_support_matches_capabilities() {
     let support = capabilities(ProviderId::Cursor).action_support();
     assert!(support.can_delete);
@@ -147,7 +113,7 @@ fn system_active_account_id_only_supported_by_codex_claude_gemini_minimax_kimi_o
 
     let codex_dir = home.join(".codex");
     fs::create_dir_all(&codex_dir).unwrap();
-    let id_token = "eyJhbGciOiJSUzI1NiJ9.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOiB7ImNoYXRncHRfdXNlcl9pZCI6ICJ1c2VyLWFiYy0xMjMifX0.fakesig";
+    let id_token = "eyJhbGciOiJSUzI1NiJ9.eyJodHRwczovL2FwaS5vcGVuYWkuY29tL2F1dGgiOiB7ImNoYXRncHRfYWNjb3VudF9pZCI6ICJhY2N0LWFiYy0xMjMifX0.fakesig";
     fs::write(
         codex_dir.join("auth.json"),
         format!(r#"{{"tokens":{{"id_token":"{id_token}"}}}}"#),
@@ -192,7 +158,7 @@ fn system_active_account_id_only_supported_by_codex_claude_gemini_minimax_kimi_o
             label: "Codex".to_string(),
             codex_home: PathBuf::from("/tmp"),
             email: None,
-            provider_account_id: Some("user-abc-123".to_string()),
+            provider_account_id: Some("acct-abc-123".to_string()),
             created_at: Utc::now(),
             updated_at: Utc::now(),
             last_authenticated_at: None,
