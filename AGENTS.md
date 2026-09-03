@@ -10,21 +10,23 @@
 - Before committing, run `just check` and `cargo test` and `cargo fmt`, then fix all warnings, errors, and failures.
 - Do not add agent or AI attribution to commit messages (no `Co-Authored-By: Claude` or similar).
 
+## Repository map
+
+- `.github/` contains CI and release workflows.
+- `docs/` contains the product specification and QA notes.
+- `fixtures/` contains provider API responses and probe scripts used during development.
+- `i18n/` contains Fluent translations embedded into the binary.
+- `packaging/` contains distribution manifests and vendored Cargo source metadata.
+- `resources/` contains desktop metadata, provider icons, screenshots, and UI prototypes.
+- `scripts/` contains development and issue-management utilities.
+- `src/` contains the Rust application, shared runtime, UI, storage, and provider integrations.
+
+Each maintained subdirectory has a local `AGENTS.md` with its file map. Read the most specific applicable file before editing there.
+
 Issues are tracked as local markdown files under `issues/`.
 
 This is a single-context repo. `docs/spec.md` is the current product/domain spec; ADRs may be added under `docs/adr/`.
 
-@docs/RTK.md
+For RTK usage check out `docs/RTK.md`
 
-## graphify
-
-This project has a knowledge graph at graphify-out/ with god nodes, community structure, and cross-file relationships.
-
-When the user types `/graphify`, use the installed graphify skill or instructions before doing anything else.
-
-Rules:
-- For codebase questions, first run `graphify query "<question>"` when graphify-out/graph.json exists. Use `graphify path "<A>" "<B>"` for relationships and `graphify explain "<concept>"` for focused concepts. These return a scoped subgraph, usually much smaller than GRAPH_REPORT.md or raw grep output.
-- Dirty graphify-out/ files are expected after hooks or incremental updates; dirty graph files are not a reason to skip graphify. Only skip graphify if the task is about stale or incorrect graph output, or the user explicitly says not to use it.
-- If graphify-out/wiki/index.md exists, use it for broad navigation instead of raw source browsing.
-- Read graphify-out/GRAPH_REPORT.md only for broad architecture review or when query/path/explain do not surface enough context.
-- After modifying code, run `graphify update .` to keep the graph current (AST-only, no API cost).
+Graphify-specific workflow guidance is in `docs/graphify.md`; read it only when the user invokes `/graphify`.
