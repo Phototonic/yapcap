@@ -95,7 +95,7 @@ impl LoginFlow for OpenCodeGoLoginFlow {
                     return Task::none();
                 };
                 let flow_id = login.account_id.clone();
-                match opencode_go::login::save(login) {
+                match opencode_go::login::save(&app.config, login) {
                     Ok(managed_account) => {
                         let account_id = managed_account.id.clone();
                         let selected_account_id = account_id.clone();

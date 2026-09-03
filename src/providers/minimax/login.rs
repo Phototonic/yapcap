@@ -46,6 +46,33 @@ impl KeyAuthenticationAdapter for MinimaxKeyAuthentication {
         "API key is required".to_string()
     }
 
+    fn validate(
+        config: &Config,
+        account_id: &str,
+        label: &str,
+        api_key: &str,
+    ) -> Result<(), String> {
+        if label.trim().is_empty() {
+            return Err("Account name is required".to_string());
+        }
+        if config
+            .minimax_managed_accounts
+            .iter()
+            .any(|account| account.id != account_id && account.label == label)
+        {
+            return Err("An account with this name already exists".to_string());
+        }
+        if config.minimax_managed_accounts.iter().any(|account| {
+            account.id != account_id
+                && storage::load_api_key(&account.id)
+                    .ok()
+                    .is_some_and(|stored_key| stored_key == api_key)
+        }) {
+            return Err("An account with this API key already exists".to_string());
+        }
+        Ok(())
+    }
+
     fn build_account(
         account_id: String,
         label: String,
@@ -76,6 +103,9 @@ pub fn prepare_for_reauth(config: Config, account_id: &str) -> Result<MinimaxLog
     prepare_key_authentication_for_reauth::<MinimaxKeyAuthentication>(&config, account_id)
 }
 
-pub(crate) fn save(state: &mut MinimaxLoginState) -> Result<ManagedMinimaxAccountConfig, String> {
-    state.save::<MinimaxKeyAuthentication>()
+pub(crate) fn save(
+    config: &Config,
+    state: &mut MinimaxLoginState,
+) -> Result<ManagedMinimaxAccountConfig, String> {
+    state.save::<MinimaxKeyAuthentication>(config)
 }

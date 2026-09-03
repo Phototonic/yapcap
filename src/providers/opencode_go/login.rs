@@ -46,6 +46,33 @@ impl KeyAuthenticationAdapter for OpenCodeGoKeyAuthentication {
         "API key is required".to_string()
     }
 
+    fn validate(
+        config: &Config,
+        account_id: &str,
+        label: &str,
+        api_key: &str,
+    ) -> Result<(), String> {
+        if label.trim().is_empty() {
+            return Err("Account name is required".to_string());
+        }
+        if config
+            .opencode_go_managed_accounts
+            .iter()
+            .any(|account| account.id != account_id && account.label == label)
+        {
+            return Err("An account with this name already exists".to_string());
+        }
+        if config.opencode_go_managed_accounts.iter().any(|account| {
+            account.id != account_id
+                && storage::load_api_key(&account.id)
+                    .ok()
+                    .is_some_and(|stored_key| stored_key == api_key)
+        }) {
+            return Err("An account with this API key already exists".to_string());
+        }
+        Ok(())
+    }
+
     fn build_account(
         account_id: String,
         label: String,
@@ -80,7 +107,8 @@ pub fn prepare_for_reauth(
 }
 
 pub(crate) fn save(
+    config: &Config,
     state: &mut OpenCodeGoLoginState,
 ) -> Result<ManagedOpenCodeGoAccountConfig, String> {
-    state.save::<OpenCodeGoKeyAuthentication>()
+    state.save::<OpenCodeGoKeyAuthentication>(config)
 }

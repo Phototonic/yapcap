@@ -43,6 +43,12 @@ pub(crate) trait KeyAuthenticationAdapter {
     fn find_account(config: &Config, account_id: &str) -> Result<KeyAuthenticationTarget, String>;
     fn discover_api_key() -> Option<String>;
     fn empty_key_error() -> String;
+    fn validate(
+        config: &Config,
+        account_id: &str,
+        label: &str,
+        api_key: &str,
+    ) -> Result<(), String>;
     fn build_account(
         account_id: String,
         label: String,
@@ -87,10 +93,25 @@ impl KeyAuthenticationState {
         self.api_key_visible = !self.api_key_visible;
     }
 
-    pub(crate) fn save<A: KeyAuthenticationAdapter>(&mut self) -> Result<A::Account, String> {
+    pub(crate) fn save<A: KeyAuthenticationAdapter>(
+        &mut self,
+        config: &Config,
+    ) -> Result<A::Account, String> {
         self.error = None;
         if self.api_key.trim().is_empty() {
             return self.fail_save(A::empty_key_error());
+        }
+
+        let account_id = self
+            .reauth_target
+            .as_ref()
+            .map_or(self.account_id.as_str(), |target| target.id.as_str());
+        let label = self
+            .reauth_target
+            .as_ref()
+            .map_or(self.label.as_str(), |target| target.label.as_str());
+        if let Err(error) = A::validate(config, account_id, label, &self.api_key) {
+            return self.fail_save(error);
         }
 
         let authenticated_at = Utc::now();

@@ -979,8 +979,8 @@ Minimax account model:
 - Minimax uses API key-based authentication with YapCap-managed account storage.
   Each managed account is stored under `<state-root>/yapcap/minimax-accounts/<id>/` 
   with account metadata and the API key stored in YapCap-owned files.
-- Minimax account identity is a user-provided label; duplicate labels are allowed
-  and managed as separate accounts.
+- Minimax account identity is a required user-provided label. Duplicate labels and
+  API keys are rejected for new accounts.
 - Minimax's active-account resolver checks the `MINIMAX_API_KEY` environment
   variable: when set and non-empty, the managed account whose
   `api_key_source` is `env:MINIMAX_API_KEY` is reported as the **Active**
@@ -990,12 +990,13 @@ Minimax account model:
 Managed Minimax add-account flow:
 
 - Settings exposes `Add account` under the Minimax accounts card.
-- User provides their Minimax API key and an optional account label. Before adding
+- User provides their Minimax API key and an account label. Before adding
   or reauthenticating, YapCap may prefill the key from the `minimax` API
   credential in OpenCode's local auth store and identifies that value as
   imported from OpenCode. Editing the key clears the imported provenance.
-- The key is masked by default and can be deliberately revealed. Empty keys and
-  storage failures keep the form editable and do not create or replace an
+- The key is masked by default and can be deliberately revealed. Empty keys,
+  empty labels, duplicate labels, and duplicate API keys are rejected. Validation
+  and storage failures keep the form editable and do not create or replace an
   account.
 - On success, the account is committed to storage, immediately selected, and
   triggers a usage refresh. The form closes without an intermediate success
@@ -1025,8 +1026,9 @@ Error classification (`MinimaxError`):
 
 Kimi for Coding uses API-key authentication and YapCap-managed accounts.
 
-- Each managed account has a generated id and a user-provided optional label;
-  duplicate labels are allowed. Non-secret account metadata is stored in
+- Each managed account has a generated id and a required user-provided label;
+  duplicate labels and API keys are rejected for new accounts. Non-secret account
+  metadata is stored in
   `kimi_managed_accounts`; the API key is stored separately at
   `<state-root>/yapcap/kimi-accounts/<id>/api_key.txt`.
 - The account directory is private to its owner (`0o700`) and the key file is
@@ -1041,7 +1043,8 @@ Kimi for Coding uses API-key authentication and YapCap-managed accounts.
   copies the entered or prefilled key into YapCap's private account storage.
   A new account uses exclusive selection behavior and replaces the current
   selection. Runtime state is reconciled from the saved configuration and a
-  shared `AccountAction` refresh request is made. An empty key fails without
+  shared `AccountAction` refresh request is made. Empty keys and labels, duplicate
+  labels, and duplicate API keys fail without
   creating an account. Validation and storage failures preserve the editable
   form and entered key, and show a Kimi-specific save error.
 - Reauthentication targets one existing account, preserves its id, label, and
@@ -1082,15 +1085,16 @@ Usage windows:
 
 OpenCode Go uses API-key authentication and YapCap-managed accounts.
 
-- Each managed account has a generated id and optional label. Its API key is
+- Each managed account has a generated id and required label. Its API key is
   stored separately at `<state-root>/yapcap/opencode-go-accounts/<id>/api_key.txt`.
 - Before add or reauthentication, YapCap may prefill the key from the
   `opencode-go` API credential in OpenCode's local auth store. The key is
   masked by default, and editing a prefilled key clears its imported
   provenance.
-- Empty keys and storage failures keep the form editable without creating or
-  replacing an account. On success, the account is committed, selected,
-  reconciled into runtime state, and refreshed through shared control; the
+- Empty keys and labels, duplicate labels, duplicate API keys, and storage failures
+  keep the form editable without creating or replacing an account. On success, the
+  account is committed, selected, reconciled into runtime state, and refreshed
+  through shared control; the
   form closes without an intermediate success state.
 - Reauthentication preserves the existing account id, label, and creation
   time while replacing its key and authentication metadata.

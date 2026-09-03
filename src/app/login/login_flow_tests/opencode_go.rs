@@ -46,6 +46,10 @@ fn opencode_go_saved_login_persists_selection_and_reconciles_runtime() {
     app.opencode_go_login = Some(OpenCodeGoLoginState::new("go-new".to_string()));
     let _ = OpenCodeGoLoginFlow::on_event(
         &mut app,
+        OpenCodeGoLoginEvent::LabelChanged("New account".to_string()),
+    );
+    let _ = OpenCodeGoLoginFlow::on_event(
+        &mut app,
         OpenCodeGoLoginEvent::ApiKeyChanged("new-key".to_string()),
     );
     let task = OpenCodeGoLoginFlow::on_event(&mut app, OpenCodeGoLoginEvent::Saved);
@@ -80,6 +84,10 @@ fn opencode_go_saved_login_selects_new_account() {
     app.opencode_go_login = Some(OpenCodeGoLoginState::new("go-new".to_string()));
     let _ = OpenCodeGoLoginFlow::on_event(
         &mut app,
+        OpenCodeGoLoginEvent::LabelChanged("New account".to_string()),
+    );
+    let _ = OpenCodeGoLoginFlow::on_event(
+        &mut app,
         OpenCodeGoLoginEvent::ApiKeyChanged("new-key".to_string()),
     );
     let _ = OpenCodeGoLoginFlow::on_event(&mut app, OpenCodeGoLoginEvent::Saved);
@@ -103,6 +111,10 @@ fn opencode_go_saved_login_replaces_multiple_existing_selections() {
     app.config.selected_opencode_go_account_ids =
         (1..=4).map(|index| format!("go-{index}")).collect();
     app.opencode_go_login = Some(OpenCodeGoLoginState::new("go-new".to_string()));
+    let _ = OpenCodeGoLoginFlow::on_event(
+        &mut app,
+        OpenCodeGoLoginEvent::LabelChanged("New account".to_string()),
+    );
     let _ = OpenCodeGoLoginFlow::on_event(
         &mut app,
         OpenCodeGoLoginEvent::ApiKeyChanged("new-key".to_string()),

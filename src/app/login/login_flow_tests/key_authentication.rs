@@ -85,6 +85,10 @@ fn assert_save_failure_is_editable<C: KeyAuthenticationCase>(name: &str) {
     let account_id = C::state(&app).unwrap().account_id.clone();
     send::<C>(
         &mut app,
+        KeyAuthenticationEvent::LabelChanged("New account".to_string()),
+    );
+    send::<C>(
+        &mut app,
         KeyAuthenticationEvent::ApiKeyChanged("typed-key".to_string()),
     );
 
@@ -113,6 +117,10 @@ fn assert_save_selects_and_refreshes<C: KeyAuthenticationCase>(name: &str) {
     let (_env, _root, mut app) = setup::<C>(name);
     start::<C>(&mut app);
     let account_id = C::state(&app).unwrap().account_id.clone();
+    send::<C>(
+        &mut app,
+        KeyAuthenticationEvent::LabelChanged("New account".to_string()),
+    );
     send::<C>(
         &mut app,
         KeyAuthenticationEvent::ApiKeyChanged("new-key".to_string()),
@@ -176,6 +184,65 @@ fn assert_reauthentication_preserves_identity<C: KeyAuthenticationCase>(name: &s
     assert!(C::state(&app).is_none());
 }
 
+fn assert_rejects_invalid_account_details<C: KeyAuthenticationCase>(name: &str) {
+    let (_env, _root, mut app) = setup::<C>(name);
+    start::<C>(&mut app);
+    send::<C>(
+        &mut app,
+        KeyAuthenticationEvent::LabelChanged("  ".to_string()),
+    );
+    send::<C>(
+        &mut app,
+        KeyAuthenticationEvent::ApiKeyChanged("new-key".to_string()),
+    );
+    send::<C>(&mut app, KeyAuthenticationEvent::Saved);
+
+    let login = C::state(&app).expect("invalid account should remain editable");
+    assert_eq!(login.error.as_deref(), Some("Account name is required"));
+    assert!(app.config.selected_account_ids(C::PROVIDER).is_empty());
+}
+
+fn assert_rejects_duplicate_account_details<C: KeyAuthenticationCase>(name: &str) {
+    let (_env, _root, mut app) = setup::<C>(name);
+    let existing_id = "existing-account";
+    C::set_account(&mut app.config, existing_id, "Existing", Utc::now());
+    C::write_api_key(existing_id, "existing-key").unwrap();
+
+    start::<C>(&mut app);
+    send::<C>(
+        &mut app,
+        KeyAuthenticationEvent::LabelChanged("Existing".to_string()),
+    );
+    send::<C>(
+        &mut app,
+        KeyAuthenticationEvent::ApiKeyChanged("new-key".to_string()),
+    );
+    send::<C>(&mut app, KeyAuthenticationEvent::Saved);
+
+    let login = C::state(&app).expect("duplicate name should remain editable");
+    assert_eq!(
+        login.error.as_deref(),
+        Some("An account with this name already exists")
+    );
+
+    send::<C>(
+        &mut app,
+        KeyAuthenticationEvent::LabelChanged("New account".to_string()),
+    );
+    send::<C>(
+        &mut app,
+        KeyAuthenticationEvent::ApiKeyChanged("existing-key".to_string()),
+    );
+    send::<C>(&mut app, KeyAuthenticationEvent::Saved);
+
+    let login = C::state(&app).expect("duplicate key should remain editable");
+    assert_eq!(
+        login.error.as_deref(),
+        Some("An account with this API key already exists")
+    );
+    assert!(app.config.selected_account_ids(C::PROVIDER).is_empty());
+}
+
 #[test]
 fn key_authentication_rejects_empty_keys_for_all_api_key_providers() {
     assert_empty_key_is_editable::<KimiCase>("common-empty-kimi");
@@ -219,4 +286,18 @@ fn key_authentication_reauthentication_preserves_identity_for_all_providers() {
     assert_reauthentication_preserves_identity::<KimiCase>("common-reauth-kimi");
     assert_reauthentication_preserves_identity::<MinimaxCase>("common-reauth-minimax");
     assert_reauthentication_preserves_identity::<OpenCodeGoCase>("common-reauth-opencode-go");
+}
+
+#[test]
+fn key_authentication_rejects_empty_account_names_for_all_providers() {
+    assert_rejects_invalid_account_details::<KimiCase>("common-empty-name-kimi");
+    assert_rejects_invalid_account_details::<MinimaxCase>("common-empty-name-minimax");
+    assert_rejects_invalid_account_details::<OpenCodeGoCase>("common-empty-name-opencode-go");
+}
+
+#[test]
+fn key_authentication_rejects_duplicate_names_and_keys_for_all_providers() {
+    assert_rejects_duplicate_account_details::<KimiCase>("common-duplicate-kimi");
+    assert_rejects_duplicate_account_details::<MinimaxCase>("common-duplicate-minimax");
+    assert_rejects_duplicate_account_details::<OpenCodeGoCase>("common-duplicate-opencode-go");
 }

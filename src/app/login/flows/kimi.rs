@@ -89,7 +89,7 @@ impl LoginFlow for KimiLoginFlow {
                     return Task::none();
                 };
                 let flow_id = login.account_id.clone();
-                match kimi::login::save(login) {
+                match kimi::login::save(&app.config, login) {
                     Ok(managed_account) => {
                         let account_id = managed_account.id.clone();
                         let selected_account_id = account_id.clone();
