@@ -10,88 +10,120 @@
   <developer_name>Tamás Csarnó</developer_name>
   <name>YapCap</name>
   <summary>COSMIC panel applet for AI coding usage tracking</summary>
+  <summary xml:lang="pl">Aplet dla panelu COSMIC do śledzenia zużycia AI do kodowania</summary>
   <description>
     <p>YapCap is a native COSMIC panel applet that tracks your AI coding quota for Codex, Claude Code, Cursor, Antigravity, Gemini, Minimax, GitHub Copilot, Kimi for Coding, and OpenCode Go right from the panel. Add accounts once and YapCap fetches usage directly from provider APIs. No telemetry, no cloud sync, no separate service account required.</p>
+    <p xml:lang="pl">YapCap jest natywnym apletem dla panelu COSMIC który śledzi zużycie AI do kodowania przy pomocy Codex, Claude Code, Cursor, Antigravity, Gemini, Minimax, GitHub Copilot, Kimi for Coding, and OpenCode Go prosto z panelu. Dodaj konta raz i YapCap sprawdza zużycie bezpośrednio przez API usługodawcy. Bez telemetrii, bez synchronizacji z chmurą, bez wymagania osobnych kont do obsługi.</p>
     <p>Use the popup to compare multiple accounts, see which CLI account is active, switch panel styles, and follow your COSMIC light, dark, and accent color settings.</p>
+    <p xml:lang="pl">Użyj wyskakującego okna by porównać wiele kont, zobaczyć które konto jest aktywne w CLI, zmień styl paneli i dostosowuje się do twoich preferencji wyglądu z Ustawień COSMIC.</p>
     <p>Main features:</p>
+    <p xml:lang="pl">Główne funkcje:</p>
     <ul>
       <li>Codex usage tracking and credits</li>
+      <li xml:lang="pl">Śledzenie zużycia i kredytu z Codexie</li>
       <li>Claude usage tracking and extra usage meter</li>
+      <li xml:lang="pl">Śledzenie zużycia Claude i licznik dodatkowego użycia</li>
       <li>Cursor usage tracking: Total, Auto + Composer, and API</li>
+      <li xml:lang="pl">Śledzenie zużycia Cursora: Całkowite, Automatyczne + Kompozytor oraz API</li>
       <li>Antigravity usage tracking: grouped Gemini and Claude/GPT model quotas</li>
+      <li xml:lang="pl">Śledzenie zużycia Antigravity: zgrupowane limity modeli Gemini i Claude/GPT</li>
       <li>Gemini usage tracking: Pro, Flash and Lite quotas</li>
+      <li xml:lang="pl">Śledzenie zużycia Gemini: limity Pro, Flash i Lite</li>
       <li>Minimax and Kimi for Coding API-key usage tracking</li>
+      <li xml:lang="pl">Śledzenie zużycia Minimax i Kimi for Coding klucze API</li>
       <li>OpenCode Go API-key usage tracking with 5 Hour, Weekly, and Monthly windows</li>
+      <li xml:lang="pl">Śledzenie zużycia OpenCode Go klucza API z oknami 5-godzinnymi, Tygodniowymi i Miesięcznymi</li>
       <li>GitHub Copilot usage tracking: Free and paid quota shapes</li>
+      <li xml:lang="pl">Śledzenie zużycia GitHub Copilot: Darmowe i płatne kształtowanie limitów </li>
       <li>Optional one-time API-key prefill for Minimax, Kimi for Coding, and OpenCode Go from OpenCode's local auth file</li>
+      <li xml:lang="pl">Opcjonale jednorazowe wstępne wypełnienie dla Minimax, Kimi for Coding i OpenCode Go z pliku uwierzytelnienia OpenCode'a</li>
       <li>Multiple accounts per provider</li>
+      <li xml:lang="pl">Wiele kont dla każdego usługodawcy</li>
       <li>Active account badge</li>
+      <li xml:lang="pl">Plakietki z aktywnym kontem</li>
       <li>COSMIC theme integration</li>
+      <li xml:lang="pl">Integracja z motywami COSMIC</li>
     </ul>
   </description>
   <screenshots>
     <screenshot type="default">
       <caption>YapCap panel applet with multi-account Codex quota details</caption>
+      <caption xml:lang="pl">Aplet na panel YapCap i szczegóły limitów wielu kont na Codexie</caption>
       <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-hero.png</image>
     </screenshot>
     <screenshot>
       <caption>Codex usage, reset times, and credit balance</caption>
+      <caption xml:lang="pl"></caption>
       <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-codex.png</image>
     </screenshot>
     <screenshot>
       <caption>Claude Code usage with extra usage tracking</caption>
+      <caption xml:lang="pl"></caption>
       <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-claude.png</image>
     </screenshot>
     <screenshot>
       <caption>Cursor usage across Total, Auto + Composer, and API quotas</caption>
+      <caption xml:lang="pl"></caption>
       <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-cursor.png</image>
     </screenshot>
     <screenshot>
       <caption>Antigravity usage with grouped Gemini and Claude/GPT model quotas</caption>
+      <caption xml:lang="pl"></caption>
       <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-antigravity.png</image>
     </screenshot>
     <screenshot>
       <caption>Gemini usage across Pro, Flash, and Lite quota bars</caption>
+      <caption xml:lang="pl"></caption>
       <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-gemini.png</image>
     </screenshot>
     <screenshot>
       <caption>GitHub Copilot usage for chat and completions</caption>
+      <caption xml:lang="pl"></caption>
       <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-copilot.png</image>
     </screenshot>
     <screenshot>
       <caption>Minimax API key usage tracking</caption>
+      <caption xml:lang="pl"></caption>
       <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-minimax.png</image>
     </screenshot>
     <screenshot>
       <caption>Kimi for Coding weekly and rate-limit usage</caption>
+      <caption xml:lang="pl"></caption>
       <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-kimi.png</image>
     </screenshot>
     <screenshot>
       <caption>OpenCode Go usage across 5-hour, weekly, and monthly quotas</caption>
+      <caption xml:lang="pl"></caption>
       <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-zoom-opencode-go.png</image>
     </screenshot>
     <screenshot>
       <caption>YapCap general settings</caption>
+      <caption xml:lang="pl"></caption>
       <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-settings.png</image>
     </screenshot>
     <screenshot>
       <caption>YapCap provider account settings</caption>
+      <caption xml:lang="pl"></caption>
       <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-accounts.png</image>
     </screenshot>
     <screenshot>
       <caption>Dark theme with orange accent</caption>
+      <caption xml:lang="pl"></caption>
       <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-theme-dark-orange.png</image>
     </screenshot>
     <screenshot>
       <caption>Dark theme with blue accent</caption>
+      <caption xml:lang="pl"></caption>
       <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-theme-dark-blue.png</image>
     </screenshot>
     <screenshot>
       <caption>Light theme with blue accent</caption>
+      <caption xml:lang="pl"></caption>
       <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-theme-light-blue.png</image>
     </screenshot>
     <screenshot>
       <caption>Light theme with red accent</caption>
+      <caption xml:lang="pl"></caption>
       <image>https://github.com/TopiCsarno/yapcap/raw/9f40647fd60db17bfb52dd9ef58019787453c000/resources/screenshots/screenshot-theme-light-red.png</image>
     </screenshot>
   </screenshots>
@@ -133,6 +165,23 @@
     <keyword>OpenCode Go</keyword>
     <keyword>Panel</keyword>
     <keyword>Applet</keyword>
+    <keyword xml:lang="pl">COSMIC</keyword>
+    <keyword xml:lang="pl">Zużycie</keyword>
+    <keyword xml:lang="pl">Użycie</keyword>
+    <keyword xml:lang="pl">AI</keyword>
+    <keyword xml:lang="pl">Limity</keyword>
+    <keyword xml:lang="pl">AI</keyword>
+    <keyword xml:lang="pl">Codex</keyword>
+    <keyword xml:lang="pl">Claude</keyword>
+    <keyword xml:lang="pl">Cursor</keyword>
+    <keyword xml:lang="pl">Antigravity</keyword>
+    <keyword xml:lang="pl">Gemini</keyword>
+    <keyword xml:lang="pl">Copilot</keyword>
+    <keyword xml:lang="pl">Kimi</keyword>
+    <keyword xml:lang="pl">Minimax</keyword>
+    <keyword xml:lang="pl">OpenCode</keyword>
+    <keyword xml:lang="pl">Panel</keyword>
+    <keyword xml:lang="pl">Aplet</keyword>
   </keywords>
   <releases>
     <release type="stable" version="0.6.0" date="2026-09-03">
