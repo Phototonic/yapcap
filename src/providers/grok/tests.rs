@@ -1263,3 +1263,528 @@ async fn fetch_forwards_to_default_billing_url() {
         GrokError::CredentialsMissing | GrokError::AccountStorage(_)
     ));
 }
+
+#[test]
+fn prepare_host_import_creates_running_state() {
+    let config = crate::config::Config::default();
+    let (state, _task) = super::login::prepare_host_import(config, None).unwrap();
+    assert_eq!(state.status, super::login::GrokLoginStatus::Running);
+    assert!(state.importing_from_host_cli);
+}
+
+#[test]
+fn prepare_creates_running_state() {
+    let config = crate::config::Config::default();
+    let (state, _task) = super::login::prepare(config).unwrap();
+    assert_eq!(state.status, super::login::GrokLoginStatus::Running);
+    assert!(!state.importing_from_host_cli);
+    assert!(state.login_url.is_none());
+    assert!(state.error.is_none());
+}
+
+#[test]
+fn prepare_targeted_with_nonexistent_account_fails() {
+    let config = crate::config::Config::default();
+    let err = super::login::prepare_targeted("missing-account".to_string(), config).unwrap_err();
+    assert!(err.contains("missing-account no longer exists"));
+}
+
+#[test]
+fn prepare_targeted_with_existing_account_creates_running_state() {
+    use crate::config::ManagedGrokAccountConfig;
+    use chrono::Utc;
+    use std::path::PathBuf;
+
+    let account = ManagedGrokAccountConfig {
+        id: "grok-target-1".to_string(),
+        label: "Target Account".to_string(),
+        config_dir: PathBuf::from("/tmp/target-1"),
+        email: Some("target@x.ai".to_string()),
+        provider_account_id: Some("usr-target-1".to_string()),
+        team_id: None,
+        plan: None,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        last_authenticated_at: None,
+    };
+    let config = crate::config::Config {
+        grok_managed_accounts: vec![account],
+        ..Default::default()
+    };
+    let (state, _task) =
+        super::login::prepare_targeted("grok-target-1".to_string(), config).unwrap();
+    assert_eq!(state.status, super::login::GrokLoginStatus::Running);
+    assert!(!state.importing_from_host_cli);
+}
+
+#[test]
+fn prepare_host_import_with_nonexistent_target_fails() {
+    let config = crate::config::Config::default();
+    let err =
+        super::login::prepare_host_import(config, Some("missing-target".to_string())).unwrap_err();
+    assert!(err.contains("missing-target no longer exists"));
+}
+
+#[tokio::test]
+async fn host_import_reads_credentials_commits_and_fetches_snapshot() {
+    use crate::account_storage::ProviderAccountStorage;
+    use crate::config::paths;
+    use crate::test_support;
+
+    let _env = test_support::test_env();
+
+    let temp = tempfile::tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let json_data = r#"{
+        "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+            "key": "import-access-token",
+            "refresh_token": "import-refresh-token",
+            "expires_at": 1893456000,
+            "email": "imported@x.ai",
+            "user_id": "usr-import-123",
+            "first_name": "Imported",
+            "last_name": "User",
+            "team_id": "team-import-456"
+        }
+    }"#;
+    std::fs::write(&auth_json, json_data).unwrap();
+
+    let billing_body = r#"{
+        "config": {
+            "creditUsagePercent": 50.0
+        },
+        "subscriptionTier": "SuperGrok"
+    }"#;
+    let (base_url, _server) = mock_server(vec![MockResponse {
+        method: "GET",
+        path: "/v1/billing",
+        status: 200,
+        headers: vec![("content-type", "application/json")],
+        body: billing_body.to_string(),
+    }])
+    .await;
+
+    let client = reqwest::Client::new();
+    let billing_url = format!("{base_url}/v1/billing");
+    let token_url = format!("{base_url}/oauth2/token");
+
+    let success = super::login::run_host_import_with(
+        "grok-import-test".to_string(),
+        crate::config::Config::default(),
+        None,
+        Some(&auth_json),
+        &client,
+        &billing_url,
+        &token_url,
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(success.account.id, "grok-import-test");
+    assert_eq!(success.account.email.as_deref(), Some("imported@x.ai"));
+    assert_eq!(
+        success.account.provider_account_id.as_deref(),
+        Some("usr-import-123")
+    );
+    assert_eq!(success.account.team_id.as_deref(), Some("team-import-456"));
+    assert_eq!(success.account.plan.as_deref(), Some("SuperGrok"));
+
+    let storage = ProviderAccountStorage::new(paths().grok_accounts_dir);
+    let tokens = storage.load_tokens("grok-import-test").unwrap();
+    assert_eq!(tokens.access_token, "import-access-token");
+    assert_eq!(tokens.refresh_token, "import-refresh-token");
+
+    let snapshot = storage
+        .load_snapshot("grok-import-test")
+        .unwrap()
+        .expect("snapshot should exist");
+    assert_eq!(snapshot.windows.len(), 1);
+    assert_eq!(snapshot.windows[0].used_percent, 50.0);
+}
+
+#[tokio::test]
+async fn host_import_reauth_rejects_mismatched_identity() {
+    use crate::config::ManagedGrokAccountConfig;
+    use crate::test_support;
+    use chrono::Utc;
+    use std::path::PathBuf;
+
+    let _env = test_support::test_env();
+
+    let existing = ManagedGrokAccountConfig {
+        id: "grok-original".to_string(),
+        label: "original@x.ai".to_string(),
+        config_dir: PathBuf::from("/tmp/original"),
+        email: Some("original@x.ai".to_string()),
+        provider_account_id: Some("usr-original".to_string()),
+        team_id: None,
+        plan: None,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        last_authenticated_at: None,
+    };
+    let config = crate::config::Config {
+        grok_managed_accounts: vec![existing],
+        ..Default::default()
+    };
+
+    let temp = tempfile::tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let json_data = r#"{
+        "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+            "key": "diff-access-token",
+            "email": "different@x.ai",
+            "user_id": "usr-different"
+        }
+    }"#;
+    std::fs::write(&auth_json, json_data).unwrap();
+
+    let client = reqwest::Client::new();
+    let err = super::login::run_host_import_with(
+        "flow-id".to_string(),
+        config,
+        Some("grok-original".to_string()),
+        Some(&auth_json),
+        &client,
+        "http://127.0.0.1:9/billing",
+        "http://127.0.0.1:9/token",
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err.contains("different Grok account"));
+}
+
+#[tokio::test]
+async fn host_import_reauth_updates_same_account() {
+    use crate::account_storage::ProviderAccountStorage;
+    use crate::config::{ManagedGrokAccountConfig, paths};
+    use crate::test_support;
+    use chrono::{Duration, Utc};
+    use std::path::PathBuf;
+
+    let _env = test_support::test_env();
+
+    let created_at = Utc::now() - Duration::hours(5);
+    let existing = ManagedGrokAccountConfig {
+        id: "grok-reauth-target".to_string(),
+        label: "Target Account".to_string(),
+        config_dir: PathBuf::from("/tmp/target"),
+        email: Some("dev@x.ai".to_string()),
+        provider_account_id: Some("usr-999".to_string()),
+        team_id: None,
+        plan: None,
+        created_at,
+        updated_at: created_at,
+        last_authenticated_at: None,
+    };
+    let config = crate::config::Config {
+        grok_managed_accounts: vec![existing],
+        ..Default::default()
+    };
+
+    let temp = tempfile::tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let json_data = r#"{
+        "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+            "key": "new-access-token",
+            "refresh_token": "new-refresh-token",
+            "email": "dev@x.ai",
+            "user_id": "usr-999"
+        }
+    }"#;
+    std::fs::write(&auth_json, json_data).unwrap();
+
+    let client = reqwest::Client::new();
+    let success = super::login::run_host_import_with(
+        "new-flow-id".to_string(),
+        config,
+        Some("grok-reauth-target".to_string()),
+        Some(&auth_json),
+        &client,
+        "http://127.0.0.1:9/billing",
+        "http://127.0.0.1:9/token",
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(success.account.id, "grok-reauth-target");
+    assert_eq!(success.account.created_at, created_at);
+
+    let storage = ProviderAccountStorage::new(paths().grok_accounts_dir);
+    let tokens = storage.load_tokens("grok-reauth-target").unwrap();
+    assert_eq!(tokens.access_token, "new-access-token");
+    assert_eq!(tokens.refresh_token, "new-refresh-token");
+}
+
+#[tokio::test]
+async fn oauth_callback_exchanges_code_and_sends_success_page() {
+    let (base_url, handle) = mock_server(vec![MockResponse {
+        method: "POST",
+        path: "/oauth2/token",
+        status: 200,
+        headers: vec![("content-type", "application/json")],
+        body: r#"{"access_token":"token-abc","refresh_token":"ref-xyz","expires_in":3600}"#
+            .to_string(),
+    }])
+    .await;
+
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let client_task = tokio::spawn(async move {
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let req =
+            "GET /callback?code=test-code&state=good-state HTTP/1.1\r\nHost: localhost\r\n\r\n";
+        tokio::io::AsyncWriteExt::write_all(&mut stream, req.as_bytes())
+            .await
+            .unwrap();
+        let mut resp = vec![0u8; 4096];
+        let bytes = tokio::io::AsyncReadExt::read(&mut stream, &mut resp)
+            .await
+            .unwrap();
+        String::from_utf8_lossy(&resp[..bytes]).to_string()
+    });
+
+    let (mut server_stream, _) = listener.accept().await.unwrap();
+    let client = reqwest::Client::new();
+    let token_url = format!("{base_url}/oauth2/token");
+    let tokens = super::login::handle_callback(
+        &mut server_stream,
+        &client,
+        &token_url,
+        "http://127.0.0.1/callback",
+        "my-verifier",
+        "good-state",
+    )
+    .await
+    .unwrap()
+    .expect("callback should return tokens");
+
+    let response_text = client_task.await.unwrap();
+    assert!(response_text.contains("HTTP/1.1 200 OK"));
+    assert!(response_text.contains("YapCap: Grok sign-in complete"));
+    assert_eq!(tokens.access_token, "token-abc");
+    assert_eq!(tokens.refresh_token, "ref-xyz");
+
+    let server_reqs = handle.await.unwrap();
+    assert_eq!(server_reqs.len(), 1);
+    assert!(server_reqs[0].contains("code=test-code"));
+    assert!(server_reqs[0].contains("code_verifier=my-verifier"));
+}
+
+#[tokio::test]
+async fn oauth_callback_rejects_state_mismatch() {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let client_task = tokio::spawn(async move {
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let req = "GET /callback?code=test-code&state=wrong-state HTTP/1.1\r\n\r\n";
+        tokio::io::AsyncWriteExt::write_all(&mut stream, req.as_bytes())
+            .await
+            .unwrap();
+        let mut resp = vec![0u8; 4096];
+        let bytes = tokio::io::AsyncReadExt::read(&mut stream, &mut resp)
+            .await
+            .unwrap();
+        String::from_utf8_lossy(&resp[..bytes]).to_string()
+    });
+
+    let (mut server_stream, _) = listener.accept().await.unwrap();
+    let client = reqwest::Client::new();
+    let err = super::login::handle_callback(
+        &mut server_stream,
+        &client,
+        "http://127.0.0.1:9/token",
+        "http://127.0.0.1/callback",
+        "my-verifier",
+        "expected-state",
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err.contains("state nonce did not match"));
+    let response_text = client_task.await.unwrap();
+    assert!(response_text.contains("HTTP/1.1 400 Bad Request"));
+}
+
+#[tokio::test]
+async fn oauth_callback_rejects_oauth_error() {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let client_task = tokio::spawn(async move {
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let req = "GET /callback?error=access_denied&state=expected-state HTTP/1.1\r\n\r\n";
+        tokio::io::AsyncWriteExt::write_all(&mut stream, req.as_bytes())
+            .await
+            .unwrap();
+        let mut resp = vec![0u8; 4096];
+        let bytes = tokio::io::AsyncReadExt::read(&mut stream, &mut resp)
+            .await
+            .unwrap();
+        String::from_utf8_lossy(&resp[..bytes]).to_string()
+    });
+
+    let (mut server_stream, _) = listener.accept().await.unwrap();
+    let client = reqwest::Client::new();
+    let err = super::login::handle_callback(
+        &mut server_stream,
+        &client,
+        "http://127.0.0.1:9/token",
+        "http://127.0.0.1/callback",
+        "my-verifier",
+        "expected-state",
+    )
+    .await
+    .unwrap_err();
+
+    assert!(err.contains("Grok OAuth returned access_denied"));
+    let response_text = client_task.await.unwrap();
+    assert!(response_text.contains("HTTP/1.1 400 Bad Request"));
+}
+
+#[tokio::test]
+async fn oauth_callback_returns_none_for_wrong_path() {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+
+    let client_task = tokio::spawn(async move {
+        let mut stream = tokio::net::TcpStream::connect(addr).await.unwrap();
+        let req = "GET /favicon.ico?foo=bar HTTP/1.1\r\n\r\n";
+        tokio::io::AsyncWriteExt::write_all(&mut stream, req.as_bytes())
+            .await
+            .unwrap();
+        let mut resp = vec![0u8; 4096];
+        let bytes = tokio::io::AsyncReadExt::read(&mut stream, &mut resp)
+            .await
+            .unwrap();
+        String::from_utf8_lossy(&resp[..bytes]).to_string()
+    });
+
+    let (mut server_stream, _) = listener.accept().await.unwrap();
+    let client = reqwest::Client::new();
+    let result = super::login::handle_callback(
+        &mut server_stream,
+        &client,
+        "http://127.0.0.1:9/token",
+        "http://127.0.0.1/callback",
+        "my-verifier",
+        "expected-state",
+    )
+    .await
+    .unwrap();
+
+    assert!(result.is_none());
+    let response_text = client_task.await.unwrap();
+    assert!(response_text.contains("HTTP/1.1 404 Not Found"));
+}
+
+#[tokio::test]
+async fn run_login_inner_executes_oauth_loopback_flow() {
+    use crate::account_storage::ProviderAccountStorage;
+    use crate::config::paths;
+    use crate::test_support;
+    use cosmic::iced::futures::StreamExt;
+
+    let _env = test_support::test_env();
+
+    let billing_body = r#"{
+        "config": {
+            "creditUsagePercent": 33.0
+        },
+        "subscriptionTier": "SuperGrok"
+    }"#;
+    let (base_url, _server) = mock_server(vec![
+        MockResponse {
+            method: "POST",
+            path: "/oauth2/token",
+            status: 200,
+            headers: vec![("content-type", "application/json")],
+            body: r#"{"access_token":"login-access-tok","refresh_token":"login-refresh-tok","expires_in":3600}"#.to_string(),
+        },
+        MockResponse {
+            method: "GET",
+            path: "/v1/billing",
+            status: 200,
+            headers: vec![("content-type", "application/json")],
+            body: billing_body.to_string(),
+        },
+    ])
+    .await;
+
+    let token_url = format!("{base_url}/oauth2/token");
+    let billing_url = format!("{base_url}/v1/billing");
+
+    let (mut sender, mut receiver) = cosmic::iced::futures::channel::mpsc::channel(10);
+    let login_task = tokio::spawn(async move {
+        super::login::run_login_inner(
+            "flow-oauth-test",
+            &crate::config::Config::default(),
+            None,
+            &mut sender,
+            &token_url,
+            &billing_url,
+        )
+        .await
+    });
+
+    let event = receiver
+        .next()
+        .await
+        .expect("should receive LoginUrl event");
+    let auth_url = match event {
+        super::login::GrokLoginEvent::LoginUrl { url, .. } => url,
+        _ => panic!("expected LoginUrl event"),
+    };
+
+    let url_parsed = reqwest::Url::parse(&auth_url).unwrap();
+    let redirect_param = url_parsed
+        .query_pairs()
+        .find(|(k, _)| k == "redirect_uri")
+        .unwrap()
+        .1
+        .to_string();
+    let state_param = url_parsed
+        .query_pairs()
+        .find(|(k, _)| k == "state")
+        .unwrap()
+        .1
+        .to_string();
+
+    let redirect_url = reqwest::Url::parse(&redirect_param).unwrap();
+    let port = redirect_url.port().unwrap();
+
+    let callback_resp = reqwest::Client::new()
+        .get(format!(
+            "http://127.0.0.1:{port}/callback?code=mock-code&state={state_param}"
+        ))
+        .send()
+        .await
+        .unwrap();
+
+    assert_eq!(callback_resp.status(), reqwest::StatusCode::OK);
+    let body = callback_resp.text().await.unwrap();
+    assert!(body.contains("YapCap: Grok sign-in complete"));
+
+    let success = login_task
+        .await
+        .unwrap()
+        .expect("login flow should succeed");
+    assert_eq!(success.account.id, "flow-oauth-test");
+    assert_eq!(success.account.plan.as_deref(), Some("SuperGrok"));
+
+    let storage = ProviderAccountStorage::new(paths().grok_accounts_dir);
+    let tokens = storage.load_tokens("flow-oauth-test").unwrap();
+    assert_eq!(tokens.access_token, "login-access-tok");
+    assert_eq!(tokens.refresh_token, "login-refresh-tok");
+}

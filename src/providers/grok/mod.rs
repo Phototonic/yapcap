@@ -3,11 +3,19 @@
 #[allow(dead_code)]
 pub mod account;
 #[allow(dead_code)]
+pub mod login;
+#[allow(dead_code)]
 pub mod oauth;
 pub mod usage;
 
 #[cfg(test)]
 mod tests;
+
+#[allow(unused_imports, dead_code)]
+pub use login::{
+    GrokLoginEvent, GrokLoginState, GrokLoginStatus, GrokLoginSuccess, prepare,
+    prepare_host_import, prepare_targeted,
+};
 
 use std::path::PathBuf;
 
