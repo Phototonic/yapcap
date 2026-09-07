@@ -42,6 +42,8 @@ pub struct Config {
     pub antigravity_enablement: ProviderEnablement,
     #[serde(default)]
     pub opencode_go_enablement: ProviderEnablement,
+    #[serde(default)]
+    pub grok_enablement: ProviderEnablement,
     pub selected_codex_account_ids: Vec<String>,
     pub codex_managed_accounts: Vec<ManagedCodexAccountConfig>,
     pub selected_claude_account_ids: Vec<String>,
@@ -72,6 +74,8 @@ pub struct Config {
     pub selected_opencode_go_account_ids: Vec<String>,
     #[serde(default)]
     pub opencode_go_managed_accounts: Vec<ManagedOpenCodeGoAccountConfig>,
+    #[serde(default)]
+    pub selected_grok_account_ids: Vec<String>,
     pub log_level: String,
 }
 
@@ -93,6 +97,7 @@ impl Default for Config {
             kimi_enablement: ProviderEnablement::Auto,
             antigravity_enablement: ProviderEnablement::Auto,
             opencode_go_enablement: ProviderEnablement::Auto,
+            grok_enablement: ProviderEnablement::Auto,
             selected_codex_account_ids: Vec::new(),
             codex_managed_accounts: Vec::new(),
             selected_claude_account_ids: Vec::new(),
@@ -111,6 +116,7 @@ impl Default for Config {
             antigravity_managed_accounts: Vec::new(),
             selected_opencode_go_account_ids: Vec::new(),
             opencode_go_managed_accounts: Vec::new(),
+            selected_grok_account_ids: Vec::new(),
             log_level: "info".to_string(),
         }
     }
@@ -141,6 +147,7 @@ impl Config {
             ProviderId::Kimi => self.kimi_enablement,
             ProviderId::Antigravity => self.antigravity_enablement,
             ProviderId::OpenCodeGo => self.opencode_go_enablement,
+            ProviderId::Grok => self.grok_enablement,
         }
     }
 
@@ -156,6 +163,7 @@ impl Config {
             ProviderId::Kimi => &self.selected_kimi_account_ids,
             ProviderId::Antigravity => &self.selected_antigravity_account_ids,
             ProviderId::OpenCodeGo => &self.selected_opencode_go_account_ids,
+            ProviderId::Grok => &self.selected_grok_account_ids,
         }
     }
 
@@ -170,6 +178,7 @@ impl Config {
             ProviderId::Kimi => &mut self.selected_kimi_account_ids,
             ProviderId::Antigravity => &mut self.selected_antigravity_account_ids,
             ProviderId::OpenCodeGo => &mut self.selected_opencode_go_account_ids,
+            ProviderId::Grok => &mut self.selected_grok_account_ids,
         }
     }
 
@@ -223,6 +232,7 @@ fn provider_enabled_key(provider: ProviderId) -> &'static str {
         ProviderId::Kimi => "kimi_enabled",
         ProviderId::Antigravity => "antigravity_enabled",
         ProviderId::OpenCodeGo => "opencode_go_enabled",
+        ProviderId::Grok => "grok_enabled",
     }
 }
 
@@ -237,6 +247,7 @@ fn provider_enablement_key(provider: ProviderId) -> &'static str {
         ProviderId::Kimi => "kimi_enablement",
         ProviderId::Antigravity => "antigravity_enablement",
         ProviderId::OpenCodeGo => "opencode_go_enablement",
+        ProviderId::Grok => "grok_enablement",
     }
 }
 
@@ -251,6 +262,7 @@ fn provider_enablement_mut(config: &mut Config, provider: ProviderId) -> &mut Pr
         ProviderId::Kimi => &mut config.kimi_enablement,
         ProviderId::Antigravity => &mut config.antigravity_enablement,
         ProviderId::OpenCodeGo => &mut config.opencode_go_enablement,
+        ProviderId::Grok => &mut config.grok_enablement,
     }
 }
 
@@ -499,6 +511,8 @@ pub fn write_changed_config_entries(
         antigravity_managed_accounts,
         selected_opencode_go_account_ids,
         opencode_go_managed_accounts,
+        grok_enablement,
+        selected_grok_account_ids,
         log_level,
     } = new;
 
@@ -525,6 +539,7 @@ pub fn write_changed_config_entries(
     set_changed!(kimi_enablement);
     set_changed!(antigravity_enablement);
     set_changed!(opencode_go_enablement);
+    set_changed!(grok_enablement);
     set_changed!(selected_codex_account_ids);
     set_changed!(codex_managed_accounts);
     set_changed!(selected_claude_account_ids);
@@ -543,6 +558,7 @@ pub fn write_changed_config_entries(
     set_changed!(antigravity_managed_accounts);
     set_changed!(selected_opencode_go_account_ids);
     set_changed!(opencode_go_managed_accounts);
+    set_changed!(selected_grok_account_ids);
     set_changed!(log_level);
 
     tx.commit()

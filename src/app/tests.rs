@@ -1465,7 +1465,7 @@ fn delete_account_requests_refresh_for_all_providers() {
                 app.config.selected_antigravity_account_ids = vec![keep_id.to_string()];
                 "remove".to_string()
             }
-            ProviderId::OpenCodeGo => continue,
+            ProviderId::OpenCodeGo | ProviderId::Grok => continue,
         };
 
         let _task = app.delete_account(provider, &remove_account_id);
