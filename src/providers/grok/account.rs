@@ -29,6 +29,33 @@ pub fn host_auth_file_path() -> Option<PathBuf> {
     host_user_home_dir().map(|home| home.join(".grok").join("auth.json"))
 }
 
+fn parse_trimmed_str(entry: &serde_json::Value, key: &str) -> Option<String> {
+    entry
+        .get(key)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+}
+
+fn parse_expires_at(entry: &serde_json::Value) -> Option<DateTime<Utc>> {
+    let exp = entry.get("expires_at")?;
+    if let Some(ts) = exp.as_i64() {
+        DateTime::from_timestamp(ts, 0)
+    } else if let Some(s) = exp.as_str() {
+        s.parse::<i64>()
+            .ok()
+            .and_then(|ts| DateTime::from_timestamp(ts, 0))
+            .or_else(|| {
+                chrono::DateTime::parse_from_rfc3339(s)
+                    .ok()
+                    .map(|dt| dt.with_timezone(&Utc))
+            })
+    } else {
+        None
+    }
+}
+
 pub fn read_host_credentials(path: &Path) -> Option<HostGrokCredentials> {
     let content = std::fs::read_to_string(path).ok()?;
     let json: serde_json::Value = serde_json::from_str(&content).ok()?;
@@ -40,83 +67,18 @@ pub fn read_host_credentials(path: &Path) -> Option<HostGrokCredentials> {
         })
     })?;
 
-    let access_token = entry
-        .get("key")
-        .or_else(|| entry.get("access_token"))
-        .and_then(|k| k.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())?
-        .to_string();
-
-    let refresh_token = entry
-        .get("refresh_token")
-        .and_then(|r| r.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
-
-    let expires_at = entry.get("expires_at").and_then(|exp| {
-        if let Some(ts) = exp.as_i64() {
-            DateTime::from_timestamp(ts, 0)
-        } else if let Some(s) = exp.as_str() {
-            s.parse::<i64>()
-                .ok()
-                .and_then(|ts| DateTime::from_timestamp(ts, 0))
-                .or_else(|| {
-                    chrono::DateTime::parse_from_rfc3339(s)
-                        .ok()
-                        .map(|dt| dt.with_timezone(&Utc))
-                })
-        } else {
-            None
-        }
-    });
-
-    let email = entry
-        .get("email")
-        .and_then(|e| e.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
-
-    let user_id = entry
-        .get("user_id")
-        .or_else(|| entry.get("sub"))
-        .and_then(|u| u.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
-
-    let first_name = entry
-        .get("first_name")
-        .and_then(|f| f.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
-
-    let last_name = entry
-        .get("last_name")
-        .and_then(|l| l.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
-
-    let team_id = entry
-        .get("team_id")
-        .and_then(|t| t.as_str())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string);
+    let access_token =
+        parse_trimmed_str(entry, "key").or_else(|| parse_trimmed_str(entry, "access_token"))?;
 
     Some(HostGrokCredentials {
         access_token,
-        refresh_token,
-        expires_at,
-        email,
-        user_id,
-        first_name,
-        last_name,
-        team_id,
+        refresh_token: parse_trimmed_str(entry, "refresh_token"),
+        expires_at: parse_expires_at(entry),
+        email: parse_trimmed_str(entry, "email"),
+        user_id: parse_trimmed_str(entry, "user_id").or_else(|| parse_trimmed_str(entry, "sub")),
+        first_name: parse_trimmed_str(entry, "first_name"),
+        last_name: parse_trimmed_str(entry, "last_name"),
+        team_id: parse_trimmed_str(entry, "team_id"),
     })
 }
 
@@ -190,13 +152,19 @@ pub fn discover_accounts(config: &Config) -> Vec<ManagedGrokAccountConfig> {
 }
 
 pub fn apply_login_account(config: &mut Config, account: ManagedGrokAccountConfig) {
-    let account_id = account.id.clone();
+    let incoming = account.clone();
     config
         .grok_managed_accounts
-        .retain(|existing| existing.id != account_id);
+        .retain(|existing| existing.id != account.id);
     config.grok_managed_accounts.push(account);
     dedupe_managed_accounts(config);
-    select_account_after_login(config, ProviderId::Grok, account_id);
+    let selected_id = config
+        .grok_managed_accounts
+        .iter()
+        .find(|existing| same_identity(existing, &incoming))
+        .map(|survivor| survivor.id.clone())
+        .unwrap_or(incoming.id);
+    select_account_after_login(config, ProviderId::Grok, selected_id);
 }
 
 pub fn sync_managed_account_dirs(config: &mut Config) -> bool {
@@ -266,18 +234,15 @@ pub(crate) fn find_matching_account<'a>(
     provider_account_id: Option<&str>,
 ) -> Option<&'a ManagedGrokAccountConfig> {
     config.grok_managed_accounts.iter().find(|account| {
-        if let (Some(acc_uid), Some(uid)) =
-            (account.provider_account_id.as_deref(), provider_account_id)
-            && acc_uid == uid
-        {
-            return true;
+        match (account.provider_account_id.as_deref(), provider_account_id) {
+            (Some(acc_uid), Some(uid)) => acc_uid == uid,
+            _ => match (account.email.as_deref(), email) {
+                (Some(acc_email), Some(email)) => {
+                    normalized_email(acc_email) == normalized_email(email)
+                }
+                _ => false,
+            },
         }
-        if let (Some(acc_email), Some(email)) = (account.email.as_deref(), email)
-            && normalized_email(acc_email) == normalized_email(email)
-        {
-            return true;
-        }
-        false
     })
 }
 

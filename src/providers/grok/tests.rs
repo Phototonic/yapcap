@@ -629,7 +629,12 @@ fn apply_login_account_dedupes_and_selects() {
 
     apply_login_account(&mut config, acc2);
     assert_eq!(config.grok_managed_accounts.len(), 1);
-    assert_eq!(config.selected_grok_account_ids, vec!["grok-2".to_string()]);
+    assert_eq!(config.grok_managed_accounts[0].id, "grok-1");
+    assert_eq!(config.selected_grok_account_ids, vec!["grok-1".to_string()]);
+    assert_eq!(
+        config.grok_managed_accounts[0].id,
+        config.selected_grok_account_ids[0]
+    );
     assert_eq!(
         config.grok_managed_accounts[0].team_id.as_deref(),
         Some("team-1")
@@ -637,6 +642,30 @@ fn apply_login_account_dedupes_and_selects() {
     assert_eq!(
         config.grok_managed_accounts[0].plan.as_deref(),
         Some("SuperGrok")
+    );
+
+    let acc_distinct = ManagedGrokAccountConfig {
+        id: "grok-distinct".to_string(),
+        label: "other@x.ai".to_string(),
+        config_dir: PathBuf::from("/tmp/acc-distinct"),
+        email: Some("other@x.ai".to_string()),
+        provider_account_id: Some("usr-2".to_string()),
+        team_id: None,
+        plan: None,
+        created_at: now,
+        updated_at: now,
+        last_authenticated_at: Some(now),
+    };
+
+    apply_login_account(&mut config, acc_distinct);
+    assert_eq!(config.grok_managed_accounts.len(), 2);
+    assert_eq!(
+        config.selected_grok_account_ids,
+        vec!["grok-distinct".to_string()]
+    );
+    assert_eq!(
+        config.grok_managed_accounts[1].id,
+        config.selected_grok_account_ids[0]
     );
 }
 
@@ -768,6 +797,7 @@ fn find_matching_account_and_new_account_id() {
     assert!(find_matching_account(&config, None, Some("usr-find-1")).is_some());
     assert!(find_matching_account(&config, Some("DEV@X.AI"), None).is_some());
     assert!(find_matching_account(&config, Some("other@x.ai"), Some("usr-other")).is_none());
+    assert!(find_matching_account(&config, Some("dev@x.ai"), Some("usr-conflict")).is_none());
 
     let generated_id = new_account_id();
     assert!(generated_id.starts_with("grok-"));
