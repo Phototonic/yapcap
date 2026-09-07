@@ -413,3 +413,362 @@ async fn refresh_token_handles_http_errors() {
     assert!(matches!(err, GrokError::TokenRefreshHttp { status: 500 }));
     server.await.unwrap();
 }
+
+#[test]
+fn reads_host_credentials_and_matches_active_account() {
+    use super::account::{read_host_credentials, system_active_account_id};
+    use crate::config::ManagedGrokAccountConfig;
+    use chrono::Utc;
+    use std::path::PathBuf;
+
+    let temp = tempfile::tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let json_data = r#"{
+        "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+            "key": "test-access-token",
+            "refresh_token": "test-refresh-token",
+            "expires_at": 1757211101,
+            "email": "developer@x.ai",
+            "user_id": "usr-999",
+            "first_name": "Dev",
+            "last_name": "Grok",
+            "team_id": "team-888"
+        }
+    }"#;
+    std::fs::write(&auth_json, json_data).unwrap();
+
+    let creds = read_host_credentials(&auth_json).expect("should parse host credentials");
+    assert_eq!(creds.access_token, "test-access-token");
+    assert_eq!(creds.user_id.as_deref(), Some("usr-999"));
+    assert_eq!(creds.email.as_deref(), Some("developer@x.ai"));
+
+    let account = ManagedGrokAccountConfig {
+        id: "grok-acc-1".to_string(),
+        label: "developer@x.ai".to_string(),
+        config_dir: PathBuf::from("/tmp/acc1"),
+        email: Some("developer@x.ai".to_string()),
+        provider_account_id: Some("usr-999".to_string()),
+        team_id: Some("team-888".to_string()),
+        plan: Some("SuperGrok".to_string()),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        last_authenticated_at: None,
+    };
+
+    let active_id = system_active_account_id(std::slice::from_ref(&account), &auth_json);
+    assert_eq!(active_id.as_deref(), Some("grok-acc-1"));
+}
+
+#[test]
+fn reads_host_credentials_invalid_returns_none() {
+    use super::account::read_host_credentials;
+    use std::path::Path;
+
+    assert_eq!(
+        read_host_credentials(Path::new("/nonexistent/path/auth.json")),
+        None
+    );
+
+    let temp = tempfile::tempdir().unwrap();
+    let not_json = temp.path().join("not_json.json");
+    std::fs::write(&not_json, "not-json").unwrap();
+    assert_eq!(read_host_credentials(&not_json), None);
+
+    let missing_key = temp.path().join("missing_key.json");
+    std::fs::write(&missing_key, r#"{"some_other_key": {}}"#).unwrap();
+    assert_eq!(read_host_credentials(&missing_key), None);
+
+    let empty_token = temp.path().join("empty_token.json");
+    std::fs::write(
+        &empty_token,
+        r#"{"https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {"key": "  "}}"#,
+    )
+    .unwrap();
+    assert_eq!(read_host_credentials(&empty_token), None);
+}
+
+#[test]
+fn reads_host_credentials_with_alternative_key_and_string_expiry() {
+    use super::account::read_host_credentials;
+
+    let temp = tempfile::tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let json_data = r#"{
+        "https://auth.x.ai::custom-client-id": {
+            "access_token": "alt-token",
+            "expires_at": "1757211101",
+            "email": " dev@x.ai ",
+            "user_id": " usr-1 "
+        }
+    }"#;
+    std::fs::write(&auth_json, json_data).unwrap();
+
+    let creds = read_host_credentials(&auth_json).expect("should parse alt credentials");
+    assert_eq!(creds.access_token, "alt-token");
+    assert_eq!(creds.user_id.as_deref(), Some("usr-1"));
+    assert_eq!(creds.email.as_deref(), Some("dev@x.ai"));
+    assert!(creds.expires_at.is_some());
+}
+
+#[test]
+fn system_active_account_id_matches_by_email_when_user_id_missing() {
+    use super::account::system_active_account_id;
+    use crate::config::ManagedGrokAccountConfig;
+    use chrono::Utc;
+    use std::path::PathBuf;
+
+    let temp = tempfile::tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let json_data = r#"{
+        "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+            "key": "test-key",
+            "email": " DEV@x.ai "
+        }
+    }"#;
+    std::fs::write(&auth_json, json_data).unwrap();
+
+    let account = ManagedGrokAccountConfig {
+        id: "grok-1".to_string(),
+        label: "Grok".to_string(),
+        config_dir: PathBuf::from("/tmp/grok-1"),
+        email: Some("dev@x.ai".to_string()),
+        provider_account_id: None,
+        team_id: None,
+        plan: None,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        last_authenticated_at: None,
+    };
+
+    let active = system_active_account_id(&[account], &auth_json);
+    assert_eq!(active.as_deref(), Some("grok-1"));
+}
+
+#[test]
+fn system_active_account_id_does_not_match_different_user_id() {
+    use super::account::system_active_account_id;
+    use crate::config::ManagedGrokAccountConfig;
+    use chrono::Utc;
+    use std::path::PathBuf;
+
+    let temp = tempfile::tempdir().unwrap();
+    let auth_json = temp.path().join("auth.json");
+    let json_data = r#"{
+        "https://auth.x.ai::b1a00492-073a-47ea-816f-4c329264a828": {
+            "key": "test-key",
+            "user_id": "usr-1",
+            "email": "dev@x.ai"
+        }
+    }"#;
+    std::fs::write(&auth_json, json_data).unwrap();
+
+    let account = ManagedGrokAccountConfig {
+        id: "grok-1".to_string(),
+        label: "Grok".to_string(),
+        config_dir: PathBuf::from("/tmp/grok-1"),
+        email: Some("dev@x.ai".to_string()),
+        provider_account_id: Some("usr-2".to_string()),
+        team_id: None,
+        plan: None,
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        last_authenticated_at: None,
+    };
+
+    let active = system_active_account_id(&[account], &auth_json);
+    assert_eq!(active, None);
+}
+
+#[test]
+fn host_auth_file_path_ends_with_expected_relative_path() {
+    use super::account::host_auth_file_path;
+    let path = host_auth_file_path();
+    if let Some(path) = path {
+        assert!(path.ends_with(std::path::Path::new(".grok/auth.json")));
+    }
+}
+
+#[test]
+fn apply_login_account_dedupes_and_selects() {
+    use super::account::apply_login_account;
+    use crate::config::{Config, ManagedGrokAccountConfig};
+    use chrono::Utc;
+    use std::path::PathBuf;
+
+    let mut config = Config::default();
+    let now = Utc::now();
+    let acc1 = ManagedGrokAccountConfig {
+        id: "grok-1".to_string(),
+        label: "dev@x.ai".to_string(),
+        config_dir: PathBuf::from("/tmp/acc1"),
+        email: Some("dev@x.ai".to_string()),
+        provider_account_id: Some("usr-1".to_string()),
+        team_id: None,
+        plan: None,
+        created_at: now,
+        updated_at: now,
+        last_authenticated_at: Some(now),
+    };
+
+    apply_login_account(&mut config, acc1);
+    assert_eq!(config.grok_managed_accounts.len(), 1);
+    assert_eq!(config.selected_grok_account_ids, vec!["grok-1".to_string()]);
+
+    let acc2 = ManagedGrokAccountConfig {
+        id: "grok-2".to_string(),
+        label: "DEV@X.AI".to_string(),
+        config_dir: PathBuf::from("/tmp/acc2"),
+        email: Some("DEV@X.AI".to_string()),
+        provider_account_id: Some("usr-1".to_string()),
+        team_id: Some("team-1".to_string()),
+        plan: Some("SuperGrok".to_string()),
+        created_at: now,
+        updated_at: now + chrono::Duration::seconds(10),
+        last_authenticated_at: Some(now + chrono::Duration::seconds(10)),
+    };
+
+    apply_login_account(&mut config, acc2);
+    assert_eq!(config.grok_managed_accounts.len(), 1);
+    assert_eq!(config.selected_grok_account_ids, vec!["grok-2".to_string()]);
+    assert_eq!(
+        config.grok_managed_accounts[0].team_id.as_deref(),
+        Some("team-1")
+    );
+    assert_eq!(
+        config.grok_managed_accounts[0].plan.as_deref(),
+        Some("SuperGrok")
+    );
+}
+
+#[test]
+fn discover_accounts_reads_storage_and_deduplicates() {
+    use super::account::discover_accounts;
+    use crate::account_storage::{
+        NewProviderAccount, ProviderAccountStorage, ProviderAccountTokens,
+    };
+    use crate::config::{Config, ManagedGrokAccountConfig, managed_grok_account_dir, paths};
+    use crate::model::ProviderId;
+    use chrono::Utc;
+    use std::path::PathBuf;
+
+    let _env = crate::test_support::test_env();
+    let storage = ProviderAccountStorage::new(paths().grok_accounts_dir);
+    let stored = storage
+        .create_account(NewProviderAccount {
+            provider: ProviderId::Grok,
+            email: "dev@x.ai".to_string(),
+            provider_account_id: Some("usr-stored".to_string()),
+            organization_id: None,
+            organization_name: None,
+            tokens: ProviderAccountTokens {
+                access_token: "acc".to_string(),
+                refresh_token: "ref".to_string(),
+                expires_at: Utc::now() + chrono::Duration::hours(1),
+                scope: vec![],
+                token_id: None,
+            },
+            snapshot: None,
+        })
+        .unwrap();
+
+    let account_id = stored.metadata.account_id;
+    let now = Utc::now();
+    let config = Config {
+        grok_managed_accounts: vec![ManagedGrokAccountConfig {
+            id: account_id.clone(),
+            label: String::new(),
+            config_dir: PathBuf::from("/non-canonical/dir"),
+            email: None,
+            provider_account_id: None,
+            team_id: None,
+            plan: None,
+            created_at: now,
+            updated_at: now,
+            last_authenticated_at: None,
+        }],
+        selected_grok_account_ids: vec![account_id.clone()],
+        ..Config::default()
+    };
+
+    let discovered = discover_accounts(&config);
+    assert_eq!(discovered.len(), 1);
+    assert_eq!(discovered[0].id, account_id);
+    assert_eq!(discovered[0].label, "dev@x.ai");
+    assert_eq!(discovered[0].email.as_deref(), Some("dev@x.ai"));
+    assert_eq!(
+        discovered[0].provider_account_id.as_deref(),
+        Some("usr-stored")
+    );
+    assert_eq!(
+        discovered[0].config_dir,
+        managed_grok_account_dir(&account_id)
+    );
+}
+
+#[test]
+fn sync_managed_account_dirs_updates_non_canonical_dirs() {
+    use super::account::sync_managed_account_dirs;
+    use crate::config::{Config, ManagedGrokAccountConfig, managed_grok_account_dir};
+    use chrono::Utc;
+    use std::path::PathBuf;
+
+    let _env = crate::test_support::test_env();
+    let now = Utc::now();
+    let mut config = Config {
+        grok_managed_accounts: vec![ManagedGrokAccountConfig {
+            id: "grok-sync-1".to_string(),
+            label: "dev@x.ai".to_string(),
+            config_dir: PathBuf::from("/wrong/path"),
+            email: Some("dev@x.ai".to_string()),
+            provider_account_id: Some("usr-1".to_string()),
+            team_id: None,
+            plan: None,
+            created_at: now,
+            updated_at: now,
+            last_authenticated_at: None,
+        }],
+        ..Config::default()
+    };
+
+    let changed = sync_managed_account_dirs(&mut config);
+    assert!(changed);
+    assert_eq!(
+        config.grok_managed_accounts[0].config_dir,
+        managed_grok_account_dir("grok-sync-1")
+    );
+
+    let changed_second = sync_managed_account_dirs(&mut config);
+    assert!(!changed_second);
+}
+
+#[test]
+fn find_matching_account_and_new_account_id() {
+    use super::account::{find_matching_account, new_account_id};
+    use crate::config::{Config, ManagedGrokAccountConfig};
+    use chrono::Utc;
+    use std::path::PathBuf;
+
+    let now = Utc::now();
+    let config = Config {
+        grok_managed_accounts: vec![ManagedGrokAccountConfig {
+            id: "grok-find-1".to_string(),
+            label: "dev@x.ai".to_string(),
+            config_dir: PathBuf::from("/tmp"),
+            email: Some("dev@x.ai".to_string()),
+            provider_account_id: Some("usr-find-1".to_string()),
+            team_id: None,
+            plan: None,
+            created_at: now,
+            updated_at: now,
+            last_authenticated_at: None,
+        }],
+        ..Config::default()
+    };
+
+    assert!(find_matching_account(&config, None, Some("usr-find-1")).is_some());
+    assert!(find_matching_account(&config, Some("DEV@X.AI"), None).is_some());
+    assert!(find_matching_account(&config, Some("other@x.ai"), Some("usr-other")).is_none());
+
+    let generated_id = new_account_id();
+    assert!(generated_id.starts_with("grok-"));
+}
