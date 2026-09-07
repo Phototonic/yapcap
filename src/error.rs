@@ -855,7 +855,7 @@ pub enum GrokError {
         source: reqwest::Error,
     },
     #[error("failed to decode grok usage response")]
-    DecodeUsage(#[source] reqwest::Error),
+    DecodeUsage(#[source] serde_json::Error),
     #[error("Grok response had no usage windows")]
     NoUsageData,
     #[error("invalid grok reset timestamp {value}")]
