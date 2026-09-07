@@ -326,6 +326,7 @@ fn shared_runtime_metadata_notification_does_not_apply_partial_document() {
 
 #[test]
 fn shared_runtime_update_preserves_refreshing_provider() {
+    let _guard = crate::test_support::env_lock();
     let mut app = test_app(None);
     app.config.codex_enablement = crate::config::ProviderEnablement::Enabled;
     let mut shared_state = app.state.clone();

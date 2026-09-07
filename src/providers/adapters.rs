@@ -6,19 +6,18 @@ mod codex_adapter;
 mod copilot_adapter;
 mod cursor_adapter;
 mod gemini_adapter;
+mod grok_adapter;
 mod kimi_adapter;
 mod minimax_adapter;
 mod opencode_go_adapter;
 
 use crate::account_storage::ProviderAccountStorage;
 use crate::config::{Config, host_user_home_dir, paths};
-use crate::error::AppError;
 use crate::model::{
     AccountSelectionStatus, AppState, AuthState, ProviderAccountRuntimeState, ProviderId,
-    UsageSnapshot,
 };
 use crate::providers::interface::{ProviderAccountDescriptor, ProviderAdapter};
-use crate::providers::{claude, codex, cursor, gemini, opencode_go};
+use crate::providers::{claude, codex, cursor, gemini, grok, opencode_go};
 
 pub(super) fn adapter(provider: ProviderId) -> &'static dyn ProviderAdapter {
     match provider {
@@ -31,7 +30,7 @@ pub(super) fn adapter(provider: ProviderId) -> &'static dyn ProviderAdapter {
         ProviderId::Minimax => &MINIMAX_ADAPTER,
         ProviderId::Antigravity => &ANTIGRAVITY_ADAPTER,
         ProviderId::OpenCodeGo => &OPENCODE_GO_ADAPTER,
-        ProviderId::Grok => &GROK_STUB_ADAPTER,
+        ProviderId::Grok => &GROK_ADAPTER,
     }
 }
 
@@ -46,50 +45,7 @@ static ANTIGRAVITY_ADAPTER: antigravity_adapter::AntigravityAdapter =
     antigravity_adapter::AntigravityAdapter;
 static OPENCODE_GO_ADAPTER: opencode_go_adapter::OpenCodeGoAdapter =
     opencode_go_adapter::OpenCodeGoAdapter;
-static GROK_STUB_ADAPTER: GrokStubAdapter = GrokStubAdapter;
-
-struct GrokStubAdapter;
-
-impl ProviderAdapter for GrokStubAdapter {
-    fn id(&self) -> ProviderId {
-        ProviderId::Grok
-    }
-
-    fn login_kind(&self) -> crate::providers::interface::ProviderLoginKind {
-        crate::providers::interface::ProviderLoginKind::Codex
-    }
-
-    fn capabilities(&self) -> crate::providers::interface::ProviderCapabilities {
-        crate::providers::interface::ProviderCapabilities {
-            supports_background_status_refresh: false,
-            requires_auth_prompt_on_auth_failure: false,
-        }
-    }
-
-    fn discover_accounts(&self, _config: &Config) -> Vec<ProviderAccountDescriptor> {
-        Vec::new()
-    }
-
-    fn sync_managed_accounts(&self, _config: &mut Config) -> bool {
-        false
-    }
-
-    fn delete_account(&self, _account_id: &str, _config: &mut Config) -> bool {
-        false
-    }
-
-    fn reconcile_provider_accounts(&self, _config: &Config, _state: &mut AppState) {}
-
-    fn fetch_account<'a>(
-        &self,
-        _handle: &'a crate::providers::interface::ProviderAccountHandle,
-        _client: &'a reqwest::Client,
-    ) -> crate::providers::interface::BoxFuture<'a, crate::error::Result<UsageSnapshot, AppError>>
-    {
-        let provider = self.id();
-        Box::pin(async move { Err(AppError::InvalidAccountHandle { provider }) })
-    }
-}
+static GROK_ADAPTER: grok_adapter::GrokAdapter = grok_adapter::GrokAdapter;
 
 pub(super) fn opencode_go_system_active_account_id(
     managed_accounts: &[crate::config::ManagedOpenCodeGoAccountConfig],
@@ -261,6 +217,13 @@ pub(super) fn kimi_system_active_account_id(
                 .map(|account| account.id.clone())
         }
     })
+}
+
+pub(super) fn grok_system_active_account_id(
+    managed_accounts: &[crate::config::ManagedGrokAccountConfig],
+) -> Option<String> {
+    let path = host_user_home_dir()?.join(".grok").join("auth.json");
+    grok::account::system_active_account_id(managed_accounts, &path)
 }
 
 #[cfg(test)]

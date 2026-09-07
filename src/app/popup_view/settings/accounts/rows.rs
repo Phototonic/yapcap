@@ -226,6 +226,7 @@ fn action_available(
     match action {
         ProviderAccountAction::Delete => true,
         ProviderAccountAction::RestoreFromOpenCode
+        | ProviderAccountAction::RestoreFromGrok
         | ProviderAccountAction::Reauthenticate
         | ProviderAccountAction::Rescan => {
             enabled && status.is_some_and(|status| status.reauth_eligible)

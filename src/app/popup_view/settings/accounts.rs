@@ -121,6 +121,7 @@ pub(super) fn provider_settings_view<'a>(
             opencode_go_login_controls(logins.opencode_go, enabled),
             logins.opencode_go.is_some(),
         ),
+        ProviderLoginKind::Grok => (cosmic::iced::widget::column![].into(), false),
     };
     let selection_warning = registry::selection_required_message(provider_id);
     let accounts_section = account_settings_section(AccountSettingsContext {
