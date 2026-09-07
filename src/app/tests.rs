@@ -346,6 +346,7 @@ fn shared_runtime_update_preserves_refreshing_provider() {
 
 #[test]
 fn owner_refresh_now_processes_new_shared_control_snapshot() {
+    let _guard = crate::test_support::env_lock();
     let owner = refresh_owner("owner-refresh-now-new-control");
     let mut app = test_app(Some(owner));
     ready_selected_provider(&mut app.state, ProviderId::Cursor);
@@ -1147,6 +1148,8 @@ pub(super) fn test_app(refresh_owner: Option<RefreshOwner>) -> AppModel {
         antigravity_login_handle: None,
         opencode_go_login: None,
         opencode_go_login_handle: None,
+        grok_login: None,
+        grok_login_handle: None,
     }
 }
 

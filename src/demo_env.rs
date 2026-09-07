@@ -3,8 +3,8 @@
 use crate::config::{
     Config, ManagedAntigravityAccountConfig, ManagedClaudeAccountConfig, ManagedCodexAccountConfig,
     ManagedCopilotAccountConfig, ManagedCursorAccountConfig, ManagedGeminiAccountConfig,
-    ManagedKimiAccountConfig, ManagedMinimaxAccountConfig, ManagedOpenCodeGoAccountConfig,
-    ProviderEnablement, ProviderVisibilityMode, paths,
+    ManagedGrokAccountConfig, ManagedKimiAccountConfig, ManagedMinimaxAccountConfig,
+    ManagedOpenCodeGoAccountConfig, ProviderEnablement, ProviderVisibilityMode, paths,
 };
 use crate::model::{
     AccountSelectionStatus, AppState, AuthState, ExtraUsageState, ProviderAccountRuntimeState,
@@ -78,6 +78,7 @@ pub fn apply_config(config: &mut Config) {
     config.kimi_managed_accounts = demo_kimi_accounts();
     config.antigravity_managed_accounts = demo_antigravity_accounts();
     config.opencode_go_managed_accounts = demo_opencode_go_accounts();
+    config.grok_managed_accounts = demo_grok_accounts();
 
     config.provider_visibility_mode = ProviderVisibilityMode::UserManaged;
 
@@ -117,6 +118,7 @@ pub fn strip_leaked_state(config: &mut Config) -> bool {
         &account.id
     });
     changed |= strip_ids(&mut config.selected_grok_account_ids);
+    changed |= retain_len_changed(&mut config.grok_managed_accounts, |account| &account.id);
     changed
 }
 
@@ -794,6 +796,22 @@ fn demo_opencode_go_accounts() -> Vec<ManagedOpenCodeGoAccountConfig> {
     }]
 }
 
+fn demo_grok_accounts() -> Vec<ManagedGrokAccountConfig> {
+    let now = demo_timestamp();
+    vec![ManagedGrokAccountConfig {
+        id: GROK_PRIMARY_ID.to_string(),
+        label: "SuperGrok".to_string(),
+        config_dir: demo_root().join("grok-primary"),
+        email: Some("grok@example.com".to_string()),
+        provider_account_id: Some("grok-user-1".to_string()),
+        team_id: None,
+        plan: Some("SuperGrok".to_string()),
+        created_at: now,
+        updated_at: now,
+        last_authenticated_at: Some(now),
+    }]
+}
+
 fn snapshot_minimax_primary() -> UsageSnapshot {
     let now = Utc::now();
     let interval_reset = now + Duration::hours(3);
@@ -1307,7 +1325,6 @@ mod tests {
             std::env::remove_var(DEMO_ENV);
         }
 
-        let grok_demo_id = GROK_PRIMARY_ID.to_string();
         for provider in ProviderId::ALL {
             let selected = config.selected_account_ids(provider);
             assert!(
@@ -1357,7 +1374,7 @@ mod tests {
                     .iter()
                     .map(|a| &a.id)
                     .collect(),
-                ProviderId::Grok => vec![&grok_demo_id],
+                ProviderId::Grok => config.grok_managed_accounts.iter().map(|a| &a.id).collect(),
             };
             for id in selected {
                 assert!(
@@ -1750,5 +1767,14 @@ mod tests {
         assert!((cost.used - 8.5).abs() < f64::EPSILON);
         assert_eq!(cost.limit, Some(20.0));
         assert_eq!(cost.units, "EUR");
+    }
+
+    #[test]
+    fn grok_demo_seeds_one_account_with_usage_windows() {
+        let snapshot = snapshot_grok();
+        assert_eq!(snapshot.identity.plan.as_deref(), Some("SuperGrok"));
+        assert_eq!(snapshot.windows.len(), 1);
+        assert_eq!(snapshot.windows[0].label, "Weekly");
+        assert!((snapshot.windows[0].used_percent - 46.0).abs() < f32::EPSILON);
     }
 }
