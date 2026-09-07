@@ -802,3 +802,464 @@ fn find_matching_account_and_new_account_id() {
     let generated_id = new_account_id();
     assert!(generated_id.starts_with("grok-"));
 }
+
+struct MockResponse {
+    method: &'static str,
+    path: &'static str,
+    status: u16,
+    headers: Vec<(&'static str, &'static str)>,
+    body: String,
+}
+
+async fn mock_server(
+    responses: Vec<MockResponse>,
+) -> (String, tokio::task::JoinHandle<Vec<String>>) {
+    let listener = tokio::net::TcpListener::bind(("127.0.0.1", 0))
+        .await
+        .unwrap();
+    let addr = listener.local_addr().unwrap();
+    let handle = tokio::spawn(async move {
+        let mut requests = Vec::new();
+        for response in responses {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buffer = vec![0u8; 8192];
+            let bytes = tokio::io::AsyncReadExt::read(&mut stream, &mut buffer)
+                .await
+                .unwrap();
+            let request = String::from_utf8_lossy(&buffer[..bytes]).to_string();
+            assert!(request.starts_with(&format!("{} {}", response.method, response.path)));
+            let status_text = match response.status {
+                200 => "OK",
+                401 => "Unauthorized",
+                429 => "Too Many Requests",
+                500 => "Internal Server Error",
+                _ => "Unknown",
+            };
+            let mut raw = format!("HTTP/1.1 {} {}\r\n", response.status, status_text);
+            for (k, v) in &response.headers {
+                raw.push_str(&format!("{k}: {v}\r\n"));
+            }
+            raw.push_str(&format!(
+                "content-length: {}\r\nconnection: close\r\n\r\n{}",
+                response.body.len(),
+                response.body
+            ));
+            tokio::io::AsyncWriteExt::write_all(&mut stream, raw.as_bytes())
+                .await
+                .unwrap();
+            requests.push(request);
+        }
+        requests
+    });
+    (format!("http://{addr}"), handle)
+}
+
+fn setup_test_account(
+    storage: &crate::account_storage::ProviderAccountStorage,
+    expires_at: chrono::DateTime<chrono::Utc>,
+    refresh_token: &str,
+) -> (String, std::path::PathBuf) {
+    use crate::account_storage::{NewProviderAccount, ProviderAccountTokens};
+    let stored = storage
+        .create_account(NewProviderAccount {
+            provider: ProviderId::Grok,
+            email: "dev@x.ai".to_string(),
+            provider_account_id: Some("usr-stored".to_string()),
+            organization_id: None,
+            organization_name: None,
+            tokens: ProviderAccountTokens {
+                access_token: "old-access".to_string(),
+                refresh_token: refresh_token.to_string(),
+                expires_at,
+                scope: vec!["grok-cli:access".to_string()],
+                token_id: None,
+            },
+            snapshot: None,
+        })
+        .unwrap();
+    (stored.account_ref.account_id, stored.account_dir)
+}
+
+#[tokio::test]
+async fn fetch_at_refreshes_token_when_expiring_soon() {
+    use super::fetch_at;
+    use crate::account_storage::ProviderAccountStorage;
+    use chrono::{Duration, Utc};
+
+    let temp = tempfile::tempdir().unwrap();
+    let storage = ProviderAccountStorage::new(temp.path());
+    let (account_id, account_dir) =
+        setup_test_account(&storage, Utc::now() + Duration::minutes(2), "old-refresh");
+
+    let billing_body = r#"{
+        "config": {
+            "creditUsagePercent": 25.0
+        },
+        "subscriptionTier": "SuperGrok"
+    }"#;
+
+    let (base_url, handle) = mock_server(vec![
+        MockResponse {
+            method: "POST",
+            path: "/oauth2/token",
+            status: 200,
+            headers: vec![("content-type", "application/json")],
+            body: r#"{"access_token":"refreshed-acc","refresh_token":"refreshed-ref","expires_in":3600}"#.to_string(),
+        },
+        MockResponse {
+            method: "GET",
+            path: "/v1/billing?format=credits",
+            status: 200,
+            headers: vec![("content-type", "application/json")],
+            body: billing_body.to_string(),
+        },
+    ])
+    .await;
+
+    let client = reqwest::Client::new();
+    let snapshot = fetch_at(
+        &client,
+        &account_id,
+        account_dir,
+        &format!("{base_url}/v1/billing?format=credits"),
+        &format!("{base_url}/oauth2/token"),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(snapshot.provider, ProviderId::Grok);
+    assert_eq!(snapshot.windows.len(), 1);
+    assert!((snapshot.windows[0].used_percent - 25.0).abs() < f32::EPSILON);
+    assert_eq!(snapshot.identity.plan.as_deref(), Some("SuperGrok"));
+    assert_eq!(snapshot.identity.email.as_deref(), Some("dev@x.ai"));
+    assert_eq!(snapshot.identity.account_id.as_deref(), Some("usr-stored"));
+
+    let requests = handle.await.unwrap();
+    assert_eq!(requests.len(), 2);
+    assert!(requests[0].contains("grant_type=refresh_token"));
+    assert!(requests[0].contains("refresh_token=old-refresh"));
+    assert!(requests[1].contains("authorization: Bearer refreshed-acc"));
+
+    let updated_tokens = storage.load_tokens(&account_id).unwrap();
+    assert_eq!(updated_tokens.access_token, "refreshed-acc");
+    assert_eq!(updated_tokens.refresh_token, "refreshed-ref");
+
+    let saved_snapshot = storage.load_snapshot(&account_id).unwrap().unwrap();
+    assert!((saved_snapshot.windows[0].used_percent - 25.0).abs() < f32::EPSILON);
+}
+
+#[tokio::test]
+async fn fetch_at_retries_on_401_with_refresh_and_succeeds() {
+    use super::fetch_at;
+    use crate::account_storage::ProviderAccountStorage;
+    use chrono::{Duration, Utc};
+
+    let temp = tempfile::tempdir().unwrap();
+    let storage = ProviderAccountStorage::new(temp.path());
+    let (account_id, account_dir) =
+        setup_test_account(&storage, Utc::now() + Duration::hours(1), "valid-refresh");
+
+    let billing_body = r#"{
+        "config": {
+            "creditUsagePercent": 50.0
+        },
+        "subscriptionTier": "SuperGrok"
+    }"#;
+
+    let (base_url, handle) = mock_server(vec![
+        MockResponse {
+            method: "GET",
+            path: "/v1/billing?format=credits",
+            status: 401,
+            headers: vec![("content-type", "application/json")],
+            body: "{}".to_string(),
+        },
+        MockResponse {
+            method: "POST",
+            path: "/oauth2/token",
+            status: 200,
+            headers: vec![("content-type", "application/json")],
+            body:
+                r#"{"access_token":"retried-acc","refresh_token":"retried-ref","expires_in":3600}"#
+                    .to_string(),
+        },
+        MockResponse {
+            method: "GET",
+            path: "/v1/billing?format=credits",
+            status: 200,
+            headers: vec![("content-type", "application/json")],
+            body: billing_body.to_string(),
+        },
+    ])
+    .await;
+
+    let client = reqwest::Client::new();
+    let snapshot = fetch_at(
+        &client,
+        &account_id,
+        account_dir,
+        &format!("{base_url}/v1/billing?format=credits"),
+        &format!("{base_url}/oauth2/token"),
+    )
+    .await
+    .unwrap();
+
+    assert!((snapshot.windows[0].used_percent - 50.0).abs() < f32::EPSILON);
+
+    let requests = handle.await.unwrap();
+    assert_eq!(requests.len(), 3);
+    assert!(requests[0].contains("authorization: Bearer old-access"));
+    assert!(requests[1].contains("refresh_token=valid-refresh"));
+    assert!(requests[2].contains("authorization: Bearer retried-acc"));
+
+    let updated_tokens = storage.load_tokens(&account_id).unwrap();
+    assert_eq!(updated_tokens.access_token, "retried-acc");
+    assert_eq!(updated_tokens.refresh_token, "retried-ref");
+
+    let saved_snapshot = storage.load_snapshot(&account_id).unwrap().unwrap();
+    assert!((saved_snapshot.windows[0].used_percent - 50.0).abs() < f32::EPSILON);
+}
+
+#[tokio::test]
+async fn fetch_at_returns_unauthorized_if_401_persists_after_refresh() {
+    use super::fetch_at;
+    use crate::account_storage::ProviderAccountStorage;
+    use chrono::{Duration, Utc};
+
+    let temp = tempfile::tempdir().unwrap();
+    let storage = ProviderAccountStorage::new(temp.path());
+    let (account_id, account_dir) =
+        setup_test_account(&storage, Utc::now() + Duration::hours(1), "valid-refresh");
+
+    let (base_url, handle) = mock_server(vec![
+        MockResponse {
+            method: "GET",
+            path: "/v1/billing?format=credits",
+            status: 401,
+            headers: vec![("content-type", "application/json")],
+            body: "{}".to_string(),
+        },
+        MockResponse {
+            method: "POST",
+            path: "/oauth2/token",
+            status: 200,
+            headers: vec![("content-type", "application/json")],
+            body:
+                r#"{"access_token":"retried-acc","refresh_token":"retried-ref","expires_in":3600}"#
+                    .to_string(),
+        },
+        MockResponse {
+            method: "GET",
+            path: "/v1/billing?format=credits",
+            status: 401,
+            headers: vec![("content-type", "application/json")],
+            body: "{}".to_string(),
+        },
+    ])
+    .await;
+
+    let client = reqwest::Client::new();
+    let err = fetch_at(
+        &client,
+        &account_id,
+        account_dir,
+        &format!("{base_url}/v1/billing?format=credits"),
+        &format!("{base_url}/oauth2/token"),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(err, GrokError::Unauthorized));
+    assert_eq!(handle.await.unwrap().len(), 3);
+}
+
+#[tokio::test]
+async fn fetch_at_handles_429_rate_limited() {
+    use super::fetch_at;
+    use crate::account_storage::ProviderAccountStorage;
+    use chrono::{Duration, Utc};
+
+    let temp = tempfile::tempdir().unwrap();
+    let storage = ProviderAccountStorage::new(temp.path());
+    let (account_id, account_dir) =
+        setup_test_account(&storage, Utc::now() + Duration::hours(1), "valid-refresh");
+
+    let (base_url, handle) = mock_server(vec![MockResponse {
+        method: "GET",
+        path: "/v1/billing?format=credits",
+        status: 429,
+        headers: vec![("content-type", "application/json"), ("retry-after", "120")],
+        body: "{}".to_string(),
+    }])
+    .await;
+
+    let client = reqwest::Client::new();
+    let err = fetch_at(
+        &client,
+        &account_id,
+        account_dir,
+        &format!("{base_url}/v1/billing?format=credits"),
+        &format!("{base_url}/oauth2/token"),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(
+        err,
+        GrokError::RateLimited {
+            retry_after_secs: Some(120)
+        }
+    ));
+    assert_eq!(handle.await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn fetch_at_handles_500_endpoint_error() {
+    use super::fetch_at;
+    use crate::account_storage::ProviderAccountStorage;
+    use chrono::{Duration, Utc};
+
+    let temp = tempfile::tempdir().unwrap();
+    let storage = ProviderAccountStorage::new(temp.path());
+    let (account_id, account_dir) =
+        setup_test_account(&storage, Utc::now() + Duration::hours(1), "valid-refresh");
+
+    let (base_url, handle) = mock_server(vec![MockResponse {
+        method: "GET",
+        path: "/v1/billing?format=credits",
+        status: 500,
+        headers: vec![("content-type", "application/json")],
+        body: "Internal Server Error".to_string(),
+    }])
+    .await;
+
+    let client = reqwest::Client::new();
+    let err = fetch_at(
+        &client,
+        &account_id,
+        account_dir,
+        &format!("{base_url}/v1/billing?format=credits"),
+        &format!("{base_url}/oauth2/token"),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(err, GrokError::UsageEndpoint { status: 500, .. }));
+    assert_eq!(handle.await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn fetch_at_fails_if_refresh_token_empty_when_expiring() {
+    use super::fetch_at;
+    use crate::account_storage::ProviderAccountStorage;
+    use chrono::{Duration, Utc};
+
+    let temp = tempfile::tempdir().unwrap();
+    let storage = ProviderAccountStorage::new(temp.path());
+    let (account_id, account_dir) =
+        setup_test_account(&storage, Utc::now() - Duration::hours(1), "");
+
+    let client = reqwest::Client::new();
+    let err = fetch_at(
+        &client,
+        &account_id,
+        account_dir,
+        "http://127.0.0.1:9999/billing",
+        "http://127.0.0.1:9999/token",
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(err, GrokError::RefreshUnavailable));
+}
+
+#[tokio::test]
+async fn fetch_at_uses_jwt_claims_when_metadata_missing() {
+    use super::fetch_at;
+    use crate::account_storage::{
+        NewProviderAccount, ProviderAccountStorage, ProviderAccountTokens,
+    };
+    use chrono::{Duration, Utc};
+
+    let temp = tempfile::tempdir().unwrap();
+    let storage = ProviderAccountStorage::new(temp.path());
+
+    let header = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9";
+    let payload = "eyJzdWIiOiJ1c3Itand0IiwiZW1haWwiOiJqd3RAeC5haSIsIm5hbWUiOiJKV1QgVXNlciJ9";
+    let jwt_token = format!("{header}.{payload}.sig");
+
+    let stored = storage
+        .create_account(NewProviderAccount {
+            provider: ProviderId::Grok,
+            email: String::new(),
+            provider_account_id: None,
+            organization_id: None,
+            organization_name: None,
+            tokens: ProviderAccountTokens {
+                access_token: jwt_token,
+                refresh_token: "ref".to_string(),
+                expires_at: Utc::now() + Duration::hours(1),
+                scope: vec![],
+                token_id: None,
+            },
+            snapshot: None,
+        })
+        .unwrap();
+
+    let billing_body = r#"{
+        "config": {
+            "creditUsagePercent": 10.0
+        },
+        "subscriptionTier": "SuperGrok"
+    }"#;
+
+    let (base_url, handle) = mock_server(vec![MockResponse {
+        method: "GET",
+        path: "/v1/billing?format=credits",
+        status: 200,
+        headers: vec![("content-type", "application/json")],
+        body: billing_body.to_string(),
+    }])
+    .await;
+
+    let client = reqwest::Client::new();
+    let snapshot = fetch_at(
+        &client,
+        &stored.account_ref.account_id,
+        stored.account_dir,
+        &format!("{base_url}/v1/billing?format=credits"),
+        &format!("{base_url}/oauth2/token"),
+    )
+    .await
+    .unwrap();
+
+    assert_eq!(snapshot.identity.email.as_deref(), Some("jwt@x.ai"));
+    assert_eq!(snapshot.identity.account_id.as_deref(), Some("usr-jwt"));
+    assert_eq!(snapshot.identity.display_name.as_deref(), Some("JWT User"));
+    assert_eq!(handle.await.unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn fetch_forwards_to_default_billing_url() {
+    use super::{DEFAULT_BILLING_URL, fetch};
+    use std::path::PathBuf;
+
+    assert_eq!(
+        DEFAULT_BILLING_URL,
+        "https://cli-chat-proxy.grok.com/v1/billing?format=credits"
+    );
+
+    let client = reqwest::Client::new();
+    let err = fetch(
+        &client,
+        "non-existent-account",
+        PathBuf::from("/nonexistent/grok/non-existent-account"),
+    )
+    .await
+    .unwrap_err();
+
+    assert!(matches!(
+        err,
+        GrokError::CredentialsMissing | GrokError::AccountStorage(_)
+    ));
+}
