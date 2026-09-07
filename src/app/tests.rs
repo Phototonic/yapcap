@@ -501,6 +501,7 @@ fn demo_startup_keeps_update_check_task() {
 
 #[test]
 fn partial_config_update_preserves_locally_written_account() {
+    let _env = crate::test_support::test_env();
     let mut app = test_app(None);
     app.config.codex_managed_accounts = vec![codex_account("codex-1")];
     app.config.selected_codex_account_ids = vec!["codex-1".to_string()];
@@ -912,6 +913,7 @@ fn account_pager_selects_the_next_account() {
 
 #[test]
 fn provider_switch_restores_the_selected_account_page() {
+    let _env = crate::test_support::test_env();
     let mut app = test_app(None);
     app.selected_provider = ProviderId::Copilot;
     app.config.copilot_managed_accounts = vec![

@@ -616,5 +616,21 @@ fn managed_account_count(config: &Config) -> usize {
         + config.gemini_managed_accounts.len()
         + config.copilot_managed_accounts.len()
         + config.minimax_managed_accounts.len()
+        + config.kimi_managed_accounts.len()
         + config.antigravity_managed_accounts.len()
+        + config.opencode_go_managed_accounts.len()
+        + config.grok_managed_accounts.len()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn grok_popup_route_label_matches_expected() {
+        assert_eq!(
+            popup_route_label(PopupRoute::ManageAccounts(ProviderId::Grok)),
+            "manage_accounts_grok"
+        );
+    }
 }
