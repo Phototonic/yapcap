@@ -1,6 +1,7 @@
 [Desktop Entry]
 Name=YapCap
 Comment=Provider usage panel applet for COSMIC
+Comment[pl]=Aplet zużycia u dostawców na panel COSMIC
 Type=Application
 Icon=io.github.TopiCsarno.YapCap
 Exec=yapcap
