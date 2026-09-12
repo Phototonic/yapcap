@@ -27,6 +27,7 @@ use crate::providers::cursor::CursorScanState;
 use crate::providers::gemini::{GeminiLoginState, GeminiLoginStatus};
 use crate::providers::kimi::login::KimiLoginState;
 use crate::providers::minimax::MinimaxLoginState;
+use crate::providers::zai::login::ZaiLoginState;
 use crate::updates::UpdateStatus;
 use crate::usage_display;
 use cosmic::Element;
@@ -57,6 +58,7 @@ pub struct ProviderLoginStates<'a> {
     pub antigravity: Option<&'a AntigravityLoginState>,
     pub opencode_go: Option<&'a crate::providers::opencode_go::login::OpenCodeGoLoginState>,
     pub grok: Option<&'a crate::providers::grok::GrokLoginState>,
+    pub zai: Option<&'a ZaiLoginState>,
 }
 
 #[derive(Clone, Copy)]

@@ -477,6 +477,14 @@ fn window_sections<'a>(
     config: &'a Config,
 ) -> Vec<Element<'static, Message>> {
     let mut items = Vec::new();
+    if zai_coding_plan_absent(snapshot.provider, &snapshot.windows) {
+        items.push(info_block(
+            fl!("zai-coding-plan-unavailable-title"),
+            fl!("zai-coding-plan-unavailable-detail"),
+            None,
+            None,
+        ));
+    }
     let mut windows = snapshot.windows.iter().peekable();
     while let Some(window) = windows.next() {
         let Some(group) = window.group.as_deref() else {
@@ -494,6 +502,12 @@ fn window_sections<'a>(
         items.push(usage_group_card(group, sections));
     }
     items
+}
+
+fn zai_coding_plan_absent(provider: ProviderId, windows: &[UsageWindow]) -> bool {
+    provider == ProviderId::Zai
+        && !windows.is_empty()
+        && windows.iter().all(|window| window.label == "MCP")
 }
 
 fn usage_group_card(
@@ -854,6 +868,34 @@ fn format_updated_label(last_success_at: chrono::DateTime<chrono::Utc>) -> Strin
 mod tests {
     use super::*;
     use crate::model::{AccountSelectionStatus, AuthState, ProviderHealth};
+
+    #[test]
+    fn zai_coding_plan_notice_only_for_mcp_only_usage() {
+        let mut windows = vec![UsageWindow {
+            label: "MCP".to_string(),
+            used_percent: 35.0,
+            reset_at: None,
+            window_seconds: None,
+            reset_description: None,
+            group: None,
+        }];
+        assert!(zai_coding_plan_absent(ProviderId::Zai, &windows));
+        assert_eq!(
+            fl!("zai-coding-plan-unavailable-detail"),
+            "Coding Plan quotas were not reported by Z.AI."
+        );
+        assert!(!zai_coding_plan_absent(ProviderId::Minimax, &windows));
+        assert!(!zai_coding_plan_absent(ProviderId::Zai, &[]));
+
+        let mut coding_plan = windows[0].clone();
+        coding_plan.label = "Weekly".to_string();
+        windows.push(coding_plan);
+        assert!(!zai_coding_plan_absent(ProviderId::Zai, &windows));
+        windows[1].label = "5 Hour".to_string();
+        assert!(!zai_coding_plan_absent(ProviderId::Zai, &windows));
+        windows.remove(0);
+        assert!(!zai_coding_plan_absent(ProviderId::Zai, &windows));
+    }
 
     #[test]
     fn action_required_account_reports_reauth_message() {

@@ -4,16 +4,23 @@ use super::super::super::{
     Element, GeminiLoginState, GeminiLoginStatus, Length, Message, account_add_button,
     account_import_button, fl, row, widget,
 };
-use crate::app::login::{KimiLoginFlow, LoginFlow, MinimaxLoginFlow, OpenCodeGoLoginFlow};
+use crate::app::login::{
+    KimiLoginFlow, LoginFlow, MinimaxLoginFlow, OpenCodeGoLoginFlow, ZaiLoginFlow,
+};
 use crate::providers::grok::{GrokLoginState, GrokLoginStatus};
 use crate::providers::kimi::login::{KimiLoginEvent, KimiLoginState, KimiLoginStatus};
 use crate::providers::minimax::{MinimaxLoginEvent, MinimaxLoginState, MinimaxLoginStatus};
 use crate::providers::opencode_go::login::{
     OpenCodeGoLoginEvent, OpenCodeGoLoginState, OpenCodeGoLoginStatus,
 };
+use crate::providers::zai::{ZaiLoginEvent, ZaiLoginState, ZaiLoginStatus};
 
 fn minimax_login_message(event: MinimaxLoginEvent) -> Message {
     MinimaxLoginFlow::wrap_event(event)
+}
+
+fn zai_login_message(event: ZaiLoginEvent) -> Message {
+    ZaiLoginFlow::wrap_event(event)
 }
 
 fn kimi_login_message(event: KimiLoginEvent) -> Message {
@@ -561,6 +568,81 @@ fn minimax_login_status(login: &MinimaxLoginState) -> String {
             .clone()
             .unwrap_or_else(|| fl!("minimax-login-failed")),
     }
+}
+
+pub(super) fn zai_login_controls(
+    login: Option<&ZaiLoginState>,
+    enabled: bool,
+) -> Element<'_, Message> {
+    let Some(login) = login else {
+        return account_add_button(
+            fl!("account-add"),
+            enabled.then_some(Message::StartLogin(crate::model::ProviderId::Zai)),
+        );
+    };
+    let status = match login.status {
+        ZaiLoginStatus::Editing => fl!("zai-login-editing"),
+        ZaiLoginStatus::Failed => fl!("zai-login-failed"),
+    };
+    let mut content = cosmic::iced::widget::column![widget::text(status).size(13)]
+        .spacing(10)
+        .width(Length::Fill);
+    if let Some(error) = &login.error {
+        content = content.push(widget::text(error).size(13));
+    }
+    if login.status == ZaiLoginStatus::Editing {
+        content = content.push(zai_login_fields(login)).push(
+            row![
+                widget::button::standard(fl!("account-add"))
+                    .on_press_maybe(enabled.then_some(zai_login_message(ZaiLoginEvent::Saved))),
+                widget::button::text(fl!("account-cancel")).on_press_maybe(
+                    enabled.then_some(Message::CancelLogin(crate::model::ProviderId::Zai))
+                ),
+            ]
+            .spacing(8),
+        );
+    } else {
+        content = content.push(
+            row![
+                widget::button::text(fl!("account-add-another")).on_press_maybe(
+                    enabled.then_some(Message::StartLogin(crate::model::ProviderId::Zai))
+                ),
+                widget::button::text(fl!("account-dismiss")).on_press_maybe(
+                    enabled.then_some(Message::CancelLogin(crate::model::ProviderId::Zai))
+                ),
+            ]
+            .spacing(8),
+        );
+    }
+    content.into()
+}
+
+fn zai_login_fields(login: &ZaiLoginState) -> Element<'_, Message> {
+    let mut fields = cosmic::iced::widget::column![
+        widget::text(fl!("zai-api-key-placeholder")).size(12),
+        widget::text_input::secure_input(
+            fl!("zai-api-key-placeholder"),
+            &login.api_key,
+            Some(zai_login_message(ZaiLoginEvent::ApiKeyVisibilityToggled)),
+            !login.api_key_visible,
+        )
+        .on_input(|api_key| zai_login_message(ZaiLoginEvent::ApiKeyChanged(api_key)))
+        .on_submit(|_| zai_login_message(ZaiLoginEvent::Saved))
+        .width(Length::Fill),
+    ]
+    .spacing(10)
+    .width(Length::Fill);
+    if login.api_key_from_opencode {
+        fields = fields.push(widget::text(fl!("zai-api-key-imported-from-opencode")).size(12));
+    }
+    fields
+        .push(widget::text(fl!("account-label")).size(12))
+        .push(
+            widget::text_input(fl!("account-label"), &login.label)
+                .on_input(|label| zai_login_message(ZaiLoginEvent::LabelChanged(label)))
+                .width(Length::Fill),
+        )
+        .into()
 }
 
 pub(super) fn kimi_login_controls(

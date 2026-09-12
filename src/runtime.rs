@@ -10,6 +10,7 @@ use crate::model::{
 use crate::providers;
 use crate::shared_state::{SharedRuntimeState, SharedStateWriter};
 use chrono::Utc;
+use std::sync::OnceLock;
 use std::time::Duration;
 
 pub(crate) const HTTP_TIMEOUT: Duration = Duration::from_secs(20);
@@ -72,6 +73,34 @@ pub fn http_client() -> reqwest::Client {
         tracing::warn!(error = %error, "failed to build timed HTTP client; using reqwest default");
         reqwest::Client::new()
     })
+}
+
+pub(crate) fn http_client_without_redirects() -> reqwest::Client {
+    static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+    CLIENT
+        .get_or_init(|| {
+            let builder = reqwest::Client::builder()
+                .timeout(HTTP_TIMEOUT)
+                .connect_timeout(HTTP_CONNECT_TIMEOUT)
+                .redirect(reqwest::redirect::Policy::none());
+            #[cfg(debug_assertions)]
+            let builder = apply_debug_offline_proxy(builder);
+
+            builder.build().unwrap_or_else(|error| {
+                tracing::warn!(
+                    error = %error,
+                    "failed to build no-redirect HTTP client"
+                );
+                reqwest::Client::builder()
+                    .timeout(HTTP_TIMEOUT)
+                    .connect_timeout(HTTP_CONNECT_TIMEOUT)
+                    .redirect(reqwest::redirect::Policy::none())
+                    .build()
+                    .expect("no-redirect HTTP client must build")
+            })
+        })
+        .clone()
 }
 
 #[cfg(debug_assertions)]

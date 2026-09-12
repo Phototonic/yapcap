@@ -37,6 +37,8 @@ pub struct Config {
     #[serde(default)]
     pub minimax_enablement: ProviderEnablement,
     #[serde(default)]
+    pub zai_enablement: ProviderEnablement,
+    #[serde(default)]
     pub kimi_enablement: ProviderEnablement,
     #[serde(default)]
     pub antigravity_enablement: ProviderEnablement,
@@ -62,6 +64,10 @@ pub struct Config {
     pub selected_minimax_account_ids: Vec<String>,
     #[serde(default)]
     pub minimax_managed_accounts: Vec<ManagedMinimaxAccountConfig>,
+    #[serde(default)]
+    pub selected_zai_account_ids: Vec<String>,
+    #[serde(default)]
+    pub zai_managed_accounts: Vec<ManagedZaiAccountConfig>,
     #[serde(default)]
     pub selected_kimi_account_ids: Vec<String>,
     #[serde(default)]
@@ -96,6 +102,7 @@ impl Default for Config {
             gemini_enablement: default_gemini_enablement(),
             copilot_enablement: ProviderEnablement::Auto,
             minimax_enablement: ProviderEnablement::Auto,
+            zai_enablement: ProviderEnablement::Auto,
             kimi_enablement: ProviderEnablement::Auto,
             antigravity_enablement: ProviderEnablement::Auto,
             opencode_go_enablement: ProviderEnablement::Auto,
@@ -112,6 +119,8 @@ impl Default for Config {
             copilot_managed_accounts: Vec::new(),
             selected_minimax_account_ids: Vec::new(),
             minimax_managed_accounts: Vec::new(),
+            selected_zai_account_ids: Vec::new(),
+            zai_managed_accounts: Vec::new(),
             selected_kimi_account_ids: Vec::new(),
             kimi_managed_accounts: Vec::new(),
             selected_antigravity_account_ids: Vec::new(),
@@ -147,6 +156,7 @@ impl Config {
             ProviderId::Gemini => self.gemini_enablement,
             ProviderId::Copilot => self.copilot_enablement,
             ProviderId::Minimax => self.minimax_enablement,
+            ProviderId::Zai => self.zai_enablement,
             ProviderId::Kimi => self.kimi_enablement,
             ProviderId::Antigravity => self.antigravity_enablement,
             ProviderId::OpenCodeGo => self.opencode_go_enablement,
@@ -163,6 +173,7 @@ impl Config {
             ProviderId::Gemini => &self.selected_gemini_account_ids,
             ProviderId::Copilot => &self.selected_copilot_account_ids,
             ProviderId::Minimax => &self.selected_minimax_account_ids,
+            ProviderId::Zai => &self.selected_zai_account_ids,
             ProviderId::Kimi => &self.selected_kimi_account_ids,
             ProviderId::Antigravity => &self.selected_antigravity_account_ids,
             ProviderId::OpenCodeGo => &self.selected_opencode_go_account_ids,
@@ -178,6 +189,7 @@ impl Config {
             ProviderId::Gemini => &mut self.selected_gemini_account_ids,
             ProviderId::Copilot => &mut self.selected_copilot_account_ids,
             ProviderId::Minimax => &mut self.selected_minimax_account_ids,
+            ProviderId::Zai => &mut self.selected_zai_account_ids,
             ProviderId::Kimi => &mut self.selected_kimi_account_ids,
             ProviderId::Antigravity => &mut self.selected_antigravity_account_ids,
             ProviderId::OpenCodeGo => &mut self.selected_opencode_go_account_ids,
@@ -232,6 +244,7 @@ fn provider_enabled_key(provider: ProviderId) -> &'static str {
         ProviderId::Gemini => "gemini_enabled",
         ProviderId::Copilot => "copilot_enabled",
         ProviderId::Minimax => "minimax_enabled",
+        ProviderId::Zai => "zai_enabled",
         ProviderId::Kimi => "kimi_enabled",
         ProviderId::Antigravity => "antigravity_enabled",
         ProviderId::OpenCodeGo => "opencode_go_enabled",
@@ -247,6 +260,7 @@ fn provider_enablement_key(provider: ProviderId) -> &'static str {
         ProviderId::Gemini => "gemini_enablement",
         ProviderId::Copilot => "copilot_enablement",
         ProviderId::Minimax => "minimax_enablement",
+        ProviderId::Zai => "zai_enablement",
         ProviderId::Kimi => "kimi_enablement",
         ProviderId::Antigravity => "antigravity_enablement",
         ProviderId::OpenCodeGo => "opencode_go_enablement",
@@ -262,6 +276,7 @@ fn provider_enablement_mut(config: &mut Config, provider: ProviderId) -> &mut Pr
         ProviderId::Gemini => &mut config.gemini_enablement,
         ProviderId::Copilot => &mut config.copilot_enablement,
         ProviderId::Minimax => &mut config.minimax_enablement,
+        ProviderId::Zai => &mut config.zai_enablement,
         ProviderId::Kimi => &mut config.kimi_enablement,
         ProviderId::Antigravity => &mut config.antigravity_enablement,
         ProviderId::OpenCodeGo => &mut config.opencode_go_enablement,
@@ -407,6 +422,16 @@ pub struct ManagedMinimaxAccountConfig {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct ManagedZaiAccountConfig {
+    pub id: String,
+    pub label: String,
+    pub api_key_source: String,
+    pub created_at: DateTime<Utc>,
+    pub updated_at: DateTime<Utc>,
+    pub last_authenticated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub struct ManagedKimiAccountConfig {
     pub id: String,
     pub label: String,
@@ -466,6 +491,7 @@ pub struct AppPaths {
     pub gemini_accounts_dir: PathBuf,
     pub copilot_accounts_dir: PathBuf,
     pub minimax_accounts_dir: PathBuf,
+    pub zai_accounts_dir: PathBuf,
     pub kimi_accounts_dir: PathBuf,
     pub antigravity_accounts_dir: PathBuf,
     pub opencode_go_accounts_dir: PathBuf,
@@ -509,6 +535,7 @@ pub fn write_changed_config_entries(
         gemini_enablement,
         copilot_enablement,
         minimax_enablement,
+        zai_enablement,
         kimi_enablement,
         antigravity_enablement,
         opencode_go_enablement,
@@ -524,6 +551,8 @@ pub fn write_changed_config_entries(
         copilot_managed_accounts,
         selected_minimax_account_ids,
         minimax_managed_accounts,
+        selected_zai_account_ids,
+        zai_managed_accounts,
         selected_kimi_account_ids,
         kimi_managed_accounts,
         selected_antigravity_account_ids,
@@ -556,6 +585,7 @@ pub fn write_changed_config_entries(
     set_changed!(gemini_enablement);
     set_changed!(copilot_enablement);
     set_changed!(minimax_enablement);
+    set_changed!(zai_enablement);
     set_changed!(kimi_enablement);
     set_changed!(antigravity_enablement);
     set_changed!(opencode_go_enablement);
@@ -572,6 +602,8 @@ pub fn write_changed_config_entries(
     set_changed!(copilot_managed_accounts);
     set_changed!(selected_minimax_account_ids);
     set_changed!(minimax_managed_accounts);
+    set_changed!(selected_zai_account_ids);
+    set_changed!(zai_managed_accounts);
     set_changed!(selected_kimi_account_ids);
     set_changed!(kimi_managed_accounts);
     set_changed!(selected_antigravity_account_ids);
@@ -712,6 +744,7 @@ pub fn paths() -> AppPaths {
     let gemini_accounts_dir = state_dir.join("gemini-accounts");
     let copilot_accounts_dir = state_dir.join("copilot-accounts");
     let minimax_accounts_dir = state_dir.join("minimax-accounts");
+    let zai_accounts_dir = state_dir.join("zai-accounts");
     let kimi_accounts_dir = state_dir.join("kimi-accounts");
     let antigravity_accounts_dir = state_dir.join("antigravity-accounts");
     let opencode_go_accounts_dir = state_dir.join("opencode-go-accounts");
@@ -726,6 +759,7 @@ pub fn paths() -> AppPaths {
         gemini_accounts_dir,
         copilot_accounts_dir,
         minimax_accounts_dir,
+        zai_accounts_dir,
         kimi_accounts_dir,
         antigravity_accounts_dir,
         opencode_go_accounts_dir,
@@ -809,6 +843,17 @@ mod tests {
         new.refresh_interval_seconds = old.refresh_interval_seconds + 60;
         new.kimi_enablement = ProviderEnablement::Enabled;
         new.selected_kimi_account_ids = vec!["kimi-test".to_string()];
+        new.zai_enablement = ProviderEnablement::Enabled;
+        new.selected_zai_account_ids = vec!["zai-test".to_string()];
+        let now = Utc::now();
+        new.zai_managed_accounts = vec![ManagedZaiAccountConfig {
+            id: "zai-test".to_string(),
+            label: "Z.AI Coding Plan".to_string(),
+            api_key_source: "stored".to_string(),
+            created_at: now,
+            updated_at: now,
+            last_authenticated_at: None,
+        }];
 
         write_changed_config_entries(&ctx, &old, &new).unwrap();
 
@@ -836,6 +881,8 @@ mod tests {
         assert_eq!(config.gemini_enablement, ProviderEnablement::Enabled);
         assert!(config.set_provider_enabled(ProviderId::Gemini, false));
         assert_eq!(config.gemini_enablement, ProviderEnablement::Disabled);
+        assert!(config.set_provider_enabled(ProviderId::Zai, true));
+        assert_eq!(config.zai_enablement, ProviderEnablement::Enabled);
     }
 
     #[test]
@@ -852,6 +899,9 @@ mod tests {
         assert_eq!(config.selected_provider, ProviderId::Codex);
         assert_eq!(config.codex_enablement, ProviderEnablement::Auto);
         assert_eq!(config.gemini_enablement, ProviderEnablement::Disabled);
+        assert_eq!(config.zai_enablement, ProviderEnablement::Auto);
+        assert!(config.selected_zai_account_ids.is_empty());
+        assert!(config.zai_managed_accounts.is_empty());
     }
 
     #[test]
@@ -865,6 +915,21 @@ mod tests {
     }
 
     #[test]
+    fn missing_zai_fields_default_for_existing_config() {
+        let mut value = serde_json::to_value(Config::default()).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("zai_enablement");
+        object.remove("selected_zai_account_ids");
+        object.remove("zai_managed_accounts");
+
+        let config: Config = serde_json::from_value(value).unwrap();
+
+        assert_eq!(config.zai_enablement, ProviderEnablement::Auto);
+        assert!(config.selected_zai_account_ids.is_empty());
+        assert!(config.zai_managed_accounts.is_empty());
+    }
+
+    #[test]
     fn config_schema_version_marks_fresh_patch_boundary() {
         let config = Config::default();
         assert_eq!(Config::VERSION, 600);
@@ -874,6 +939,7 @@ mod tests {
         assert!(config.gemini_managed_accounts.is_empty());
         assert!(config.copilot_managed_accounts.is_empty());
         assert!(config.minimax_managed_accounts.is_empty());
+        assert!(config.zai_managed_accounts.is_empty());
         assert!(config.kimi_managed_accounts.is_empty());
         assert!(config.antigravity_managed_accounts.is_empty());
         assert!(config.grok_managed_accounts.is_empty());
@@ -1082,6 +1148,37 @@ mod tests {
                 .ends_with(std::path::Path::new("yapcap/grok-accounts")),
             "unexpected grok_accounts_dir: {}",
             p.grok_accounts_dir.display()
+        );
+    }
+
+    #[test]
+    fn zai_accounts_dir_is_configured_under_state_root() {
+        let p = paths();
+        assert!(
+            p.zai_accounts_dir
+                .ends_with(std::path::Path::new("yapcap/zai-accounts")),
+            "unexpected zai_accounts_dir: {}",
+            p.zai_accounts_dir.display()
+        );
+    }
+
+    #[test]
+    fn zai_managed_account_config_roundtrips_without_api_key() {
+        let now = Utc::now();
+        let account = ManagedZaiAccountConfig {
+            id: "zai-test-1".to_string(),
+            label: "Z.AI Coding Plan".to_string(),
+            api_key_source: "stored".to_string(),
+            created_at: now,
+            updated_at: now,
+            last_authenticated_at: Some(now),
+        };
+        let value = serde_json::to_value(&account).unwrap();
+
+        assert!(value.get("api_key").is_none());
+        assert_eq!(
+            serde_json::from_value::<ManagedZaiAccountConfig>(value).unwrap(),
+            account
         );
     }
 

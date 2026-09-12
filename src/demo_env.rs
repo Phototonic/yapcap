@@ -4,7 +4,8 @@ use crate::config::{
     Config, ManagedAntigravityAccountConfig, ManagedClaudeAccountConfig, ManagedCodexAccountConfig,
     ManagedCopilotAccountConfig, ManagedCursorAccountConfig, ManagedGeminiAccountConfig,
     ManagedGrokAccountConfig, ManagedKimiAccountConfig, ManagedMinimaxAccountConfig,
-    ManagedOpenCodeGoAccountConfig, ProviderEnablement, ProviderVisibilityMode, paths,
+    ManagedOpenCodeGoAccountConfig, ManagedZaiAccountConfig, ProviderEnablement,
+    ProviderVisibilityMode, paths,
 };
 use crate::model::{
     AccountSelectionStatus, AppState, AuthState, ExtraUsageState, ProviderAccountRuntimeState,
@@ -31,6 +32,7 @@ const ANTIGRAVITY_PRIMARY_ID: &str = "yapcap-demo:antigravity-primary";
 const ANTIGRAVITY_FREE_ID: &str = "yapcap-demo:antigravity-free";
 const OPENCODE_GO_ID: &str = "yapcap-demo:opencode-go";
 const GROK_PRIMARY_ID: &str = "yapcap-demo:grok-primary";
+const ZAI_PRIMARY_ID: &str = "yapcap-demo:zai-coding-plan";
 
 fn env_truthy() -> bool {
     std::env::var(DEMO_ENV).is_ok_and(|value| {
@@ -68,6 +70,7 @@ pub fn apply_config(config: &mut Config) {
     config.antigravity_enablement = ProviderEnablement::Enabled;
     config.opencode_go_enablement = ProviderEnablement::Enabled;
     config.grok_enablement = ProviderEnablement::Enabled;
+    config.zai_enablement = ProviderEnablement::Enabled;
 
     config.codex_managed_accounts = demo_codex_accounts();
     config.claude_managed_accounts = demo_claude_accounts();
@@ -79,6 +82,7 @@ pub fn apply_config(config: &mut Config) {
     config.antigravity_managed_accounts = demo_antigravity_accounts();
     config.opencode_go_managed_accounts = demo_opencode_go_accounts();
     config.grok_managed_accounts = demo_grok_accounts();
+    config.zai_managed_accounts = demo_zai_accounts();
 
     config.provider_visibility_mode = ProviderVisibilityMode::UserManaged;
 
@@ -92,6 +96,7 @@ pub fn apply_config(config: &mut Config) {
     config.selected_antigravity_account_ids = vec![ANTIGRAVITY_PRIMARY_ID.to_string()];
     config.selected_opencode_go_account_ids = vec![OPENCODE_GO_ID.to_string()];
     config.selected_grok_account_ids = vec![GROK_PRIMARY_ID.to_string()];
+    config.selected_zai_account_ids = vec![ZAI_PRIMARY_ID.to_string()];
 }
 
 pub fn strip_leaked_state(config: &mut Config) -> bool {
@@ -119,6 +124,8 @@ pub fn strip_leaked_state(config: &mut Config) -> bool {
     });
     changed |= strip_ids(&mut config.selected_grok_account_ids);
     changed |= retain_len_changed(&mut config.grok_managed_accounts, |account| &account.id);
+    changed |= strip_ids(&mut config.selected_zai_account_ids);
+    changed |= retain_len_changed(&mut config.zai_managed_accounts, |account| &account.id);
     changed
 }
 
@@ -188,6 +195,7 @@ fn demo_system_active_account_id(provider: ProviderId) -> Option<String> {
         ProviderId::Antigravity => return None,
         ProviderId::OpenCodeGo => return None,
         ProviderId::Grok => return None,
+        ProviderId::Zai => return None,
     };
     Some(id.to_string())
 }
@@ -204,6 +212,7 @@ fn demo_source(provider: ProviderId) -> String {
         ProviderId::Kimi => "API Key".to_string(),
         ProviderId::Antigravity => "OAuth".to_string(),
         ProviderId::OpenCodeGo => "API Key".to_string(),
+        ProviderId::Zai => "API Key".to_string(),
     }
 }
 
@@ -384,6 +393,18 @@ fn demo_runtime_accounts(provider: ProviderId) -> Vec<ProviderAccountRuntimeStat
                 auth_state: AuthState::Ready,
                 error: None,
                 snapshot: snapshot_grok(),
+            },
+        )],
+        ProviderId::Zai => vec![demo_account(
+            provider,
+            DemoAccount {
+                account_id: ZAI_PRIMARY_ID,
+                label: "Z.AI Coding Plan",
+                last_success_at: now - Duration::minutes(2),
+                health: ProviderHealth::Ok,
+                auth_state: AuthState::Ready,
+                error: None,
+                snapshot: snapshot_zai_primary(),
             },
         )],
     }
@@ -812,6 +833,18 @@ fn demo_grok_accounts() -> Vec<ManagedGrokAccountConfig> {
     }]
 }
 
+fn demo_zai_accounts() -> Vec<ManagedZaiAccountConfig> {
+    let now = demo_timestamp();
+    vec![ManagedZaiAccountConfig {
+        id: ZAI_PRIMARY_ID.to_string(),
+        label: "Z.AI Coding Plan".to_string(),
+        api_key_source: "demo".to_string(),
+        created_at: now,
+        updated_at: now,
+        last_authenticated_at: Some(now),
+    }]
+}
+
 fn snapshot_minimax_primary() -> UsageSnapshot {
     let now = Utc::now();
     let interval_reset = now + Duration::hours(3);
@@ -884,6 +917,53 @@ fn snapshot_kimi_primary() -> UsageSnapshot {
             account_id: None,
             plan: Some("Intermediate".to_string()),
             display_name: Some("Kimi Intermediate".to_string()),
+        },
+    }
+}
+
+fn snapshot_zai_primary() -> UsageSnapshot {
+    let now = Utc::now();
+    let five_hour_reset = now + Duration::hours(3);
+    let weekly_reset = now + Duration::days(4);
+    let mcp_reset = now + Duration::hours(1);
+    UsageSnapshot {
+        provider: ProviderId::Zai,
+        source: "API Key".to_string(),
+        updated_at: now,
+        headline: UsageHeadline(0),
+        windows: vec![
+            UsageWindow {
+                label: "5 Hour".to_string(),
+                used_percent: 34.0,
+                reset_at: Some(five_hour_reset),
+                window_seconds: Some(5 * 60 * 60),
+                reset_description: Some(five_hour_reset.to_rfc3339()),
+                group: None,
+            },
+            UsageWindow {
+                label: "Weekly".to_string(),
+                used_percent: 57.0,
+                reset_at: Some(weekly_reset),
+                window_seconds: Some(7 * 24 * 60 * 60),
+                reset_description: Some(weekly_reset.to_rfc3339()),
+                group: None,
+            },
+            UsageWindow {
+                label: "MCP".to_string(),
+                used_percent: 18.0,
+                reset_at: Some(mcp_reset),
+                window_seconds: None,
+                reset_description: Some(mcp_reset.to_rfc3339()),
+                group: None,
+            },
+        ],
+        provider_cost: None,
+        extra_usage: None,
+        identity: ProviderIdentity {
+            email: None,
+            account_id: None,
+            plan: Some("Coding Plan".to_string()),
+            display_name: Some("Z.AI Coding Plan".to_string()),
         },
     }
 }
@@ -1239,15 +1319,18 @@ mod tests {
             snapshot_minimax_primary(),
             snapshot_kimi_primary(),
             snapshot_opencode_go(),
+            snapshot_zai_primary(),
         ] {
             assert!(!snapshot.windows.is_empty());
             for window in &snapshot.windows {
-                assert!(
-                    crate::usage_display::pace(window, snapshot.updated_at).is_some(),
-                    "{} {} demo window must support the standard pace meter",
-                    snapshot.provider.label(),
-                    window.label
-                );
+                if window.window_seconds.is_some() {
+                    assert!(
+                        crate::usage_display::pace(window, snapshot.updated_at).is_some(),
+                        "{} {} demo window must support the standard pace meter",
+                        snapshot.provider.label(),
+                        window.label
+                    );
+                }
             }
         }
     }
@@ -1281,6 +1364,7 @@ mod tests {
         assert_eq!(config.kimi_managed_accounts.len(), 1);
         assert_eq!(config.antigravity_managed_accounts.len(), 2);
         assert_eq!(config.opencode_go_managed_accounts.len(), 1);
+        assert_eq!(config.zai_managed_accounts.len(), 1);
         assert_eq!(config.selected_codex_account_ids.len(), 1);
         assert_eq!(config.selected_claude_account_ids.len(), 1);
         assert_eq!(config.selected_cursor_account_ids.len(), 1);
@@ -1290,6 +1374,7 @@ mod tests {
         assert_eq!(config.selected_kimi_account_ids.len(), 1);
         assert_eq!(config.selected_antigravity_account_ids.len(), 1);
         assert_eq!(config.selected_opencode_go_account_ids.len(), 1);
+        assert_eq!(config.selected_zai_account_ids.len(), 1);
         for provider in ProviderId::ALL {
             assert_eq!(
                 config.provider_enablement(provider),
@@ -1318,6 +1403,7 @@ mod tests {
             selected_kimi_account_ids: vec!["real-kimi".to_string()],
             selected_antigravity_account_ids: vec!["real-antigravity".to_string()],
             selected_opencode_go_account_ids: vec!["real-opencode-go".to_string()],
+            selected_zai_account_ids: vec!["real-zai".to_string()],
             ..Config::default()
         };
         apply_config(&mut config);
@@ -1375,6 +1461,7 @@ mod tests {
                     .map(|a| &a.id)
                     .collect(),
                 ProviderId::Grok => config.grok_managed_accounts.iter().map(|a| &a.id).collect(),
+                ProviderId::Zai => config.zai_managed_accounts.iter().map(|a| &a.id).collect(),
             };
             for id in selected {
                 assert!(
@@ -1685,6 +1772,64 @@ mod tests {
             .map(|window| window.label.as_str())
             .collect();
         assert_eq!(labels, vec!["5 Hour", "Weekly", "Monthly"]);
+    }
+
+    #[test]
+    fn zai_demo_seeds_one_account_with_coding_plan_windows() {
+        let _guard = test_support::env_lock();
+        unsafe {
+            std::env::set_var(DEMO_ENV, "1");
+        }
+        let mut config = Config::default();
+        apply_config(&mut config);
+        let mut state = AppState::empty();
+        apply(&config, &mut state);
+        unsafe {
+            std::env::remove_var(DEMO_ENV);
+        }
+
+        assert_eq!(
+            config.selected_zai_account_ids,
+            vec![ZAI_PRIMARY_ID.to_string()]
+        );
+        let account = state
+            .provider_accounts
+            .iter()
+            .find(|account| {
+                account.provider == ProviderId::Zai && account.account_id == ZAI_PRIMARY_ID
+            })
+            .expect("Z.AI demo account");
+        assert_eq!(account.label, "Z.AI Coding Plan");
+        assert_eq!(account.source_label.as_deref(), Some("API Key"));
+        let snapshot = account.snapshot.as_ref().expect("Z.AI demo snapshot");
+        assert_eq!(snapshot.provider, ProviderId::Zai);
+        assert_eq!(snapshot.source, "API Key");
+        assert_eq!(snapshot.identity.plan.as_deref(), Some("Coding Plan"));
+        let labels: Vec<&str> = snapshot
+            .windows
+            .iter()
+            .map(|window| window.label.as_str())
+            .collect();
+        assert_eq!(labels, vec!["5 Hour", "Weekly", "MCP"]);
+        assert_eq!(snapshot.windows[0].window_seconds, Some(5 * 60 * 60));
+        assert_eq!(snapshot.windows[1].window_seconds, Some(7 * 24 * 60 * 60));
+        assert_eq!(snapshot.windows[2].window_seconds, None);
+    }
+
+    #[test]
+    fn strip_leaked_state_removes_zai_demo_ids() {
+        let mut config = Config {
+            selected_zai_account_ids: vec![ZAI_PRIMARY_ID.to_string(), "real-zai".to_string()],
+            zai_managed_accounts: demo_zai_accounts(),
+            ..Config::default()
+        };
+
+        assert!(strip_leaked_state(&mut config));
+        assert_eq!(
+            config.selected_zai_account_ids,
+            vec!["real-zai".to_string()]
+        );
+        assert!(config.zai_managed_accounts.is_empty());
     }
 
     #[test]

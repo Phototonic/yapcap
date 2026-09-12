@@ -355,6 +355,7 @@ impl ProviderAccountStorage {
             ProviderId::Gemini => "gemini",
             ProviderId::Copilot => "copilot",
             ProviderId::Minimax => "minimax",
+            ProviderId::Zai => "zai",
             ProviderId::Kimi => "kimi",
             ProviderId::Antigravity => "antigravity",
             ProviderId::OpenCodeGo => "opencode_go",

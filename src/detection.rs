@@ -41,6 +41,7 @@ fn markers(provider: ProviderId) -> &'static [Marker] {
     const KIMI: [Marker; 0] = [];
     const OPENCODE_GO: [Marker; 1] = [file(".local/share/opencode/auth.json")];
     const GROK: [Marker; 2] = [dir(".grok"), file(".grok/auth.json")];
+    const ZAI: [Marker; 0] = [];
     match provider {
         ProviderId::Codex => &CODEX,
         ProviderId::Claude => &CLAUDE,
@@ -52,6 +53,7 @@ fn markers(provider: ProviderId) -> &'static [Marker] {
         ProviderId::Kimi => &KIMI,
         ProviderId::OpenCodeGo => &OPENCODE_GO,
         ProviderId::Grok => &GROK,
+        ProviderId::Zai => &ZAI,
     }
 }
 
@@ -96,11 +98,26 @@ fn provider_index(provider: ProviderId) -> usize {
 pub fn detect(home: &Path) -> DetectionSnapshot {
     let mut snapshot = DetectionSnapshot::default();
     for provider in ProviderId::ALL {
-        snapshot.detected[provider_index(provider)] = markers(provider)
-            .iter()
-            .any(|marker| marker.exists_in(home));
+        snapshot.detected[provider_index(provider)] = if provider == ProviderId::Zai {
+            detect_zai(home)
+        } else {
+            markers(provider)
+                .iter()
+                .any(|marker| marker.exists_in(home))
+        };
     }
     snapshot
+}
+
+fn detect_zai(home: &Path) -> bool {
+    let default_path = || home.join(".local/share/opencode/auth.json");
+    let path =
+        if std::env::var_os(crate::providers::opencode_auth::OPENCODE_AUTH_PATH_ENV).is_some() {
+            crate::providers::opencode_auth::auth_path().unwrap_or_else(default_path)
+        } else {
+            default_path()
+        };
+    crate::providers::zai::opencode::has_usable_api_key_at(&path)
 }
 
 #[must_use]
@@ -314,5 +331,84 @@ mod tests {
         std::fs::write(dir.join("auth.json"), "{}").unwrap();
         let snapshot = detect(home.path());
         assert!(snapshot.detected(ProviderId::Grok));
+    }
+
+    fn detect_zai_source(contents: Option<&str>) -> bool {
+        let home = home();
+        let path = home.path().join(".local/share/opencode/auth.json");
+        if let Some(contents) = contents {
+            fs::create_dir_all(path.parent().expect("auth path has a parent")).unwrap();
+            fs::write(&path, contents).unwrap();
+        }
+        let mut env = crate::test_support::test_env();
+        env.remove(crate::providers::opencode_auth::OPENCODE_AUTH_CONTENT_ENV);
+        env.set(
+            crate::providers::opencode_auth::OPENCODE_AUTH_PATH_ENV,
+            &path,
+        );
+        detect(home.path()).detected(ProviderId::Zai)
+    }
+
+    #[test]
+    fn zai_detects_primary_coding_plan_credential() {
+        assert!(detect_zai_source(Some(
+            r#"{"zai-coding-plan":{"type":"api","key":"primary"},"zai":{"type":"api","key":"alias"}}"#
+        )));
+    }
+
+    #[test]
+    fn zai_detection_uses_alias_when_primary_is_not_usable() {
+        assert!(detect_zai_source(Some(
+            r#"{"zai-coding-plan":{"type":"oauth","refresh":"r","access":"a","expires":1},"zai":{"type":"api","key":"alias"}}"#
+        )));
+    }
+
+    #[test]
+    fn zai_detection_requires_an_ordered_provider_entry() {
+        assert!(!detect_zai_source(Some(
+            r#"{"other":{"type":"api","key":"unrelated"}}"#
+        )));
+    }
+
+    #[test]
+    fn zai_detection_rejects_non_api_blank_malformed_and_missing_sources() {
+        for source in [
+            Some(r#"{"zai":{"type":"oauth","refresh":"r","access":"a","expires":1}}"#),
+            Some(r#"{"zai":{"type":"wellknown","key":"key","token":"token"}}"#),
+            Some(r#"{"zai":{"type":"future","value":"unknown"}}"#),
+            Some(r#"{"zai":{"type":"api","key":" "}}"#),
+            Some("not-json"),
+            None,
+        ] {
+            assert!(!detect_zai_source(source));
+        }
+    }
+
+    #[test]
+    fn zai_detection_does_not_use_a_bare_auth_file_marker() {
+        assert!(!detect_zai_source(Some("{}")));
+    }
+
+    #[test]
+    fn detection_snapshot_stores_only_the_zai_detection_fact() {
+        let secret = "key-that-must-not-enter-the-snapshot";
+        let home = home();
+        let path = home.path().join(".local/share/opencode/auth.json");
+        fs::create_dir_all(path.parent().expect("auth path has a parent")).unwrap();
+        fs::write(
+            &path,
+            format!(r#"{{"zai":{{"type":"api","key":"{secret}"}}}}"#),
+        )
+        .unwrap();
+        let mut env = crate::test_support::test_env();
+        env.remove(crate::providers::opencode_auth::OPENCODE_AUTH_CONTENT_ENV);
+        env.set(
+            crate::providers::opencode_auth::OPENCODE_AUTH_PATH_ENV,
+            &path,
+        );
+
+        let snapshot = detect(home.path());
+        assert!(snapshot.detected(ProviderId::Zai));
+        assert!(!format!("{snapshot:?}").contains(secret));
     }
 }

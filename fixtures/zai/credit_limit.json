@@ -1,0 +1,29 @@
+{
+  "code": 200,
+  "success": true,
+  "data": {
+    "level": "pro",
+    "limits": [
+      {
+        "type": "CREDIT_LIMIT",
+        "unit": 6,
+        "number": 1,
+        "usage": 100000,
+        "currentValue": 100001,
+        "remaining": 0,
+        "percentage": 100,
+        "nextResetTime": 1790000000000
+      },
+      {
+        "type": "CREDIT_LIMIT",
+        "unit": 3,
+        "number": 5,
+        "usage": 100000,
+        "currentValue": 0,
+        "remaining": 100000,
+        "percentage": 0,
+        "nextResetTime": 1789000000000
+      }
+    ]
+  }
+}

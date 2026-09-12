@@ -1,5 +1,5 @@
 use super::key_authentication_cases::{
-    KeyAuthenticationCase, KimiCase, MinimaxCase, OpenCodeGoCase,
+    KeyAuthenticationCase, KimiCase, MinimaxCase, OpenCodeGoCase, ZaiCase,
 };
 use super::support::{isolated_xdg, test_app};
 use crate::app::AppModel;
@@ -248,6 +248,7 @@ fn key_authentication_rejects_empty_keys_for_all_api_key_providers() {
     assert_empty_key_is_editable::<KimiCase>("common-empty-kimi");
     assert_empty_key_is_editable::<MinimaxCase>("common-empty-minimax");
     assert_empty_key_is_editable::<OpenCodeGoCase>("common-empty-opencode-go");
+    assert_empty_key_is_editable::<ZaiCase>("common-empty-zai");
 }
 
 #[test]
@@ -255,6 +256,7 @@ fn key_authentication_shares_masking_and_visibility_for_all_api_key_providers() 
     assert_masking_and_visibility_are_shared::<KimiCase>("common-visibility-kimi");
     assert_masking_and_visibility_are_shared::<MinimaxCase>("common-visibility-minimax");
     assert_masking_and_visibility_are_shared::<OpenCodeGoCase>("common-visibility-opencode-go");
+    assert_masking_and_visibility_are_shared::<ZaiCase>("common-visibility-zai");
 }
 
 #[test]
@@ -264,6 +266,7 @@ fn key_authentication_shares_import_provenance_for_all_api_key_providers() {
     assert_imported_provenance_is_cleared_by_input::<OpenCodeGoCase>(
         "common-provenance-opencode-go",
     );
+    assert_imported_provenance_is_cleared_by_input::<ZaiCase>("common-provenance-zai");
 }
 
 #[cfg(unix)]
@@ -272,6 +275,7 @@ fn key_authentication_preserves_editable_forms_after_save_failure_for_all_provid
     assert_save_failure_is_editable::<KimiCase>("common-failure-kimi");
     assert_save_failure_is_editable::<MinimaxCase>("common-failure-minimax");
     assert_save_failure_is_editable::<OpenCodeGoCase>("common-failure-opencode-go");
+    assert_save_failure_is_editable::<ZaiCase>("common-failure-zai");
 }
 
 #[test]
@@ -279,6 +283,7 @@ fn key_authentication_success_selects_and_requests_refresh_for_all_providers() {
     assert_save_selects_and_refreshes::<KimiCase>("common-success-kimi");
     assert_save_selects_and_refreshes::<MinimaxCase>("common-success-minimax");
     assert_save_selects_and_refreshes::<OpenCodeGoCase>("common-success-opencode-go");
+    assert_save_selects_and_refreshes::<ZaiCase>("common-success-zai");
 }
 
 #[test]
@@ -286,6 +291,7 @@ fn key_authentication_reauthentication_preserves_identity_for_all_providers() {
     assert_reauthentication_preserves_identity::<KimiCase>("common-reauth-kimi");
     assert_reauthentication_preserves_identity::<MinimaxCase>("common-reauth-minimax");
     assert_reauthentication_preserves_identity::<OpenCodeGoCase>("common-reauth-opencode-go");
+    assert_reauthentication_preserves_identity::<ZaiCase>("common-reauth-zai");
 }
 
 #[test]
@@ -293,6 +299,7 @@ fn key_authentication_rejects_empty_account_names_for_all_providers() {
     assert_rejects_invalid_account_details::<KimiCase>("common-empty-name-kimi");
     assert_rejects_invalid_account_details::<MinimaxCase>("common-empty-name-minimax");
     assert_rejects_invalid_account_details::<OpenCodeGoCase>("common-empty-name-opencode-go");
+    assert_rejects_invalid_account_details::<ZaiCase>("common-empty-name-zai");
 }
 
 #[test]
@@ -300,4 +307,5 @@ fn key_authentication_rejects_duplicate_names_and_keys_for_all_providers() {
     assert_rejects_duplicate_account_details::<KimiCase>("common-duplicate-kimi");
     assert_rejects_duplicate_account_details::<MinimaxCase>("common-duplicate-minimax");
     assert_rejects_duplicate_account_details::<OpenCodeGoCase>("common-duplicate-opencode-go");
+    assert_rejects_duplicate_account_details::<ZaiCase>("common-duplicate-zai");
 }

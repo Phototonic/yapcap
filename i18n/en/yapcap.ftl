@@ -78,6 +78,13 @@ gemini-account-reauth-tooltip = Re-authenticate this Gemini account
 minimax-accounts-title = Minimax Accounts
 minimax-account-select-required = Select a Minimax account before refreshing
 minimax-account-reauth-tooltip = Re-authenticate this Minimax account
+zai-accounts-title = Z.AI Coding Plan Accounts
+zai-account-select-required = Select a Z.AI Coding Plan account before refreshing
+zai-account-reauth-tooltip = Re-authenticate this Z.AI Coding Plan account
+zai-login-editing = Enter your Z.AI Coding Plan API key.
+zai-login-failed = Failed to save Z.AI Coding Plan account.
+zai-api-key-placeholder = API Key
+zai-api-key-imported-from-opencode = API key pre-filled from OpenCode. You can edit or clear it.
 kimi-accounts-title = Kimi Accounts
 kimi-account-select-required = Select a Kimi account before refreshing
 kimi-account-reauth-tooltip = Re-authenticate this Kimi account
@@ -180,6 +187,8 @@ extra-usage-disabled = Disabled
 credits-label = Credits
 credits-available = { $balance } available
 copilot-overage-over-plan = +{ $count } over plan
+zai-coding-plan-unavailable-title = Coding Plan usage unavailable
+zai-coding-plan-unavailable-detail = Coding Plan quotas were not reported by Z.AI.
 
 ## Provider status badges
 badge-disabled = Disabled

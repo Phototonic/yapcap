@@ -55,6 +55,12 @@ impl From<MinimaxError> for AppError {
     }
 }
 
+impl From<ZaiError> for AppError {
+    fn from(value: ZaiError) -> Self {
+        Self::Provider(ProviderError::Zai(value))
+    }
+}
+
 impl From<KimiError> for AppError {
     fn from(value: KimiError) -> Self {
         Self::Provider(ProviderError::Kimi(value))
@@ -122,6 +128,7 @@ impl AppError {
             Self::Provider(ProviderError::Gemini(e)) => e.rate_limit_retry_after_secs(),
             Self::Provider(ProviderError::Copilot(e)) => e.rate_limit_retry_after_secs(),
             Self::Provider(ProviderError::Minimax(e)) => e.rate_limit_retry_after_secs(),
+            Self::Provider(ProviderError::Zai(e)) => e.rate_limit_retry_after_secs(),
             Self::Provider(ProviderError::Kimi(e)) => e.rate_limit_retry_after_secs(),
             Self::Provider(ProviderError::Antigravity(e)) => e.rate_limit_retry_after_secs(),
             Self::Provider(ProviderError::OpenCodeGo(e)) => e.rate_limit_retry_after_secs(),
@@ -158,6 +165,8 @@ pub enum ProviderError {
     #[error(transparent)]
     Minimax(#[from] MinimaxError),
     #[error(transparent)]
+    Zai(#[from] ZaiError),
+    #[error(transparent)]
     Kimi(#[from] KimiError),
     #[error(transparent)]
     Antigravity(#[from] AntigravityError),
@@ -177,6 +186,7 @@ impl ProviderError {
             Self::Gemini(error) => error.is_network_unavailable(),
             Self::Copilot(error) => error.is_network_unavailable(),
             Self::Minimax(error) => error.is_network_unavailable(),
+            Self::Zai(error) => error.is_network_unavailable(),
             Self::Kimi(error) => error.is_network_unavailable(),
             Self::Antigravity(error) => error.is_network_unavailable(),
             Self::OpenCodeGo(error) => error.is_network_unavailable(),
@@ -193,6 +203,7 @@ impl ProviderError {
             Self::Gemini(error) => error.requires_user_action(),
             Self::Copilot(error) => error.requires_user_action(),
             Self::Minimax(error) => error.requires_user_action(),
+            Self::Zai(error) => error.requires_user_action(),
             Self::Kimi(error) => error.requires_user_action(),
             Self::Antigravity(error) => error.requires_user_action(),
             Self::OpenCodeGo(error) => error.requires_user_action(),
@@ -209,6 +220,7 @@ impl ProviderError {
             Self::Gemini(error) => error.is_transient(),
             Self::Copilot(error) => error.is_transient(),
             Self::Minimax(error) => error.is_transient(),
+            Self::Zai(error) => error.is_transient(),
             Self::Kimi(error) => error.is_transient(),
             Self::Antigravity(error) => error.is_transient(),
             Self::OpenCodeGo(error) => error.is_transient(),
@@ -625,6 +637,56 @@ impl MinimaxError {
     #[must_use]
     pub fn requires_user_action(&self) -> bool {
         matches!(self, Self::LoginRequired)
+    }
+
+    #[must_use]
+    pub fn rate_limit_retry_after_secs(&self) -> Option<u64> {
+        match self {
+            Self::RateLimited { retry_after_secs } => *retry_after_secs,
+            _ => None,
+        }
+    }
+
+    #[must_use]
+    pub fn is_transient(&self) -> bool {
+        match self {
+            Self::RateLimited { .. } => true,
+            Self::UsageRequest(source) => request_could_not_reach_network(source),
+            Self::UsageHttp { status } => *status >= 500,
+            _ => false,
+        }
+    }
+}
+
+#[derive(Debug, Error)]
+pub enum ZaiError {
+    #[error("Z.AI login required")]
+    LoginRequired,
+    #[error("Z.AI API key is invalid")]
+    InvalidApiKey,
+    #[error("Z.AI usage request failed")]
+    UsageRequest(#[source] reqwest::Error),
+    #[error("Z.AI usage endpoint returned HTTP {status}")]
+    UsageHttp { status: u16 },
+    #[error("failed to decode Z.AI usage response")]
+    DecodeUsage(#[source] serde_json::Error),
+    #[error("Z.AI usage response envelope is invalid")]
+    InvalidEnvelope,
+    #[error("Z.AI response had no valid usage windows")]
+    NoUsageData,
+    #[error("Rate limited by Z.AI — will retry automatically")]
+    RateLimited { retry_after_secs: Option<u64> },
+}
+
+impl ZaiError {
+    #[must_use]
+    pub fn is_network_unavailable(&self) -> bool {
+        matches!(self, Self::UsageRequest(source) if request_could_not_reach_network(source))
+    }
+
+    #[must_use]
+    pub fn requires_user_action(&self) -> bool {
+        matches!(self, Self::LoginRequired | Self::InvalidApiKey)
     }
 
     #[must_use]
@@ -1084,5 +1146,26 @@ mod tests {
         assert!(AppError::from(GrokError::Unauthorized).requires_user_action());
         assert!(AppError::from(GrokError::CredentialsMissing).requires_user_action());
         assert!(AppError::from(GrokError::RefreshUnavailable).requires_user_action());
+    }
+
+    #[test]
+    fn zai_auth_failures_require_user_action() {
+        assert!(AppError::from(ZaiError::LoginRequired).requires_user_action());
+        assert!(AppError::from(ZaiError::InvalidApiKey).requires_user_action());
+        assert!(!AppError::from(ZaiError::LoginRequired).is_transient());
+    }
+
+    #[test]
+    fn zai_rate_limit_and_server_errors_are_classified() {
+        let rate_limited = AppError::from(ZaiError::RateLimited {
+            retry_after_secs: Some(42),
+        });
+        assert_eq!(rate_limited.rate_limit_retry_after_secs(), Some(42));
+        assert!(rate_limited.is_transient());
+        assert!(!rate_limited.requires_user_action());
+
+        let server_error = AppError::from(ZaiError::UsageHttp { status: 503 });
+        assert!(server_error.is_transient());
+        assert!(!server_error.requires_user_action());
     }
 }

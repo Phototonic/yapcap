@@ -201,6 +201,24 @@ fn create_account_creates_missing_provider_root() {
     assert!(stored.account_dir.join(TOKENS_FILE).exists());
 }
 
+#[test]
+fn creates_zai_account_ids_with_zai_prefix() {
+    let storage = ProviderAccountStorage::new(test_dir("zai-prefix"));
+    let stored = storage
+        .create_account(NewProviderAccount {
+            provider: ProviderId::Zai,
+            email: String::new(),
+            provider_account_id: None,
+            organization_id: None,
+            organization_name: None,
+            tokens: tokens(),
+            snapshot: None,
+        })
+        .unwrap();
+
+    assert!(stored.account_ref.account_id.starts_with("zai-"));
+}
+
 #[cfg(unix)]
 #[test]
 fn managed_account_storage_repairs_directory_and_file_permissions() {
