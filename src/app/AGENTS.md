@@ -6,10 +6,10 @@
 - `provider_actions.rs` handles provider/account actions from the UI.
 - `provider_assets.rs` loads provider artwork.
 - `refresh.rs` coordinates refresh messages and results.
-- `session.rs` manages popup/session lifecycle state.
-- `state.rs` defines app-local UI state.
+- `session.rs` dispatches account deletion, login, imports, reauthentication, and metadata synchronization.
+- `state.rs` implements shared `AppState` accessors, selection lookup, and runtime updates.
 - `tests.rs` contains app-level tests.
-- `window.rs` handles popup window behavior.
-- `host_auth_watch.rs` watches host CLI auth files on Linux.
+- `window.rs` opens external URLs and schedules release checks with retry backoff.
+- `host_auth_watch.rs` watches host authentication files and provider detection markers on Linux.
 - `login/` contains login flow implementations and tests.
 - `popup_view/` contains popup detail, badges, and settings views.

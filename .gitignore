@@ -29,4 +29,6 @@ debian/*
 !debian/source
 docs/agents
 docs/RTK.md
+docs/research/
+docs/superpowers/
 docs/todo.md

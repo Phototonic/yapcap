@@ -5,6 +5,15 @@ All notable changes to YapCap are documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- Added Grok subscription usage tracking with browser OAuth, explicit Grok CLI
+  credential import/restore, managed accounts, and host Active matching.
+- Added Z.AI Coding Plan usage tracking with managed API keys, five-hour, weekly,
+  and optional MCP windows, plus content-aware OpenCode key detection and prefill.
+
 ## [0.6.0] - 2026-09-03
 
 ### Added
@@ -79,6 +88,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added multi-account usage rendering and concurrent provider refreshes.
 - Added COSMIC configuration persistence and Flatpak packaging.
 
+[Unreleased]: https://github.com/TopiCsarno/yapcap/compare/v0.6.0...HEAD
 [0.6.0]: https://github.com/TopiCsarno/yapcap/compare/v0.5.2...v0.6.0
 [0.5.2]: https://github.com/TopiCsarno/yapcap/compare/v0.5.1...v0.5.2
 [0.5.1]: https://github.com/TopiCsarno/yapcap/compare/v0.5.0...v0.5.1
