@@ -102,16 +102,55 @@ fn returns_decode_usage_on_invalid_json() {
 }
 
 #[test]
-fn returns_no_usage_data_when_config_or_percent_missing() {
+fn treats_absent_or_zero_weekly_usage_as_empty_window() {
+    let cases = [
+        r#"{ "config": { "creditUsagePercent": 0 } }"#,
+        r#"{ "config": { "creditUsagePercent": null } }"#,
+        r#"{ "config": {} }"#,
+        r#"{
+            "config": {
+                "currentPeriod": {
+                    "end": "2026-09-18T01:51:41.813312+00:00"
+                },
+                "productUsage": [{ "product": "GrokBuild" }]
+            },
+            "subscriptionTier": "SuperGrok"
+        }"#,
+    ];
+    for json in cases {
+        let snapshot = parse_billing_snapshot(json, None, None, None)
+            .unwrap_or_else(|err| panic!("expected 0% weekly for {json}, got {err}"));
+        assert_eq!(snapshot.windows.len(), 1);
+        assert_eq!(snapshot.windows[0].label, "Weekly");
+        assert!(
+            (snapshot.windows[0].used_percent - 0.0).abs() < f32::EPSILON,
+            "used_percent for {json}"
+        );
+    }
+
+    let with_period = parse_billing_snapshot(
+        r#"{
+            "config": {
+                "currentPeriod": {
+                    "end": "2026-09-18T01:51:41.813312+00:00"
+                },
+                "productUsage": [{ "product": "GrokBuild" }]
+            }
+        }"#,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    assert!(with_period.windows[0].reset_at.is_some());
+    assert_eq!(with_period.windows[0].window_seconds, Some(604_800));
+}
+
+#[test]
+fn returns_no_usage_data_when_config_missing() {
     let json_no_config = r#"{ "subscriptionTier": "SuperGrok" }"#;
     assert!(matches!(
         parse_billing_snapshot(json_no_config, None, None, None),
-        Err(GrokError::NoUsageData)
-    ));
-
-    let json_no_percent = r#"{ "config": {} }"#;
-    assert!(matches!(
-        parse_billing_snapshot(json_no_percent, None, None, None),
         Err(GrokError::NoUsageData)
     ));
 }

@@ -58,7 +58,7 @@ pub fn parse_billing_snapshot(
         serde_json::from_str(raw_json).map_err(GrokError::DecodeUsage)?;
     let config = payload.config.ok_or(GrokError::NoUsageData)?;
 
-    let used_percent = extract_used_percent(&config)?;
+    let used_percent = extract_used_percent(&config);
     let reset_at = parse_optional_reset_timestamp(config.current_period.as_ref())?;
     let reset_description = reset_at.map(|dt| dt.to_rfc3339());
 
@@ -94,8 +94,8 @@ pub fn parse_billing_snapshot(
     })
 }
 
-fn extract_used_percent(config: &BillingConfig) -> Result<f32, GrokError> {
-    let raw = config
+fn extract_used_percent(config: &BillingConfig) -> f32 {
+    config
         .credit_usage_percent
         .or_else(|| {
             config.product_usage.as_ref().and_then(|products| {
@@ -105,8 +105,8 @@ fn extract_used_percent(config: &BillingConfig) -> Result<f32, GrokError> {
                     .and_then(|product| product.usage_percent)
             })
         })
-        .ok_or(GrokError::NoUsageData)?;
-    Ok(raw.clamp(0.0, 100.0))
+        .unwrap_or(0.0)
+        .clamp(0.0, 100.0)
 }
 
 fn parse_optional_reset_timestamp(

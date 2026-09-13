@@ -8,7 +8,7 @@ read_when:
 
 # YapCap — COSMIC Panel Applet Architecture
 
-**Status:** As-built v0.6.0 · **Last updated:** 2026-09-12
+**Status:** As-built v0.6.0 · **Last updated:** 2026-09-13
 
 ## Document Metadata
 
@@ -18,7 +18,7 @@ read_when:
 | Target desktop | COSMIC |
 | Target language | Rust (edition 2024) |
 | Target runtime | libcosmic applet runtime |
-| Providers | Codex, Claude Code, Cursor, Antigravity, Gemini, GitHub Copilot, Minimax, Z.AI Coding Plan, Kimi for Coding, OpenCode Go |
+| Providers | Codex, Claude Code, Cursor, Antigravity, Gemini, GitHub Copilot, Minimax, Z.AI Coding Plan, Kimi for Coding, OpenCode Go, Grok |
 
 ## Document Map
 
@@ -26,7 +26,7 @@ read_when:
 | --- | --- |
 | 1. Product Definition | 1.1 Scope and Non-Goals<br>1.2 Supported Sources |
 | 2. Architecture | 2.1 System Context<br>2.2 Crate Layout<br>2.3 Runtime and Message Flow<br>2.4 Multi-Process Applet Model |
-| 3. Providers | 3.1 Codex<br>3.2 Claude<br>3.3 Cursor<br>3.4 Copilot<br>3.5 Gemini<br>3.6 Minimax<br>3.7 Z.AI Coding Plan<br>3.8 Kimi<br>3.9 OpenCode Go<br>3.10 Antigravity |
+| 3. Providers | 3.1 Codex<br>3.2 Claude<br>3.3 Cursor<br>3.4 Copilot<br>3.5 Gemini<br>3.6 Minimax<br>3.7 Z.AI Coding Plan<br>3.8 Kimi<br>3.9 OpenCode Go<br>3.10 Antigravity<br>3.11 Grok |
 | 4. Auth and Config | 4.1 OAuth Credential Files<br>4.2 Cursor Token Source<br>4.3 Configuration |
 | 5. Data Model | 5.1 UsageSnapshot<br>5.2 ProviderRuntimeState and Health<br>5.3 Stale/Fresh Rules |
 | 6. Persistence, Logging, Paths | |
@@ -39,7 +39,7 @@ read_when:
 
 ### 1.1 Scope and Non-Goals
 
-- YapCap is a native Linux COSMIC panel applet that shows local usage state for Codex, Claude Code, Cursor, Antigravity, Gemini, GitHub Copilot, Minimax, Z.AI Coding Plan, Kimi for Coding, and OpenCode Go.
+- YapCap is a native Linux COSMIC panel applet that shows local usage state for Codex, Claude Code, Cursor, Antigravity, Gemini, GitHub Copilot, Minimax, Z.AI Coding Plan, Kimi for Coding, OpenCode Go, and Grok.
 - Ships only on COSMIC. No GNOME, KDE, tray, or generic indicator paths exist.
 - Reads locally available credentials and caches. No user account, no cloud sync, no telemetry.
 - Out of scope: additional providers, historical charts, notifications, plugin architecture, doctor command, secret vault, alternative DEs.
@@ -58,8 +58,9 @@ read_when:
 | Z.AI Coding Plan | Selected YapCap-managed API-key account under `<state-root>/yapcap/zai-accounts/<id>/api_key.txt` | One-time content-aware prefill from OpenCode's `zai-coding-plan`, then `zai`, entries during add or reauthentication; no runtime fallback |
 | Kimi | Active YapCap-managed Kimi account resolved from `<state-root>/yapcap/kimi-accounts/<id>/api_key.txt` | `KIMI_API_KEY` when the managed account has no stored key |
 | OpenCode Go | Active YapCap-managed OpenCode Go account whose private key matches the `opencode-go` API credential in OpenCode's `~/.local/share/opencode/auth.json` | `OPENCODE_API_KEY` or legacy `OPENCODE_GO_API_KEY` when the managed account has no stored key |
+| Grok | Active YapCap-managed Grok OAuth account under `<state-root>/yapcap/grok-accounts/<id>/` | OAuth refresh-token grant against `auth.x.ai/oauth2/token` before expiry or once after a billing 401; host `~/.grok/auth.json` awards the Active badge |
 
-Claude, Codex, Cursor, Antigravity, Gemini, Copilot, Minimax, Z.AI, Kimi, and OpenCode Go all use YapCap-managed account storage. There
+Claude, Codex, Cursor, Antigravity, Gemini, Copilot, Minimax, Z.AI, Kimi, OpenCode Go, and Grok all use YapCap-managed account storage. There
 is no web-cookie path for Claude and no forced-source environment variable.
 Gemini supports only Google OAuth accounts; gemini-cli API-key and Vertex AI
 configurations are out of scope. Minimax uses API key authentication without host
@@ -1276,6 +1277,35 @@ Error classification (`AntigravityError`), mirroring Gemini §3.5:
   5xx, network errors, timeouts.
 - **No usage data:** empty `groups` preserves the prior snapshot.
 
+### 3.11 Grok
+
+Grok (Grok Build) uses YapCap-managed OAuth accounts stored under
+`<state-root>/yapcap/grok-accounts/<id>/` with `metadata.json`, `tokens.json`,
+and optional `snapshot.json`. Identity is email / `user_id` (`sub`) with
+duplicate-login dedupe. The host Active badge reads `~/.grok/auth.json`
+without writing it.
+
+Usage fetch:
+
+- `GET https://cli-chat-proxy.grok.com/v1/billing?format=credits` with
+  `Authorization: Bearer`. Preflight token refresh when expiry is within five
+  minutes; a billing 401 triggers one refresh and one retry.
+- Maps to a single **Weekly** window (`window_seconds` = 604 800). Fill is
+  `config.creditUsagePercent`, falling back to the `GrokBuild` entry in
+  `productUsage`, clamped to `0.0..=100.0`. Reset is `config.currentPeriod.end`.
+- A present `config` with a missing, null, or zero usage percent is a valid
+  0% Weekly window (the billing API omits default-zero scalars after a reset).
+  `NoUsageData` is returned only when `config` itself is absent.
+- `prepaidBalance.val > 0` maps to `provider_cost`. `onDemandCap.val > 0`
+  maps to `extra_usage`. Plan comes from `subscriptionTier`.
+
+Error classification (`GrokError`):
+
+- **Permanent / `requires_user_action`:** `CredentialsMissing`, `Unauthorized`,
+  `RefreshUnavailable`, token-refresh HTTP 4xx other than 429.
+- **Transient:** `RateLimited { retry_after_secs }`, network errors, timeouts.
+- **No usage data:** missing `config` preserves the prior snapshot.
+
 ## 4. Auth and Config
 
 ### 4.1 OAuth Credential Files
@@ -1594,7 +1624,7 @@ struct ProviderAccountRuntimeState {
 - `reset_at` is present and `≤ now` (elapsed), or
 - `used_percent ≤ 0` and the window is in its **fresh fraction** — `now - (reset_at - window_seconds) < window_seconds / 20` (the first 5 % of the window since it last reset). When `window_seconds` or `reset_at` are missing, the fresh-fraction check degrades to "used_percent ≤ 0" so providers like Claude that can omit `resets_at` after a reset still surface the label.
 
-Otherwise it formats `reset_at` per `ResetTimeFormat`. The rule is provider-agnostic and applies uniformly to every `UsageWindow` rendered in the popup (Codex Session/Weekly, Claude Session/Weekly plus per-model scoped windows such as Sonnet/Opus/Cowork/Fable, Cursor Total/Auto+Composer/API, Antigravity grouped Five Hour/Weekly, Gemini Pro/Flash/Lite, Copilot Free Chat/Completions, Copilot Paid Credits/Premium, Minimax Token, Z.AI 5 Hour/Weekly/MCP, Kimi Weekly/Rate Limit, and OpenCode Go 5 Hour/Weekly/Monthly).
+Otherwise it formats `reset_at` per `ResetTimeFormat`. The rule is provider-agnostic and applies uniformly to every `UsageWindow` rendered in the popup (Codex Session/Weekly, Claude Session/Weekly plus per-model scoped windows such as Sonnet/Opus/Cowork/Fable, Cursor Total/Auto+Composer/API, Antigravity grouped Five Hour/Weekly, Gemini Pro/Flash/Lite, Copilot Free Chat/Completions, Copilot Paid Credits/Premium, Minimax Token, Z.AI 5 Hour/Weekly/MCP, Kimi Weekly/Rate Limit, OpenCode Go 5 Hour/Weekly/Monthly, and Grok Weekly).
 
 ## 6. Persistence, Logging, Paths
 
@@ -1609,8 +1639,8 @@ All paths come from `config::paths()`.
 - Managed accounts and logs: under the XDG state root (typically
   `~/.local/state/yapcap/`), including `codex-accounts/`, `claude-accounts/`,
   `cursor-accounts/`, `antigravity-accounts/`, `gemini-accounts/`,
-  `copilot-accounts/`, `minimax-accounts/`, `zai-accounts/`, `kimi-accounts/`, and
-  `opencode-go-accounts/`
+  `copilot-accounts/`, `minimax-accounts/`, `zai-accounts/`, `kimi-accounts/`,
+  `opencode-go-accounts/`, and `grok-accounts/`
 
 **Flatpak** (`FLATPAK_ID` set): YapCap-owned cache and state **only** under the per-app tree on the host filesystem:
 
@@ -1619,7 +1649,8 @@ All paths come from `config::paths()`.
 - Managed accounts and logs: `~/.var/app/<app-id>/data/yapcap/`, including
   `codex-accounts/`, `claude-accounts/`, `cursor-accounts/`,
   `antigravity-accounts/`, `gemini-accounts/`, `copilot-accounts/`,
-  `minimax-accounts/`, `zai-accounts/`, `kimi-accounts/`, and `opencode-go-accounts/`
+  `minimax-accounts/`, `zai-accounts/`, `kimi-accounts/`, `opencode-go-accounts/`, and
+  `grok-accounts/`
 
 Flatpak does **not** read or write the native install’s `~/.local/state/yapcap/` or `~/.cache/yapcap/` for YapCap data. The `~` in the `.var` paths is the passwd home directory (`pw_dir`), not `dirs::home_dir()` / `$HOME`, so locations stay correct when the sandbox overrides `HOME`.
 
