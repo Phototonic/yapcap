@@ -4,7 +4,7 @@ use crate::config::{
     Config, ManagedAntigravityAccountConfig, ManagedClaudeAccountConfig, ManagedCodexAccountConfig,
     ManagedCopilotAccountConfig, ManagedCursorAccountConfig, ManagedGeminiAccountConfig,
     ManagedGrokAccountConfig, ManagedKimiAccountConfig, ManagedMinimaxAccountConfig,
-    ManagedOpenCodeGoAccountConfig,
+    ManagedOpenCodeGoAccountConfig, ManagedZaiAccountConfig,
 };
 use crate::error::AppError;
 use crate::model::{AppState, AuthState, ProviderAccountRuntimeState, ProviderId, UsageSnapshot};
@@ -67,6 +67,7 @@ pub enum ProviderLoginKind {
     Gemini,
     Copilot,
     Minimax,
+    Zai,
     Kimi,
     Antigravity,
     OpenCodeGo,
@@ -126,6 +127,7 @@ pub enum ProviderAccountHandle {
     Gemini(ManagedGeminiAccountConfig),
     Copilot(ManagedCopilotAccountConfig),
     Minimax(ManagedMinimaxAccountConfig),
+    Zai(ManagedZaiAccountConfig),
     Kimi(ManagedKimiAccountConfig),
     Antigravity(ManagedAntigravityAccountConfig),
     OpenCodeGo(ManagedOpenCodeGoAccountConfig),

@@ -4,7 +4,7 @@ use crate::config::host_user_home_dir;
 use serde::Deserialize;
 use serde_json::Value;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 pub const OPENCODE_AUTH_PATH_ENV: &str = "YAPCAP_OPENCODE_AUTH_PATH";
 pub const OPENCODE_AUTH_CONTENT_ENV: &str = "OPENCODE_AUTH_CONTENT";
@@ -72,10 +72,43 @@ pub fn auth_path() -> Option<PathBuf> {
 
 pub fn discover(provider_id: &str) -> Option<OpenCodeCredential> {
     let auth = auth_json()?;
+    discover_from_auth(&auth, provider_id)
+}
+
+pub fn discover_api_key(provider_ids: &[&str]) -> Option<String> {
+    let auth = auth_json()?;
+    discover_api_key_from_auth(&auth, provider_ids)
+}
+
+pub fn has_api_key_at_path(path: &Path, provider_ids: &[&str]) -> bool {
+    let auth = fs::read_to_string(path)
+        .ok()
+        .and_then(|body| serde_json::from_str(&body).ok());
+    auth.as_ref()
+        .and_then(|auth| discover_api_key_from_auth(auth, provider_ids))
+        .is_some()
+}
+
+fn discover_from_auth(auth: &Value, provider_id: &str) -> Option<OpenCodeCredential> {
     let entry = auth.get(provider_id)?.clone();
     let credential: RawCredential = serde_json::from_value(entry).ok()?;
+    let credential = into_credential(credential);
 
-    let credential = match credential {
+    credential.is_valid().then_some(credential)
+}
+
+fn discover_api_key_from_auth(auth: &Value, provider_ids: &[&str]) -> Option<String> {
+    provider_ids.iter().find_map(|provider_id| {
+        let credential = discover_from_auth(auth, provider_id)?;
+        match credential {
+            OpenCodeCredential::Api { key } => usable_api_key(&key),
+            OpenCodeCredential::OAuth { .. } | OpenCodeCredential::WellKnown { .. } => None,
+        }
+    })
+}
+
+fn into_credential(credential: RawCredential) -> OpenCodeCredential {
+    match credential {
         RawCredential::Api { key } => OpenCodeCredential::Api { key },
         RawCredential::OAuth {
             access,
@@ -91,12 +124,15 @@ pub fn discover(provider_id: &str) -> Option<OpenCodeCredential> {
             enterprise_url,
         },
         RawCredential::WellKnown { key, token } => OpenCodeCredential::WellKnown { key, token },
-    };
+    }
+}
 
-    if credential.is_valid() {
-        Some(credential)
-    } else {
+fn usable_api_key(key: &str) -> Option<String> {
+    let key = key.trim();
+    if key.is_empty() || key.chars().any(char::is_control) {
         None
+    } else {
+        Some(key.to_string())
     }
 }
 
@@ -357,5 +393,69 @@ mod tests {
             discover("provider"),
             Some(OpenCodeCredential::Api { key }) if key == "file-key"
         ));
+    }
+
+    #[test]
+    fn discovers_api_key_in_requested_order() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("auth.json");
+        fs::write(
+            &path,
+            r#"{"zai-coding-plan":{"type":"api","key":"primary"},"zai":{"type":"api","key":"alias"}}"#,
+        )
+        .unwrap();
+        let mut env = crate::test_support::test_env();
+        env.remove(OPENCODE_AUTH_CONTENT_ENV);
+        env.set(OPENCODE_AUTH_PATH_ENV, &path);
+
+        assert_eq!(
+            discover_api_key(&["zai-coding-plan", "zai"]).as_deref(),
+            Some("primary")
+        );
+    }
+
+    #[test]
+    fn api_key_discovery_uses_alias_when_primary_is_not_usable() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("auth.json");
+        fs::write(
+            &path,
+            r#"{"zai-coding-plan":{"type":"oauth","refresh":"r","access":"a","expires":1},"zai":{"type":"api","key":" alias "}}"#,
+        )
+        .unwrap();
+        let mut env = crate::test_support::test_env();
+        env.remove(OPENCODE_AUTH_CONTENT_ENV);
+        env.set(OPENCODE_AUTH_PATH_ENV, &path);
+
+        assert_eq!(
+            discover_api_key(&["zai-coding-plan", "zai"]).as_deref(),
+            Some("alias")
+        );
+    }
+
+    #[test]
+    fn api_key_presence_at_path_returns_only_usable_api_credential_fact() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("auth.json");
+        fs::write(&path, r#"{"zai":{"type":"api","key":"key"}}"#).unwrap();
+
+        assert!(has_api_key_at_path(&path, &["zai-coding-plan", "zai"]));
+        assert!(!has_api_key_at_path(&path, &["other"]));
+    }
+
+    #[test]
+    fn api_key_presence_at_path_rejects_empty_control_and_non_api_credentials() {
+        let temp = tempdir().unwrap();
+        let path = temp.path().join("auth.json");
+
+        for body in [
+            r#"{"zai":{"type":"api","key":" "}}"#,
+            r#"{"zai":{"type":"api","key":"bad\nkey"}}"#,
+            r#"{"zai":{"type":"oauth","refresh":"r","access":"a","expires":1}}"#,
+            "not-json",
+        ] {
+            fs::write(&path, body).unwrap();
+            assert!(!has_api_key_at_path(&path, &["zai"]));
+        }
     }
 }

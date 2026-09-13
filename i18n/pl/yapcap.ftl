@@ -78,6 +78,13 @@ gemini-account-reauth-tooltip = Uwierzytelnij ponownie to konto Gemini
 minimax-accounts-title = Konta Minimax
 minimax-account-select-required = Wybierz konto Minimax przed odświeżeniem
 minimax-account-reauth-tooltip = Uwierzytelnij ponownie to konto Minimax
+zai-accounts-title = Konta Z.AI Coding Plan
+zai-account-select-required = Wybierz konto Z.AI Coding Plan przed odświeżeniem
+zai-account-reauth-tooltip = Uwierzytelnij ponownie to konto Z.AI Coding Plan
+zai-login-editing = Wprowadź swój klucz API Z.AI Coding Plan.
+zai-login-failed = Nie udało się zapisać konta Z.AI Coding Plan.
+zai-api-key-placeholder = Klucz API
+zai-api-key-imported-from-opencode = Klucz API został wstępnie uzupełniony z OpenCode. Możesz go zmienić lub usunąć.
 kimi-accounts-title = Konta Kimi
 kimi-account-select-required = Wybierz konto Kimi przed odświeżeniem
 kimi-account-reauth-tooltip = Uwierzytelnij ponownie to konto Kimi
@@ -173,6 +180,8 @@ extra-usage-disabled = Zablokowane
 credits-label = Kredyty
 credits-available = { $balance } dostępne
 copilot-overage-over-plan = +{ $count } ponad plan
+zai-coding-plan-unavailable-title = Dane o zużyciu Coding Plan są niedostępne
+zai-coding-plan-unavailable-detail = Z.AI zwróciło tylko dane o zużyciu narzędzi MCP. Z.AI nie zwróciło danych o limitach Coding Plan.
 
 ## Provider status badges
 badge-disabled = Zablokowane

@@ -16,13 +16,14 @@ pub enum ProviderId {
     Gemini,
     Copilot,
     Minimax,
+    Zai,
     Kimi,
     OpenCodeGo,
     Grok,
 }
 
 impl ProviderId {
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 11] = [
         Self::Codex,
         Self::Claude,
         Self::Cursor,
@@ -30,6 +31,7 @@ impl ProviderId {
         Self::Gemini,
         Self::Copilot,
         Self::Minimax,
+        Self::Zai,
         Self::Kimi,
         Self::OpenCodeGo,
         Self::Grok,
@@ -45,6 +47,7 @@ impl ProviderId {
             Self::Antigravity => "Antigravity",
             Self::Copilot => "Copilot",
             Self::Minimax => "Minimax",
+            Self::Zai => "Z.AI Coding Plan",
             Self::Kimi => "Kimi",
             Self::OpenCodeGo => "OpenCode Go",
             Self::Grok => "Grok",
@@ -362,6 +365,28 @@ mod tests {
     fn grok_provider_id_has_label_and_is_enumerated() {
         assert_eq!(ProviderId::Grok.label(), "Grok");
         assert!(ProviderId::ALL.contains(&ProviderId::Grok));
+    }
+
+    #[test]
+    fn zai_provider_id_has_serialization_label_and_canonical_order() {
+        assert_eq!(serde_json::to_string(&ProviderId::Zai).unwrap(), "\"zai\"");
+        assert_eq!(ProviderId::Zai.label(), "Z.AI Coding Plan");
+        assert_eq!(
+            ProviderId::ALL[ProviderId::ALL
+                .iter()
+                .position(|provider| *provider == ProviderId::Minimax)
+                .unwrap()
+                + 1],
+            ProviderId::Zai
+        );
+        assert_eq!(
+            ProviderId::ALL[ProviderId::ALL
+                .iter()
+                .position(|provider| *provider == ProviderId::Zai)
+                .unwrap()
+                + 1],
+            ProviderId::Kimi
+        );
     }
 
     fn window(label: &str) -> UsageWindow {

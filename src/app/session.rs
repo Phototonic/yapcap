@@ -41,6 +41,7 @@ pub(super) fn start_login(app: &mut AppModel, provider: ProviderId) -> Task<Mess
         ProviderId::Gemini => login::start_login::<login::GeminiLoginFlow>(app),
         ProviderId::Copilot => login::start_login::<login::CopilotLoginFlow>(app),
         ProviderId::Minimax => login::start_login::<login::MinimaxLoginFlow>(app),
+        ProviderId::Zai => login::start_login::<login::ZaiLoginFlow>(app),
         ProviderId::Kimi => login::start_login::<login::KimiLoginFlow>(app),
         ProviderId::Antigravity => login::start_login::<login::AntigravityLoginFlow>(app),
         ProviderId::OpenCodeGo => login::start_login::<login::OpenCodeGoLoginFlow>(app),
@@ -93,6 +94,7 @@ pub(super) fn cancel_login(app: &mut AppModel, provider: ProviderId) {
         ProviderId::Gemini => login::cancel_login::<login::GeminiLoginFlow>(app),
         ProviderId::Copilot => login::cancel_login::<login::CopilotLoginFlow>(app),
         ProviderId::Minimax => login::cancel_login::<login::MinimaxLoginFlow>(app),
+        ProviderId::Zai => login::cancel_login::<login::ZaiLoginFlow>(app),
         ProviderId::Kimi => login::cancel_login::<login::KimiLoginFlow>(app),
         ProviderId::Antigravity => login::cancel_login::<login::AntigravityLoginFlow>(app),
         ProviderId::OpenCodeGo => login::cancel_login::<login::OpenCodeGoLoginFlow>(app),
@@ -112,6 +114,7 @@ pub(super) fn reauthenticate(
         ProviderId::Gemini => login::reauthenticate::<login::GeminiLoginFlow>(app, account_id),
         ProviderId::Copilot => login::reauthenticate::<login::CopilotLoginFlow>(app, account_id),
         ProviderId::Minimax => login::reauthenticate::<login::MinimaxLoginFlow>(app, account_id),
+        ProviderId::Zai => login::reauthenticate::<login::ZaiLoginFlow>(app, account_id),
         ProviderId::Kimi => login::reauthenticate::<login::KimiLoginFlow>(app, account_id),
         ProviderId::Antigravity => {
             login::reauthenticate::<login::AntigravityLoginFlow>(app, account_id)
@@ -141,6 +144,7 @@ pub(super) fn sync_metadata_after_refresh(app: &mut AppModel, provider: Provider
         ProviderId::Gemini
         | ProviderId::Copilot
         | ProviderId::Minimax
+        | ProviderId::Zai
         | ProviderId::Kimi
         | ProviderId::Antigravity
         | ProviderId::OpenCodeGo

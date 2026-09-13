@@ -54,6 +54,7 @@ use crate::providers::kimi::{
 use crate::providers::minimax::{self, MinimaxLoginEvent, MinimaxLoginState};
 use crate::providers::opencode_go::login::{OpenCodeGoLoginEvent, OpenCodeGoLoginState};
 use crate::providers::registry;
+use crate::providers::zai::ZaiLoginState;
 use crate::refresh_owner::{
     self, ProcessInfo, RefreshOwner, RefreshOwnerAttempt, RefreshOwnerWaiter,
 };
@@ -135,6 +136,8 @@ pub struct AppModel {
     opencode_go_login_handle: Option<Handle>,
     pub grok_login: Option<GrokLoginState>,
     pub grok_login_handle: Option<Handle>,
+    zai_login: Option<ZaiLoginState>,
+    zai_login_handle: Option<Handle>,
 }
 
 impl Drop for AppModel {
@@ -318,6 +321,8 @@ impl cosmic::Application for AppModel {
             opencode_go_login_handle: None,
             grok_login: None,
             grok_login_handle: None,
+            zai_login: None,
+            zai_login_handle: None,
         };
         tracing::info!(
             pid = app.process_info.pid,
@@ -401,6 +406,7 @@ impl cosmic::Application for AppModel {
                 antigravity: self.antigravity_login.as_ref(),
                 opencode_go: self.opencode_go_login.as_ref(),
                 grok: self.grok_login.as_ref(),
+                zai: self.zai_login.as_ref(),
             },
             popup_view::DetailSelection {
                 provider: self.selected_provider,
@@ -601,6 +607,9 @@ impl AppModel {
                     }
                     (ProviderId::Grok, login::LoginEventKind::Grok(event)) => {
                         login::GrokLoginFlow::on_event(self, event)
+                    }
+                    (ProviderId::Zai, login::LoginEventKind::Zai(event)) => {
+                        login::ZaiLoginFlow::on_event(self, event)
                     }
                     _ => Task::none(),
                 });

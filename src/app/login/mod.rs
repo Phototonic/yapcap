@@ -3,7 +3,7 @@ mod legacy;
 
 pub(crate) use flows::{
     AntigravityLoginFlow, ClaudeLoginFlow, CodexLoginFlow, CopilotLoginFlow, GeminiLoginFlow,
-    GrokLoginFlow, KimiLoginFlow, MinimaxLoginFlow, OpenCodeGoLoginFlow,
+    GrokLoginFlow, KimiLoginFlow, MinimaxLoginFlow, OpenCodeGoLoginFlow, ZaiLoginFlow,
 };
 
 use super::{
@@ -136,11 +136,34 @@ fn apply_login_success(
         account_id,
         "login flow succeeded"
     );
-    app.write_config(|new_config| apply(new_config));
+    let _ = app.write_config(|new_config| apply(new_config));
     runtime::reconcile_provider(&app.config, &app.detection, &mut app.state, provider);
     runtime::mark_account_reauthenticated(&mut app.state, provider, &account_id);
     app.sync_panel_suggested_bounds();
     app.request_provider_refresh(provider, RefreshRequestReason::AccountAction)
+}
+
+pub(super) fn apply_login_success_checked(
+    app: &mut AppModel,
+    provider: ProviderId,
+    flow_id: &str,
+    account_id: String,
+    apply: impl FnOnce(&mut Config),
+) -> Result<Task<Message>, ()> {
+    if !app.write_config(|new_config| apply(new_config)) {
+        return Err(());
+    }
+    tracing::info!(
+        process_id = %app.process_info.id,
+        provider = provider.label(),
+        flow_id,
+        account_id,
+        "login flow succeeded"
+    );
+    runtime::reconcile_provider(&app.config, &app.detection, &mut app.state, provider);
+    runtime::mark_account_reauthenticated(&mut app.state, provider, &account_id);
+    app.sync_panel_suggested_bounds();
+    Ok(app.request_provider_refresh(provider, RefreshRequestReason::AccountAction))
 }
 
 fn log_login_failed(process_id: &str, provider: ProviderId, flow_id: &str, error: &str) {
@@ -222,6 +245,7 @@ pub(crate) enum LoginEventKind {
     Antigravity(AntigravityLoginEvent),
     OpenCodeGo(OpenCodeGoLoginEvent),
     Grok(GrokLoginEvent),
+    Zai(crate::providers::zai::login::ZaiLoginEvent),
 }
 
 #[cfg(test)]

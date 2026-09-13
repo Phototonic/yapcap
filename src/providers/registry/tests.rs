@@ -33,6 +33,13 @@ fn providers_expose_expected_capabilities() {
         }
     );
     assert_eq!(
+        capabilities(ProviderId::Zai),
+        ProviderCapabilities {
+            supports_background_status_refresh: false,
+            requires_auth_prompt_on_auth_failure: false,
+        }
+    );
+    assert_eq!(
         capabilities(ProviderId::OpenCodeGo),
         ProviderCapabilities {
             supports_background_status_refresh: false,
@@ -75,6 +82,20 @@ fn grok_provider_registered_and_discovers_accounts() {
     assert_eq!(descriptors[0].account_id, "grok-1");
     assert_eq!(descriptors[0].label, "Grok User");
     assert_eq!(login_kind(ProviderId::Grok), ProviderLoginKind::Grok);
+}
+
+#[test]
+fn zai_provider_registered_as_managed_key_provider() {
+    assert_eq!(login_kind(ProviderId::Zai), ProviderLoginKind::Zai);
+    assert!(!supports_opencode_import(ProviderId::Zai));
+    assert_eq!(
+        selection_required_message(ProviderId::Zai),
+        Some("Select".to_string())
+    );
+    assert_eq!(
+        system_active_account_id(ProviderId::Zai, &Config::default()),
+        None
+    );
 }
 
 #[test]
@@ -325,6 +346,7 @@ fn host_aware_providers_resolve_system_active_account_id() {
         (ProviderId::Cursor, true),
         (ProviderId::Copilot, false),
         (ProviderId::Minimax, true),
+        (ProviderId::Zai, false),
         (ProviderId::Kimi, true),
         (ProviderId::OpenCodeGo, true),
         (ProviderId::Grok, true),
@@ -406,7 +428,7 @@ fn every_provider_descriptor_declares_supported_account_actions() {
         ManagedAntigravityAccountConfig, ManagedClaudeAccountConfig, ManagedCodexAccountConfig,
         ManagedCopilotAccountConfig, ManagedCursorAccountConfig, ManagedGeminiAccountConfig,
         ManagedGrokAccountConfig, ManagedKimiAccountConfig, ManagedMinimaxAccountConfig,
-        ManagedOpenCodeGoAccountConfig, paths,
+        ManagedOpenCodeGoAccountConfig, ManagedZaiAccountConfig, paths,
     };
     use crate::providers::opencode_auth::{OPENCODE_AUTH_CONTENT_ENV, OPENCODE_AUTH_PATH_ENV};
     use std::path::PathBuf;
@@ -531,6 +553,14 @@ fn every_provider_descriptor_declares_supported_account_actions() {
             updated_at: now,
             last_authenticated_at: None,
         }],
+        zai_managed_accounts: vec![ManagedZaiAccountConfig {
+            id: "zai-1".to_string(),
+            label: "Z.AI account".to_string(),
+            api_key_source: "stored".to_string(),
+            created_at: now,
+            updated_at: now,
+            last_authenticated_at: None,
+        }],
         kimi_managed_accounts: vec![ManagedKimiAccountConfig {
             id: "kimi-1".to_string(),
             label: "Kimi account".to_string(),
@@ -608,6 +638,13 @@ fn every_provider_descriptor_declares_supported_account_actions() {
         ),
         (
             ProviderId::Minimax,
+            vec![
+                ProviderAccountAction::Delete,
+                ProviderAccountAction::Reauthenticate,
+            ],
+        ),
+        (
+            ProviderId::Zai,
             vec![
                 ProviderAccountAction::Delete,
                 ProviderAccountAction::Reauthenticate,

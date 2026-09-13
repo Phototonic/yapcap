@@ -18,7 +18,7 @@ use crate::account_storage::{NewProviderAccount, ProviderAccountStorage, Provide
 use crate::config::{
     ManagedClaudeAccountConfig, ManagedCodexAccountConfig, ManagedCopilotAccountConfig,
     ManagedCursorAccountConfig, ManagedGeminiAccountConfig, ManagedKimiAccountConfig,
-    ManagedMinimaxAccountConfig,
+    ManagedMinimaxAccountConfig, ManagedZaiAccountConfig,
 };
 use crate::model::{
     AccountSelectionStatus, ProviderAccountRuntimeState, ProviderIdentity, ProviderRuntimeState,
@@ -1150,6 +1150,8 @@ pub(super) fn test_app(refresh_owner: Option<RefreshOwner>) -> AppModel {
         opencode_go_login_handle: None,
         grok_login: None,
         grok_login_handle: None,
+        zai_login: None,
+        zai_login_handle: None,
     }
 }
 
@@ -1282,6 +1284,17 @@ fn kimi_account(id: &str) -> ManagedKimiAccountConfig {
         id: id.to_string(),
         label: id.to_string(),
         api_key_source: "env:KIMI_API_KEY".to_string(),
+        created_at: Utc::now(),
+        updated_at: Utc::now(),
+        last_authenticated_at: None,
+    }
+}
+
+fn zai_account(id: &str) -> ManagedZaiAccountConfig {
+    ManagedZaiAccountConfig {
+        id: id.to_string(),
+        label: id.to_string(),
+        api_key_source: "env:ZAI_API_KEY".to_string(),
         created_at: Utc::now(),
         updated_at: Utc::now(),
         last_authenticated_at: None,
@@ -1451,6 +1464,12 @@ fn delete_account_requests_refresh_for_all_providers() {
                     .minimax_managed_accounts
                     .push(minimax_account("remove"));
                 app.config.selected_minimax_account_ids = vec![keep_id.to_string()];
+                "remove".to_string()
+            }
+            ProviderId::Zai => {
+                app.config.zai_managed_accounts.push(zai_account(keep_id));
+                app.config.zai_managed_accounts.push(zai_account("remove"));
+                app.config.selected_zai_account_ids = vec![keep_id.to_string()];
                 "remove".to_string()
             }
             ProviderId::Kimi => {

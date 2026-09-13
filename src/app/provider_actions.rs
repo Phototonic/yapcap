@@ -264,15 +264,15 @@ impl AppModel {
         )))
     }
 
-    pub(super) fn write_config(&mut self, f: impl FnOnce(&mut Config)) {
+    pub(super) fn write_config(&mut self, f: impl FnOnce(&mut Config)) -> bool {
         let mut new_config = self.config.clone();
         f(&mut new_config);
         if new_config == self.config {
-            return;
+            return true;
         }
         if demo_env::is_active() {
             self.config = new_config;
-            return;
+            return true;
         }
         let ctx = match crate::config::cosmic_config_context(
             <Self as cosmic::Application>::APP_ID,
@@ -287,7 +287,7 @@ impl AppModel {
                     error = ?error,
                     "failed to open config for writing"
                 );
-                return;
+                return false;
             }
         };
         if let Err(error) =
@@ -300,9 +300,10 @@ impl AppModel {
                 error = ?error,
                 "failed to write config"
             );
-            return;
+            return false;
         }
         self.config = new_config;
+        true
     }
 
     pub(super) fn set_provider_enabled(
@@ -574,6 +575,7 @@ pub(super) fn popup_route_label(route: PopupRoute) -> &'static str {
             ProviderId::Gemini => "manage_accounts_gemini",
             ProviderId::Copilot => "manage_accounts_copilot",
             ProviderId::Minimax => "manage_accounts_minimax",
+            ProviderId::Zai => "manage_accounts_zai",
             ProviderId::Kimi => "manage_accounts_kimi",
             ProviderId::Antigravity => "manage_accounts_antigravity",
             ProviderId::OpenCodeGo => "manage_accounts_opencode_go",
@@ -616,6 +618,7 @@ fn managed_account_count(config: &Config) -> usize {
         + config.gemini_managed_accounts.len()
         + config.copilot_managed_accounts.len()
         + config.minimax_managed_accounts.len()
+        + config.zai_managed_accounts.len()
         + config.kimi_managed_accounts.len()
         + config.antigravity_managed_accounts.len()
         + config.opencode_go_managed_accounts.len()

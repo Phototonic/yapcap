@@ -33,6 +33,7 @@ impl Config {
             "gemini_enablement" => self.gemini_enablement = update.gemini_enablement,
             "copilot_enablement" => self.copilot_enablement = update.copilot_enablement,
             "minimax_enablement" => self.minimax_enablement = update.minimax_enablement,
+            "zai_enablement" => self.zai_enablement = update.zai_enablement,
             "kimi_enablement" => self.kimi_enablement = update.kimi_enablement,
             "antigravity_enablement" => {
                 self.antigravity_enablement = update.antigravity_enablement;
@@ -87,6 +88,12 @@ impl Config {
             "minimax_managed_accounts" => {
                 self.minimax_managed_accounts = update.minimax_managed_accounts.clone();
             }
+            "selected_zai_account_ids" => {
+                self.selected_zai_account_ids = update.selected_zai_account_ids.clone();
+            }
+            "zai_managed_accounts" => {
+                self.zai_managed_accounts = update.zai_managed_accounts.clone();
+            }
             "selected_kimi_account_ids" => {
                 self.selected_kimi_account_ids = update.selected_kimi_account_ids.clone();
             }
@@ -123,7 +130,7 @@ mod tests {
     use super::*;
     use crate::config::{
         ManagedGrokAccountConfig, ManagedKimiAccountConfig, ManagedMinimaxAccountConfig,
-        ManagedOpenCodeGoAccountConfig, ProviderEnablement,
+        ManagedOpenCodeGoAccountConfig, ManagedZaiAccountConfig, ProviderEnablement,
     };
     use chrono::Utc;
 
@@ -191,6 +198,40 @@ mod tests {
             config.codex_enablement,
             crate::config::ProviderEnablement::Auto
         );
+    }
+
+    #[test]
+    fn applies_zai_watcher_keys_without_replacing_unrelated_configuration() {
+        let mut config = Config::default();
+        let now = Utc::now();
+        let update = Config {
+            codex_enablement: ProviderEnablement::Disabled,
+            zai_enablement: ProviderEnablement::Enabled,
+            selected_zai_account_ids: vec!["zai-1".to_string()],
+            zai_managed_accounts: vec![ManagedZaiAccountConfig {
+                id: "zai-1".to_string(),
+                label: "Z.AI Coding Plan".to_string(),
+                api_key_source: "stored".to_string(),
+                created_at: now,
+                updated_at: now,
+                last_authenticated_at: None,
+            }],
+            ..Config::default()
+        };
+
+        config.apply_watcher_update(
+            update,
+            &[
+                "zai_enablement",
+                "selected_zai_account_ids",
+                "zai_managed_accounts",
+            ],
+        );
+
+        assert_eq!(config.zai_enablement, ProviderEnablement::Enabled);
+        assert_eq!(config.selected_zai_account_ids, ["zai-1"]);
+        assert_eq!(config.zai_managed_accounts[0].id, "zai-1");
+        assert_eq!(config.codex_enablement, ProviderEnablement::Auto);
     }
 
     #[test]

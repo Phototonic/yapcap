@@ -10,6 +10,7 @@ mod grok_adapter;
 mod kimi_adapter;
 mod minimax_adapter;
 mod opencode_go_adapter;
+mod zai_adapter;
 
 use crate::account_storage::ProviderAccountStorage;
 use crate::config::{Config, host_user_home_dir, paths};
@@ -28,6 +29,7 @@ pub(super) fn adapter(provider: ProviderId) -> &'static dyn ProviderAdapter {
         ProviderId::Copilot => &COPILOT_ADAPTER,
         ProviderId::Kimi => &KIMI_ADAPTER,
         ProviderId::Minimax => &MINIMAX_ADAPTER,
+        ProviderId::Zai => &ZAI_ADAPTER,
         ProviderId::Antigravity => &ANTIGRAVITY_ADAPTER,
         ProviderId::OpenCodeGo => &OPENCODE_GO_ADAPTER,
         ProviderId::Grok => &GROK_ADAPTER,
@@ -41,6 +43,7 @@ static GEMINI_ADAPTER: gemini_adapter::GeminiAdapter = gemini_adapter::GeminiAda
 static COPILOT_ADAPTER: copilot_adapter::CopilotAdapter = copilot_adapter::CopilotAdapter;
 static KIMI_ADAPTER: kimi_adapter::KimiAdapter = kimi_adapter::KimiAdapter;
 static MINIMAX_ADAPTER: minimax_adapter::MinimaxAdapter = minimax_adapter::MinimaxAdapter;
+static ZAI_ADAPTER: zai_adapter::ZaiAdapter = zai_adapter::ZaiAdapter;
 static ANTIGRAVITY_ADAPTER: antigravity_adapter::AntigravityAdapter =
     antigravity_adapter::AntigravityAdapter;
 static OPENCODE_GO_ADAPTER: opencode_go_adapter::OpenCodeGoAdapter =
