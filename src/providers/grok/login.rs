@@ -136,6 +136,7 @@ async fn run_login(
         output,
         oauth::TOKEN_URL,
         DEFAULT_BILLING_URL,
+        open_browser,
     )
     .await;
     let _ = output
@@ -153,8 +154,9 @@ pub(crate) async fn run_login_inner(
     output: &mut cosmic::iced::futures::channel::mpsc::Sender<GrokLoginEvent>,
     token_url: &str,
     billing_url: &str,
+    open_browser: impl FnOnce(&str) + Send,
 ) -> Result<GrokLoginSuccess, String> {
-    let tokens = run_oauth_flow(flow_id, output, token_url).await?;
+    let tokens = run_oauth_flow(flow_id, output, token_url, open_browser).await?;
     let claims = oauth::decode_jwt_claims(&tokens.access_token).or_else(|| {
         tokens
             .id_token
@@ -213,6 +215,7 @@ async fn run_oauth_flow(
     flow_id: &str,
     output: &mut cosmic::iced::futures::channel::mpsc::Sender<GrokLoginEvent>,
     token_url: &str,
+    open_browser: impl FnOnce(&str) + Send,
 ) -> Result<GrokTokenResponse, String> {
     let listener = TcpListener::bind(("127.0.0.1", 0))
         .await

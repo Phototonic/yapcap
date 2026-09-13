@@ -1765,6 +1765,7 @@ async fn run_login_inner_executes_oauth_loopback_flow() {
     let billing_url = format!("{base_url}/v1/billing");
 
     let (mut sender, mut receiver) = cosmic::iced::futures::channel::mpsc::channel(10);
+    let (browser_sender, browser_receiver) = tokio::sync::oneshot::channel();
     let login_task = tokio::spawn(async move {
         super::login::run_login_inner(
             "flow-oauth-test",
@@ -1773,6 +1774,7 @@ async fn run_login_inner_executes_oauth_loopback_flow() {
             &mut sender,
             &token_url,
             &billing_url,
+            move |url| browser_sender.send(url.to_string()).unwrap(),
         )
         .await
     });
@@ -1785,6 +1787,7 @@ async fn run_login_inner_executes_oauth_loopback_flow() {
         super::login::GrokLoginEvent::LoginUrl { url, .. } => url,
         _ => panic!("expected LoginUrl event"),
     };
+    assert_eq!(browser_receiver.await.unwrap(), auth_url);
 
     let url_parsed = reqwest::Url::parse(&auth_url).unwrap();
     let redirect_param = url_parsed
